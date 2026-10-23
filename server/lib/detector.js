@@ -19,7 +19,9 @@
   'use strict';
 
   var REJECT_WORDS = ['reject', 'cancel', 'expired', 'modified', 'after market', 'amo', 'pending', 'open pending', 'trigger pending', 'after order'];
-  var DONE_WORDS = ['complete', 'executed', 'filled', 'traded', 'closed', 'open'];
+  var PENDING_WORDS = ['open', 'requested', 'transit', 'modify'];
+  var PARTIAL_WORDS = ['partial', 'partially', 'part-filled'];
+  var DONE_WORDS = ['complete', 'executed', 'filled', 'traded', 'closed'];
 
   var QTY_KEYS = ['quantity', 'qty', 'filled qty', 'filled quantity', 'traded qty', 'executed qty', 'order qty'];
   var PRICE_KEYS = ['price', 'avg price', 'avg. price', 'average price', 'ltp', 'rate'];
@@ -72,6 +74,12 @@
     for (var i = 0; i < REJECT_WORDS.length; i++) {
       if (t.indexOf(REJECT_WORDS[i]) !== -1) return 'rejected';
     }
+    for (var k = 0; k < PARTIAL_WORDS.length; k++) {
+      if (t.indexOf(PARTIAL_WORDS[k]) !== -1) return 'partial';
+    }
+    for (var p = 0; p < PENDING_WORDS.length; p++) {
+      if (t.indexOf(PENDING_WORDS[p]) !== -1) return 'pending';
+    }
     for (var j = 0; j < DONE_WORDS.length; j++) {
       if (t.indexOf(DONE_WORDS[j]) !== -1) return 'done';
     }
@@ -113,13 +121,15 @@
   }
 
   /**
-   * Turn {headers, rows} tables into orders and positions.
+   * Turn {headers, rows} tables into orders, positions, pending and unknown items.
    * `opts.riskPerUnit` > 0 means risk = qty * riskPerUnit, else qty * price.
    */
   function detectFromTables(tables, opts) {
     opts = opts || {};
     var orders = [];
     var positions = [];
+    var pending = [];
+    var unknown = [];
 
     (tables || []).forEach(function (t) {
       var headers = t.headers || [];
@@ -139,7 +149,6 @@
         if (!row || !row.length) return;
         var text = row.join(' ');
         var st = statusOf(text);
-        if (st === 'rejected') return;
 
         var qty = neti !== -1 ? parseQty(cell(row, neti)) : parseQty(cell(row, qi));
         if (!qty) return;
@@ -158,6 +167,13 @@
           status: st
         };
 
+        if (st === 'rejected') {
+          return;
+        } else if (st === 'pending' || st === 'partial') {
+          pending.push(rec);
+          return;
+        }
+
         if (neti !== -1 && st !== 'done') {
           positions.push(rec);          // positions table: has "Net qty", no status word
         } else if (st === 'done') {
@@ -165,13 +181,13 @@
         } else {
           // No status text at all: treat a "Net qty" column as positions.
           if (neti !== -1) positions.push(rec);
+          else unknown.push(rec);
         }
       });
     });
 
-    return { orders: orders, positions: positions };
+    return { orders: orders, positions: positions, pending: pending, unknown: unknown };
   }
-
 
   /**
    * How many symbols still have a net open quantity across today's fills.
@@ -233,13 +249,271 @@
     return detectFromTables(tables, opts);
   }
 
+  // ------------------------------------ Broker adapter verification status ----
+
+  var BROKER_PROFILES = {
+    'fake-broker.local': {
+      name: 'Trade Lock Test Broker (Synthetic)',
+      domain: 'fake-broker.local',
+      domainRecognized: true,
+      pageStructureRecognized: true,
+      tradeDataDetectionVerified: true,
+      positionStateDetectionVerified: true,
+      newOrderRestrictionImplemented: true,
+      newOrderRestrictionTested: true,
+      riskReducingActionBehaviorTested: true,
+      detectionStatus: 'DETECTION_VERIFIED',
+      restrictionStatus: 'RESTRICTION_TESTED',
+      lastVerificationDate: '2026-10-23',
+      limitations: 'Synthetic test harness only. Not a live financial broker.'
+    },
+    'kite.zerodha.com': {
+      name: 'Zerodha Kite',
+      domain: 'kite.zerodha.com',
+      domainRecognized: true,
+      pageStructureRecognized: true,
+      tradeDataDetectionVerified: true,
+      positionStateDetectionVerified: true,
+      newOrderRestrictionImplemented: true,
+      newOrderRestrictionTested: false,
+      riskReducingActionBehaviorTested: false,
+      detectionStatus: 'DETECTION_VERIFIED',
+      restrictionStatus: 'RESTRICTION_UNAVAILABLE',
+      lastVerificationDate: '2026-07-15',
+      limitations: 'Dynamic modal updates may alter order entry selectors. Real money live enforcement requires verification.'
+    },
+    'web.dhan.co': {
+      name: 'Dhan Web',
+      domain: 'web.dhan.co',
+      domainRecognized: true,
+      pageStructureRecognized: true,
+      tradeDataDetectionVerified: false,
+      positionStateDetectionVerified: false,
+      newOrderRestrictionImplemented: true,
+      newOrderRestrictionTested: false,
+      riskReducingActionBehaviorTested: false,
+      detectionStatus: 'DETECTION_UNVERIFIED',
+      restrictionStatus: 'RESTRICTION_UNAVAILABLE',
+      lastVerificationDate: null,
+      limitations: 'Canvas chart order entry and hotkeys cannot be intercepted reliably by standard DOM listeners.'
+    },
+    'upstox.com': {
+      name: 'Upstox Pro Web',
+      domain: 'upstox.com',
+      domainRecognized: true,
+      pageStructureRecognized: false,
+      tradeDataDetectionVerified: false,
+      positionStateDetectionVerified: false,
+      newOrderRestrictionImplemented: false,
+      newOrderRestrictionTested: false,
+      riskReducingActionBehaviorTested: false,
+      detectionStatus: 'DETECTION_UNVERIFIED',
+      restrictionStatus: 'RESTRICTION_UNAVAILABLE',
+      lastVerificationDate: null,
+      limitations: 'SPA client DOM structure requires continuous mutation monitoring. Order restriction unavailable.'
+    },
+    'web.angelone.in': {
+      name: 'Angel One',
+      domain: 'web.angelone.in',
+      domainRecognized: true,
+      pageStructureRecognized: false,
+      tradeDataDetectionVerified: false,
+      positionStateDetectionVerified: false,
+      newOrderRestrictionImplemented: false,
+      newOrderRestrictionTested: false,
+      riskReducingActionBehaviorTested: false,
+      detectionStatus: 'DETECTION_UNVERIFIED',
+      restrictionStatus: 'RESTRICTION_UNAVAILABLE',
+      lastVerificationDate: null,
+      limitations: 'Nested web components and shadow DOM prevent reliable order button interception.'
+    },
+    'trade.5paisa.com': {
+      name: '5paisa Trade',
+      domain: 'trade.5paisa.com',
+      domainRecognized: true,
+      pageStructureRecognized: false,
+      tradeDataDetectionVerified: false,
+      positionStateDetectionVerified: false,
+      newOrderRestrictionImplemented: false,
+      newOrderRestrictionTested: false,
+      riskReducingActionBehaviorTested: false,
+      detectionStatus: 'DETECTION_UNVERIFIED',
+      restrictionStatus: 'RESTRICTION_UNAVAILABLE',
+      lastVerificationDate: null,
+      limitations: 'Order restriction unavailable.'
+    },
+    'groww.in': {
+      name: 'Groww Stocks',
+      domain: 'groww.in',
+      domainRecognized: true,
+      pageStructureRecognized: false,
+      tradeDataDetectionVerified: false,
+      positionStateDetectionVerified: false,
+      newOrderRestrictionImplemented: false,
+      newOrderRestrictionTested: false,
+      riskReducingActionBehaviorTested: false,
+      detectionStatus: 'DETECTION_UNVERIFIED',
+      restrictionStatus: 'RESTRICTION_UNAVAILABLE',
+      lastVerificationDate: null,
+      limitations: 'Obfuscated class selectors. DOM interception unverified.'
+    },
+    'pro.fyers.in': {
+      name: 'Fyers Web',
+      domain: 'pro.fyers.in',
+      domainRecognized: true,
+      pageStructureRecognized: false,
+      tradeDataDetectionVerified: false,
+      positionStateDetectionVerified: false,
+      newOrderRestrictionImplemented: false,
+      newOrderRestrictionTested: false,
+      riskReducingActionBehaviorTested: false,
+      detectionStatus: 'DETECTION_UNVERIFIED',
+      restrictionStatus: 'RESTRICTION_UNAVAILABLE',
+      lastVerificationDate: null,
+      limitations: 'TradingView chart embed handles orders independently of parent DOM.'
+    }
+  };
+
+  function getBrokerAdapterProfile(hostname) {
+    if (!hostname) {
+      return {
+        name: 'Unsupported Broker',
+        domain: '',
+        domainRecognized: false,
+        pageStructureRecognized: false,
+        tradeDataDetectionVerified: false,
+        positionStateDetectionVerified: false,
+        newOrderRestrictionImplemented: false,
+        newOrderRestrictionTested: false,
+        riskReducingActionBehaviorTested: false,
+        detectionStatus: 'UNSUPPORTED',
+        restrictionStatus: 'RESTRICTION_UNAVAILABLE',
+        lastVerificationDate: null,
+        limitations: 'Domain not recognized as a supported broker integration.'
+      };
+    }
+    var h = String(hostname).toLowerCase().trim();
+    for (var d in BROKER_PROFILES) {
+      if (h === d || h.endsWith('.' + d)) {
+        var copy = Object.assign({}, BROKER_PROFILES[d]);
+        copy.hostname = h;
+        return copy;
+      }
+    }
+    return {
+      name: hostname,
+      domain: hostname,
+      domainRecognized: false,
+      pageStructureRecognized: false,
+      tradeDataDetectionVerified: false,
+      positionStateDetectionVerified: false,
+      newOrderRestrictionImplemented: false,
+      newOrderRestrictionTested: false,
+      riskReducingActionBehaviorTested: false,
+      detectionStatus: 'UNSUPPORTED',
+      restrictionStatus: 'RESTRICTION_UNAVAILABLE',
+      lastVerificationDate: null,
+      limitations: 'Domain not recognized as a supported broker integration.'
+    };
+  }
+
+  function adapterStatus(hostname) {
+    var p = getBrokerAdapterProfile(hostname);
+    return {
+      detectionStatus: p.detectionStatus,
+      restrictionStatus: p.restrictionStatus,
+      domainRecognized: p.domainRecognized,
+      tested: p.newOrderRestrictionTested,
+      limitations: p.limitations
+    };
+  }
+
+  function getEnforcementLabel(hostname, mode) {
+    var p = getBrokerAdapterProfile(hostname);
+    if (mode === 'warning') {
+      return {
+        badgeText: '⚠️ DISCIPLINE WARNING',
+        badgeBg: 'rgba(245,158,11,0.2)',
+        badgeColor: '#fbbf24',
+        desc: 'Mode A: Warning overlay active. Broker page remains interactive. Orders are not blocked.'
+      };
+    }
+    if (mode === 'order_restrict') {
+      if (p.restrictionStatus === 'RESTRICTION_TESTED') {
+        return {
+          badgeText: '🛡️ RESTRICTION VERIFIED',
+          badgeBg: 'rgba(34,197,94,0.2)',
+          badgeColor: '#4ade80',
+          desc: 'Mode B: New orders intercepted on verified adapter (' + p.name + '). Emergency exits preserved.'
+        };
+      }
+      if (p.newOrderRestrictionImplemented) {
+        return {
+          badgeText: '⚠️ ENFORCEMENT TEST REQUIRED',
+          badgeBg: 'rgba(245,158,11,0.2)',
+          badgeColor: '#fbbf24',
+          desc: 'Mode B: Adapter implemented for ' + p.name + ' but unverified in live environment. Running in Warning Mode.'
+        };
+      }
+      return {
+        badgeText: '⚠️ RESTRICTION UNAVAILABLE',
+        badgeBg: 'rgba(239,68,68,0.2)',
+        badgeColor: '#f87171',
+        desc: 'Mode B: Order restriction unavailable for ' + (p.domainRecognized ? p.name : hostname) + '. Warning overlay displayed.'
+      };
+    }
+    if (mode === 'full_site') {
+      return {
+        badgeText: '🔒 FULL TRADING-SITE RESTRICTION',
+        badgeBg: 'rgba(239,68,68,0.2)',
+        badgeColor: '#f87171',
+        desc: 'Mode C: Whole broker website restricted. Caution: Access to open positions may be blocked.'
+      };
+    }
+    if (mode === 'chart_only') {
+      return {
+        badgeText: '📊 CHART RESTRICTION ACTIVE',
+        badgeBg: 'rgba(168,85,247,0.2)',
+        badgeColor: '#c084fc',
+        desc: 'Mode D: Charting sites restricted. Order entry on separate broker tabs is not blocked.'
+      };
+    }
+    return {
+      badgeText: '⚠️ DISCIPLINE REMINDER',
+      badgeBg: 'rgba(245,158,11,0.2)',
+      badgeColor: '#fbbf24',
+      desc: 'Discipline reminder active.'
+    };
+  }
+
+  var VERIFIED_RESTRICTION_BROKERS = [
+    'kite.zerodha.com',
+    'web.dhan.co'
+  ];
+
+  function isVerifiedOrderRestrictionBroker(hostname) {
+    if (!hostname) return false;
+    var h = String(hostname).toLowerCase().trim();
+    return VERIFIED_RESTRICTION_BROKERS.some(function (b) {
+      return h === b || h.endsWith('.' + b);
+    });
+  }
+
   var api = {
     REJECT_WORDS: REJECT_WORDS,
+    PENDING_WORDS: PENDING_WORDS,
+    PARTIAL_WORDS: PARTIAL_WORDS,
     DONE_WORDS: DONE_WORDS,
     QTY_KEYS: QTY_KEYS,
     PRICE_KEYS: PRICE_KEYS,
     PNL_KEYS: PNL_KEYS,
     NETQTY_KEYS: NETQTY_KEYS,
+    BROKER_PROFILES: BROKER_PROFILES,
+    getBrokerAdapterProfile: getBrokerAdapterProfile,
+    adapterStatus: adapterStatus,
+    getEnforcementLabel: getEnforcementLabel,
+    VERIFIED_RESTRICTION_BROKERS: VERIFIED_RESTRICTION_BROKERS,
+    isVerifiedOrderRestrictionBroker: isVerifiedOrderRestrictionBroker,
     parseNum: parseNum,
     parseQty: parseQty,
     statusOf: statusOf,

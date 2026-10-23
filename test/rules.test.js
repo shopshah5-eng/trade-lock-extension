@@ -549,3 +549,70 @@ test('state status machine advances from NORMAL to WARNING to REVIEW to LOCKED',
   assert.strictEqual(tickLocked.state.lock.mode, 'warning');
 });
 
+test('resetDailyStats resets counters without clearing active lock or deleting log', () => {
+  const t0 = ist(2026, 10, 14, 10, 0);
+  const s0 = R.defaultState(t0);
+  s0.session.trades = 4;
+  s0.session.pnl = -3000;
+  s0.lock = { active: true, reason: 'Loss limit hit', since: t0 - 500, until: t0 + 10000, manual: false };
+  s0.log = [{ symbol: 'SBIN', pnl: -3000, risk: 500 }];
+
+  const res = R.resetDailyStats(s0, t0);
+  assert.strictEqual(res.session.trades, 0);
+  assert.strictEqual(res.session.pnl, 0);
+  assert.strictEqual(res.lock.active, true, 'Active rule lock must remain intact');
+  assert.strictEqual(res.log.length, 1, 'Trade log journal must be preserved');
+  assert.strictEqual(res.audit[0].action, 'STATS_RESET');
+});
+
+test('releaseManualLock releases focus locks but rejects rule-triggered financial locks', () => {
+  const t0 = ist(2026, 10, 14, 10, 0);
+  const sRule = R.defaultState(t0);
+  sRule.lock = { active: true, reason: 'Daily loss limit reached', until: t0 + 20000, manual: false };
+
+  const rejectRuleRelease = R.releaseManualLock(sRule, t0);
+  assert.strictEqual(rejectRuleRelease.success, false);
+  assert.strictEqual(rejectRuleRelease.reason, 'RULE_LOCK_PROTECTED');
+  assert.strictEqual(sRule.lock.active, true, 'Rule lock must NOT be released');
+
+  const sManual = R.defaultState(t0);
+  sManual.lock = { active: true, reason: 'Manual lock triggered', until: t0 + 20000, manual: true };
+  const acceptManualRelease = R.releaseManualLock(sManual, t0);
+  assert.strictEqual(acceptManualRelease.success, true);
+  assert.strictEqual(sManual.lock.active, false, 'Manual focus lock is successfully released');
+});
+
+test('emergencyOverrideLock requires exact confirmation phrase and records audit reason', () => {
+  const t0 = ist(2026, 10, 14, 10, 0);
+  const s = R.defaultState(t0);
+  s.lock = { active: true, reason: 'Max trades hit', until: t0 + 20000, manual: false };
+
+  const failedOverride = R.emergencyOverrideLock(s, 'WRONG_CODE', 'test', t0);
+  assert.strictEqual(failedOverride.success, false);
+  assert.strictEqual(s.lock.active, true);
+
+  const okOverride = R.emergencyOverrideLock(s, 'I_ACCEPT_THE_RISK', 'Need to adjust hedge position', t0);
+  assert.strictEqual(okOverride.success, true);
+  assert.strictEqual(s.lock.active, false);
+  assert.strictEqual(s.audit.length, 1);
+  assert.strictEqual(s.audit[0].action, 'EMERGENCY_LOCK_OVERRIDE');
+  assert.strictEqual(s.audit[0].justification, 'Need to adjust hedge position');
+});
+
+test('resetDay with preserveActiveRuleLock preserves active rule lock unless emergencyOverride is provided', () => {
+  const t0 = ist(2026, 10, 14, 10, 0);
+  const s = R.defaultState(t0);
+  s.session.trades = 5;
+  s.lock = { active: true, reason: 'Max trades cap', until: t0 + 3600000, manual: false };
+
+  // UI daily reset flow with preserveActiveRuleLock
+  const preserved = R.resetDay(s, S, t0, { preserveActiveRuleLock: true });
+  assert.strictEqual(preserved.session.trades, 0);
+  assert.strictEqual(preserved.lock.active, true, 'Active rule lock must be preserved');
+  assert.strictEqual(preserved.lock.reason, 'Max trades cap');
+
+  // Emergency override reset
+  const cleared = R.resetDay(s, S, t0, { preserveActiveRuleLock: true, emergencyOverride: true });
+  assert.strictEqual(cleared.lock.active, false, 'Emergency override clears rule lock');
+});
+

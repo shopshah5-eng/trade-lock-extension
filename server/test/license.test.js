@@ -168,3 +168,14 @@ test('payment order creation and verification security abuse-cases', async (t) =
   assert.strictEqual(repeatRes.body.licenseKey, firstKey, 'returns original key without minting duplicate');
 });
 
+test('store persists processed webhook event IDs to prevent duplicate fulfillment after restart', () => {
+  const eventId = 'evt_test_dedup_' + Date.now();
+  store.processedWebhooks[eventId] = { receivedAt: Date.now(), event: 'payment.captured' };
+  store.saveSync();
+
+  // Reload store from disk to simulate complete process restart
+  store.reload();
+  assert.ok(store.processedWebhooks[eventId], 'Webhook event ID persisted across store reload');
+  assert.strictEqual(store.processedWebhooks[eventId].event, 'payment.captured');
+});
+

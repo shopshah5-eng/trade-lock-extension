@@ -313,14 +313,50 @@
     });
   });
   els.resetDay.addEventListener('click', function () {
-    if (!confirm('Reset today\u2019s counters and clear any lock?')) return;
+    var st = view.state;
+    var isRuleLock = st && st.lock && st.lock.active && !st.lock.manual;
+    if (isRuleLock) {
+      if (!confirm('An automated risk rule lock is ACTIVE (' + (st.lock.reason || 'Trading Limit') + ').\n\nRule-triggered locks cannot be cleared by resetting daily statistics and remain active until next market open (09:15 IST).\n\nDo you want to reset displayed daily statistics only?')) return;
+      activeTab().then(function (tab) {
+        var p = (tab && tab.id) ? tabMessage(tab.id, 'TL_RESET_STATS') : Promise.resolve(null);
+        p.then(function (res) {
+          if (res && res.ok) { view.state = res.state; render(); tick(); return; }
+          chrome.storage.local.get(['tlState', 'tlSettings'], function (r2) {
+            var cur = r2.tlState || st;
+            R.resetDailyStats(cur, Date.now());
+            chrome.storage.local.set({ tlState: cur, tlSavedAt: Date.now() }, function () {
+              send('TL_REFRESH'); view.state = cur; render(); tick();
+            });
+          });
+        });
+      });
+      return;
+    }
+    var isManualLock = st && st.lock && st.lock.active && st.lock.manual;
+    if (isManualLock) {
+      if (!confirm('You have an active voluntary focus lock.\n\nRelease this focus lock and reset counters?')) return;
+      activeTab().then(function (tab) {
+        var p = (tab && tab.id) ? tabMessage(tab.id, 'TL_RELEASE_MANUAL') : Promise.resolve(null);
+        p.then(function () {
+          chrome.storage.local.get(['tlState', 'tlSettings'], function (r2) {
+            var settings = Object.assign({}, R.DEFAULT_SETTINGS, r2.tlSettings || {});
+            var state = R.resetDay(r2.tlState, settings, Date.now());
+            chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }, function () {
+              send('TL_REFRESH'); view.state = state; view.copy = null; render(); tick();
+            });
+          });
+        });
+      });
+      return;
+    }
+    if (!confirm('Reset today’s counters for a fresh trading session?')) return;
     activeTab().then(function (tab) {
       var p = (tab && tab.id) ? tabMessage(tab.id, 'TL_RESET') : Promise.resolve(null);
       p.then(function (res) {
         if (res && res.ok) { view.state = res.state; render(); tick(); return; }
-        chrome.storage.local.get('tlSettings', function (r2) {
+        chrome.storage.local.get(['tlState', 'tlSettings'], function (r2) {
           var settings = Object.assign({}, R.DEFAULT_SETTINGS, r2.tlSettings || {});
-          var state = R.resetDay(null, settings, Date.now());
+          var state = R.resetDay(r2.tlState || null, settings, Date.now());
           chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }, function () {
             send('TL_REFRESH'); view.state = state; view.copy = null; render(); tick();
           });

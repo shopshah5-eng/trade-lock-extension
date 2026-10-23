@@ -2,76 +2,381 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Fake Broker — Order Book (Trade Lock test fixture)</title>
+<title>Fake Broker — Deterministic Trade Lock Test Fixture</title>
 <style>
-  body { font: 13px/1.5 system-ui, sans-serif; background:#11151f; color:#dfe5f0; margin:0; padding:24px; }
-  h1 { font-size:16px; margin:0 0 4px; }
-  p.sub { color:#8b94a8; margin:0 0 18px; font-size:12px; }
-  table { border-collapse:collapse; width:100%; max-width:820px; background:#171c28; }
-  th, td { padding:7px 10px; border-bottom:1px solid #232a3a; text-align:left; font-variant-numeric:tabular-nums; }
-  th { background:#1d2432; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#8b94a8; }
-  .done { color:#37d39b; } .rej { color:#ff6b6b; }
-  button { margin-top:16px; font:inherit; padding:8px 14px; border-radius:8px;
-           background:#263048; color:#dfe5f0; border:1px solid #3a4763; cursor:pointer; margin-right:8px; }
-  button:hover { background:#31405f; }
-  .target { padding:14px; background:#171c28; border:1px dashed #3a4763; border-radius:10px; margin-top:20px; max-width:420px; }
+  :root {
+    --bg: #0b0f19;
+    --card: #151b28;
+    --border: #242d3d;
+    --text: #e2e8f0;
+    --muted: #8b94a8;
+    --green: #10b981;
+    --red: #ef4444;
+    --amber: #f59e0b;
+    --blue: #3b82f6;
+    --purple: #8b5cf6;
+  }
+  body { font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--text); margin:0; padding:24px; }
+  h1 { font-size:18px; margin:0 0 6px; display:flex; align-items:center; gap:8px; }
+  p.sub { color:var(--muted); margin:0 0 20px; font-size:12px; }
+  .badge { display:inline-block; font-size:11px; font-weight:700; padding:3px 8px; border-radius:6px; background:rgba(59,130,246,0.15); color:var(--blue); }
+  .badge.synthetic { background:rgba(245,158,11,0.15); color:var(--amber); }
+
+  .layout { display:grid; grid-template-columns:1fr 340px; gap:20px; max-width:1240px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px; margin-bottom:18px; }
+  .card h2 { font-size:14px; margin:0 0 12px; display:flex; justify-content:space-between; align-items:center; }
+  
+  table { border-collapse:collapse; width:100%; background:#101522; border-radius:8px; overflow:hidden; }
+  th, td { padding:8px 12px; border-bottom:1px solid #1e2638; text-align:left; font-variant-numeric:tabular-nums; font-size:12px; }
+  th { background:#192132; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+  tr:last-child td { border-bottom:none; }
+  
+  .status-complete { color:var(--green); font-weight:600; }
+  .status-open { color:var(--blue); font-weight:600; }
+  .status-rejected { color:var(--red); font-weight:600; }
+  .status-partial { color:var(--amber); font-weight:600; }
+
+  .btn-grid { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+  button { font:inherit; font-size:12px; font-weight:600; padding:7px 12px; border-radius:7px;
+           background:#1f283b; color:var(--text); border:1px solid #334155; cursor:pointer; transition:all .15s; }
+  button:hover { background:#2d3a54; border-color:#475569; }
+  button.primary { background:#2563eb; border-color:#3b82f6; color:#fff; }
+  button.danger { background:rgba(239,68,68,0.2); border-color:var(--red); color:#fca5a5; }
+  button.success { background:rgba(16,185,129,0.2); border-color:var(--green); color:#86efac; }
+  button.warning { background:rgba(245,158,11,0.2); border-color:var(--amber); color:#fcd34d; }
+
+  .order-btn-group { display:flex; gap:8px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
+  .order-btn-buy { background:#16a34a; border-color:#22c55e; color:#fff; }
+  .order-btn-sell { background:#dc2626; border-color:#ef4444; color:#fff; }
+  .order-btn-exit { background:#d97706; border-color:#f59e0b; color:#fff; }
+
+  .stat-row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06); font-size:12px; }
+  .stat-row:last-child { border-bottom:none; }
+  .stat-val { font-weight:700; font-family:monospace; }
+  
+  .banner-stale { display:none; background:rgba(239,68,68,0.15); border:1px solid var(--red); color:#fca5a5; padding:10px 14px; border-radius:8px; margin-bottom:16px; font-size:12px; }
+  .banner-info { background:rgba(59,130,246,0.1); border:1px solid rgba(59,130,246,0.3); color:#93c5fd; padding:10px 14px; border-radius:8px; margin-bottom:16px; font-size:12px; }
+
+  .pagination { display:flex; align-items:center; justify-content:space-between; margin-top:10px; font-size:11px; color:var(--muted); }
 </style>
 </head>
 <body>
-  <h1>Fake Broker — Order Book</h1>
-  <p class="sub">Test fixture for Trade Lock. Not a real broker; nothing here places orders.</p>
 
-  <table id="orderbook">
-    <thead>
-      <tr><th>Time</th><th>Instrument</th><th>Type</th><th>Quantity</th><th>Price</th><th>Status</th></tr>
-    </thead>
-    <tbody id="rows">
-      <tr><td>09:31:12</td><td>RELIANCE</td><td>BUY</td><td>75</td><td>2,450.10</td><td class="done">COMPLETE</td></tr>
-      <tr><td>09:48:03</td><td>TATASTEEL</td><td>SELL</td><td>500</td><td>145.25</td><td class="done">COMPLETE</td></tr>
-      <tr><td>10:02:55</td><td>INFY</td><td>BUY</td><td>100</td><td>1,812.00</td><td class="rej">REJECTED</td></tr>
-    </tbody>
-  </table>
+  <h1>
+    <span>Fake Broker Test Terminal</span>
+    <span class="badge synthetic">Synthetic Test Fixture</span>
+    <span class="badge">Trade Lock Phase 14</span>
+  </h1>
+  <p class="sub">
+    Deterministic sandbox simulating Indian equity order book & positions states. Not a real broker. Does not place financial orders.
+  </p>
 
-  <div>
-    <button id="addFill">Add a COMPLETE fill</button>
-    <button id="clear">Clear the book</button>
+  <div id="staleBanner" class="banner-stale">
+    ⚠️ <b>STALE DATA SIMULATION ACTIVE</b>: DOM updates paused. Timestamps frozen to verify stale page detector tolerance.
   </div>
 
-  <div class="target">
-    <b>Click target</b><br>
-    <span id="clickCount" style="color:#8b94a8">clicks reached the page: 0</span>
+  <div class="banner-info">
+    💡 <b>Controlled Scenarios</b>: Test pending order vs completed fill counting, partial fills, open positions vs closed positions, layout changes, and Mode B emergency exit exemption.
+  </div>
+
+  <div class="layout">
+    <div class="main-col">
+
+      <!-- Scenario Switcher Bar -->
+      <div class="card">
+        <h2>Deterministic Scenarios</h2>
+        <div class="btn-grid">
+          <button id="btnScenarioPending" class="primary">1. Pending Order (OPEN)</button>
+          <button id="btnScenarioComplete" class="success">2. Completed Fill (COMPLETE)</button>
+          <button id="btnScenarioPartial" class="warning">3. Partial Fill (PARTIAL)</button>
+          <button id="btnScenarioMultiPartial">4. Multiple Partial Fills</button>
+          <button id="btnScenarioOpenPos" class="primary">5. Open Position (Net qty > 0)</button>
+          <button id="btnScenarioClosedPos">6. Closed Position (Net qty = 0)</button>
+          <button id="btnScenarioDuplicate">7. Duplicate Rows</button>
+          <button id="btnScenarioPagination">8. Pagination Toggle</button>
+          <button id="btnScenarioLayout" class="warning">9. Alter Table Headers</button>
+          <button id="btnScenarioMalformed" class="danger">10. Malformed Data</button>
+          <button id="btnScenarioMissing" class="danger">11. Hide Order Table</button>
+          <button id="btnScenarioStale">12. Stale Page Toggle</button>
+          <button id="btnScenarioReset" class="ghost">↺ Reset Default Book</button>
+        </div>
+      </div>
+
+      <!-- Orders Section -->
+      <div class="card" id="ordersCard">
+        <h2>
+          <span>Order Book (<span id="orderCount">3</span> rows)</span>
+          <span style="font-size:12px;color:var(--muted)">status column determines fill</span>
+        </h2>
+        <table id="orderTable">
+          <thead>
+            <tr id="orderHeaderRow">
+              <th>Time</th><th>Instrument</th><th>Type</th><th>Quantity</th><th>Price</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="orderRows">
+            <tr><td>09:31:12</td><td>RELIANCE</td><td>BUY</td><td>75</td><td>2,450.10</td><td class="status-complete">COMPLETE</td></tr>
+            <tr><td>09:48:03</td><td>TATASTEEL</td><td>SELL</td><td>500</td><td>145.25</td><td class="status-complete">COMPLETE</td></tr>
+            <tr><td>10:02:55</td><td>INFY</td><td>BUY</td><td>100</td><td>1,812.00</td><td class="status-open">OPEN</td></tr>
+          </tbody>
+        </table>
+        <div class="pagination" id="orderPagination" style="display:none">
+          <span>Showing page 1 of 2 (3 rows per page)</span>
+          <div>
+            <button id="btnPrevPage" disabled>← Prev</button>
+            <button id="btnNextPage">Next →</button>
+          </div>
+        </div>
+
+        <!-- Interactive order entry emulation for Mode B / Mode C testing -->
+        <div class="order-btn-group">
+          <button id="btnMockBuy" class="order-btn-buy">Place Buy Order</button>
+          <button id="btnMockSell" class="order-btn-sell">Place Sell Order</button>
+          <button id="btnMockSquareOff" class="order-btn-exit">Square off (Exit Position)</button>
+          <button id="btnMockCancel" class="danger">Cancel Pending</button>
+        </div>
+        <div id="actionFeedback" style="margin-top:10px;font-size:11px;color:var(--muted)">
+          Last Action: None
+        </div>
+      </div>
+
+      <!-- Positions Section -->
+      <div class="card" id="positionsCard">
+        <h2>
+          <span>Positions (<span id="posCount">2</span> rows)</span>
+          <span style="font-size:12px;color:var(--muted)">Net Qty != 0 indicates open exposure</span>
+        </h2>
+        <table id="positionTable">
+          <thead>
+            <tr>
+              <th>Trading Symbol</th><th>Buy Qty</th><th>Sell Qty</th><th>Net Qty</th><th>LTP</th><th>Net P&amp;L</th>
+            </tr>
+          </thead>
+          <tbody id="positionRows">
+            <tr><td>SBIN</td><td>200</td><td>0</td><td>200</td><td>812.35</td><td style="color:var(--red)">(1,240.00)</td></tr>
+            <tr><td>HDFCBANK</td><td>150</td><td>150</td><td>0</td><td>1,690.00</td><td style="color:var(--green)">+3,510.50</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+
+    <!-- Inspector Sidebar -->
+    <div class="side-col">
+      <div class="card">
+        <h2>Detection Inspector</h2>
+        <div class="stat-row">
+          <span>Completed Orders:</span>
+          <span id="statCompletedOrders" class="stat-val" style="color:var(--green)">2</span>
+        </div>
+        <div class="stat-row">
+          <span>Pending Orders (OPEN):</span>
+          <span id="statPendingOrders" class="stat-val" style="color:var(--blue)">1</span>
+        </div>
+        <div class="stat-row">
+          <span>Open Positions (Net != 0):</span>
+          <span id="statOpenPositions" class="stat-val" style="color:var(--amber)">1</span>
+        </div>
+        <div class="stat-row">
+          <span>Closed Positions (Net == 0):</span>
+          <span id="statClosedPositions" class="stat-val">1</span>
+        </div>
+        <div class="stat-row">
+          <span>Realized P&amp;L Sum:</span>
+          <span id="statPnlSum" class="stat-val" style="color:var(--green)">+₹2,270.50</span>
+        </div>
+        <div class="stat-row">
+          <span>Click Count Reached:</span>
+          <span id="statClicks" class="stat-val">0</span>
+        </div>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+          <button id="btnRunScan" style="width:100%">Run Local DOM Scan</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Discipline Safeguards</h2>
+        <p style="font-size:11px;color:var(--muted);line-height:1.5;margin:0 0 10px">
+          <b>Rule Evaluation Rule:</b> An order with status <code>OPEN</code> represents an unexecuted order and must NOT increment daily executed trade counters.
+        </p>
+        <p style="font-size:11px;color:var(--muted);line-height:1.5;margin:0">
+          <b>Emergency Exits:</b> In Mode B (Order Restriction), clicking <code>Square off</code> or <code>Cancel</code> must remain accessible even when new Buy/Sell entries are intercepted.
+        </p>
+      </div>
+    </div>
   </div>
 
 <script>
-  var n = 2;
-  var clicks = 0;
-  var el = document.getElementById('clickCount');
-
-  // Lets the e2e test prove the tamper-reload actually happened.
-  try {
-    var c = Number(localStorage.getItem('tl-test-reloads') || '0') + 1;
-    localStorage.setItem('tl-test-reloads', String(c));
-  } catch (e) {}
+  'use strict';
+  var clickCount = 0;
+  var actionFeedback = document.getElementById('actionFeedback');
+  var statClicks = document.getElementById('statClicks');
 
   document.addEventListener('click', function (e) {
-    if (e.target && (e.target.id === 'addFill' || e.target.id === 'clear')) return;
-    clicks++;
-    el.textContent = 'clicks reached the page: ' + clicks;
-    el.style.color = '#ffb020';
+    clickCount++;
+    statClicks.textContent = clickCount;
   }, true);
 
-  document.getElementById('addFill').addEventListener('click', function () {
-    n++;
-    var tr = document.createElement('tr');
-    var t = new Date().toTimeString().slice(0, 8);
-    tr.innerHTML = '<td>' + t + '</td><td>SBIN-' + n + '</td><td>BUY</td><td>100</td>' +
-                   '<td>812.35</td><td class="done">COMPLETE</td>';
-    document.getElementById('rows').appendChild(tr);
+  function logAction(name, permitted) {
+    var ts = new Date().toTimeString().slice(0, 8);
+    actionFeedback.innerHTML = '<span style="color:' + (permitted ? 'var(--green)' : 'var(--red)') + '">' +
+      '[' + ts + '] ' + name + (permitted ? ' (Executed)' : ' (BLOCKED)') + '</span>';
+  }
+
+  document.getElementById('btnMockBuy').addEventListener('click', function () { logAction('Buy Order (New Risk)', true); });
+  document.getElementById('btnMockSell').addEventListener('click', function () { logAction('Sell Order (New Risk)', true); });
+  document.getElementById('btnMockSquareOff').addEventListener('click', function () { logAction('Square off (Risk-Reducing Exit)', true); });
+  document.getElementById('btnMockCancel').addEventListener('click', function () { logAction('Cancel Order', true); });
+
+  var tbodyOrders = document.getElementById('orderRows');
+  var tbodyPositions = document.getElementById('positionRows');
+  var orderTable = document.getElementById('orderTable');
+  var headerRow = document.getElementById('orderHeaderRow');
+
+  function updateCounts() {
+    var rows = tbodyOrders.querySelectorAll('tr');
+    document.getElementById('orderCount').textContent = rows.length;
+    var posRows = tbodyPositions.querySelectorAll('tr');
+    document.getElementById('posCount').textContent = posRows.length;
+  }
+
+  // Preset Scenario Handlers
+  document.getElementById('btnScenarioPending').addEventListener('click', function () {
+    tbodyOrders.innerHTML = [
+      '<tr><td>10:15:00</td><td>NIFTY 25000 CE</td><td>BUY</td><td>100</td><td>120.00</td><td class="status-open">OPEN</td></tr>',
+      '<tr><td>10:15:30</td><td>BANKNIFTY FUT</td><td>SELL</td><td>30</td><td>52,100.00</td><td class="status-open">TRIGGER PENDING</td></tr>'
+    ].join('');
+    updateCounts();
+    logAction('Scenario Loaded: Pending Orders Only (0 Fills)', true);
   });
 
-  document.getElementById('clear').addEventListener('click', function () {
-    document.getElementById('rows').innerHTML = '';
+  document.getElementById('btnScenarioComplete').addEventListener('click', function () {
+    tbodyOrders.innerHTML = [
+      '<tr><td>09:31:12</td><td>RELIANCE</td><td>BUY</td><td>75</td><td>2,450.10</td><td class="status-complete">COMPLETE</td></tr>',
+      '<tr><td>09:48:03</td><td>TATASTEEL</td><td>SELL</td><td>500</td><td>145.25</td><td class="status-complete">COMPLETE</td></tr>',
+      '<tr><td>10:02:55</td><td>INFY</td><td>BUY</td><td>100</td><td>1,812.00</td><td class="status-complete">EXECUTED</td></tr>'
+    ].join('');
+    updateCounts();
+    logAction('Scenario Loaded: 3 Completed Orders', true);
   });
+
+  document.getElementById('btnScenarioPartial').addEventListener('click', function () {
+    tbodyOrders.innerHTML = [
+      '<tr><td>10:30:00</td><td>SBIN</td><td>BUY</td><td>200</td><td>810.00</td><td class="status-partial">PARTIALLY FILLED (50/200)</td></tr>'
+    ].join('');
+    updateCounts();
+    logAction('Scenario Loaded: Partial Fill', true);
+  });
+
+  document.getElementById('btnScenarioMultiPartial').addEventListener('click', function () {
+    tbodyOrders.innerHTML = [
+      '<tr><td>10:30:00</td><td>SBIN</td><td>BUY</td><td>50</td><td>810.00</td><td class="status-complete">COMPLETE</td></tr>',
+      '<tr><td>10:30:05</td><td>SBIN</td><td>BUY</td><td>50</td><td>810.05</td><td class="status-complete">COMPLETE</td></tr>',
+      '<tr><td>10:30:10</td><td>SBIN</td><td>BUY</td><td>100</td><td>810.10</td><td class="status-open">OPEN</td></tr>'
+    ].join('');
+    updateCounts();
+    logAction('Scenario Loaded: Multi Partial Fill Slices', true);
+  });
+
+  document.getElementById('btnScenarioOpenPos').addEventListener('click', function () {
+    tbodyPositions.innerHTML = [
+      '<tr><td>NIFTY26OCT25000CE</td><td>150</td><td>0</td><td>150</td><td>135.50</td><td style="color:var(--red)">(2,400.00)</td></tr>',
+      '<tr><td>RELIANCE</td><td>100</td><td>0</td><td>100</td><td>2,480.00</td><td style="color:var(--green)">+1,200.00</td></tr>'
+    ].join('');
+    updateCounts();
+    logAction('Scenario Loaded: Open Positions Active (Net != 0)', true);
+  });
+
+  document.getElementById('btnScenarioClosedPos').addEventListener('click', function () {
+    tbodyPositions.innerHTML = [
+      '<tr><td>NIFTY26OCT25000CE</td><td>150</td><td>150</td><td>0</td><td>135.50</td><td style="color:var(--green)">+4,500.00</td></tr>',
+      '<tr><td>RELIANCE</td><td>100</td><td>100</td><td>0</td><td>2,480.00</td><td style="color:var(--green)">+850.00</td></tr>'
+    ].join('');
+    updateCounts();
+    logAction('Scenario Loaded: Closed Positions (All Squared Off)', true);
+  });
+
+  document.getElementById('btnScenarioDuplicate').addEventListener('click', function () {
+    tbodyOrders.innerHTML = [
+      '<tr><td>09:31:12</td><td>RELIANCE</td><td>BUY</td><td>75</td><td>2,450.10</td><td class="status-complete">COMPLETE</td></tr>',
+      '<tr><td>09:31:12</td><td>RELIANCE</td><td>BUY</td><td>75</td><td>2,450.10</td><td class="status-complete">COMPLETE</td></tr>',
+      '<tr><td>09:31:12</td><td>RELIANCE</td><td>BUY</td><td>75</td><td>2,450.10</td><td class="status-complete">COMPLETE</td></tr>'
+    ].join('');
+    updateCounts();
+    logAction('Scenario Loaded: Duplicate Rows (Deduplication Test)', true);
+  });
+
+  var paginationActive = false;
+  document.getElementById('btnScenarioPagination').addEventListener('click', function () {
+    paginationActive = !paginationActive;
+    document.getElementById('orderPagination').style.display = paginationActive ? 'flex' : 'none';
+    logAction('Pagination toggle: ' + (paginationActive ? 'Enabled' : 'Disabled'), true);
+  });
+
+  var alteredHeaders = false;
+  document.getElementById('btnScenarioLayout').addEventListener('click', function () {
+    alteredHeaders = !alteredHeaders;
+    if (alteredHeaders) {
+      headerRow.innerHTML = '<th>Order Time</th><th>Scrip</th><th>Side</th><th>Traded Qty</th><th>Avg Price</th><th>Order Status</th>';
+    } else {
+      headerRow.innerHTML = '<th>Time</th><th>Instrument</th><th>Type</th><th>Quantity</th><th>Price</th><th>Status</th>';
+    }
+    logAction('Layout change: ' + (alteredHeaders ? 'Altered Column Headers' : 'Standard Headers'), true);
+  });
+
+  document.getElementById('btnScenarioMalformed').addEventListener('click', function () {
+    tbodyOrders.innerHTML = [
+      '<tr><td>INVALID</td><td>---</td><td>N/A</td><td>--</td><td>NaN</td><td>CORRUPTED</td></tr>'
+    ].join('');
+    updateCounts();
+    logAction('Scenario Loaded: Malformed Data Rows', true);
+  });
+
+  document.getElementById('btnScenarioMissing').addEventListener('click', function () {
+    var tbl = document.getElementById('ordersCard');
+    tbl.style.display = tbl.style.display === 'none' ? 'block' : 'none';
+    logAction('Order Table Visibility: ' + tbl.style.display, true);
+  });
+
+  var staleActive = false;
+  document.getElementById('btnScenarioStale').addEventListener('click', function () {
+    staleActive = !staleActive;
+    document.getElementById('staleBanner').style.display = staleActive ? 'block' : 'none';
+    logAction('Stale simulation: ' + (staleActive ? 'Active' : 'Inactive'), true);
+  });
+
+  document.getElementById('btnScenarioReset').addEventListener('click', function () {
+    tbodyOrders.innerHTML = [
+      '<tr><td>09:31:12</td><td>RELIANCE</td><td>BUY</td><td>75</td><td>2,450.10</td><td class="status-complete">COMPLETE</td></tr>',
+      '<tr><td>09:48:03</td><td>TATASTEEL</td><td>SELL</td><td>500</td><td>145.25</td><td class="status-complete">COMPLETE</td></tr>',
+      '<tr><td>10:02:55</td><td>INFY</td><td>BUY</td><td>100</td><td>1,812.00</td><td class="status-open">OPEN</td></tr>'
+    ].join('');
+    tbodyPositions.innerHTML = [
+      '<tr><td>SBIN</td><td>200</td><td>0</td><td>200</td><td>812.35</td><td style="color:var(--red)">(1,240.00)</td></tr>',
+      '<tr><td>HDFCBANK</td><td>150</td><td>150</td><td>0</td><td>1,690.00</td><td style="color:var(--green)">+3,510.50</td></tr>'
+    ].join('');
+    headerRow.innerHTML = '<th>Time</th><th>Instrument</th><th>Type</th><th>Quantity</th><th>Price</th><th>Status</th>';
+    alteredHeaders = false;
+    staleActive = false;
+    document.getElementById('staleBanner').style.display = 'none';
+    updateCounts();
+    logAction('Reset to default test book', true);
+  });
+
+  document.getElementById('btnRunScan').addEventListener('click', function () {
+    if (window.TLDetect && window.TLDetect.scan) {
+      var res = window.TLDetect.scan(document);
+      document.getElementById('statCompletedOrders').textContent = res.orders.length;
+      document.getElementById('statPendingOrders').textContent = (res.pending || []).length;
+      document.getElementById('statOpenPositions').textContent = res.positions.filter(function (p) { return p.qty !== 0; }).length;
+      document.getElementById('statClosedPositions').textContent = res.positions.filter(function (p) { return p.qty === 0; }).length;
+      logAction('Scan complete: ' + res.orders.length + ' fills, ' + (res.pending || []).length + ' pending, ' + res.positions.length + ' positions', true);
+    } else {
+      logAction('TLDetect global not loaded in stand-alone view', false);
+    }
+  });
+
+  updateCounts();
 </script>
 </body>
 </html>

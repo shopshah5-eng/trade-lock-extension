@@ -90,41 +90,12 @@
     if (overlayEl) { try { overlayEl.remove(); } catch (e) {} }
 
     var mode = (settings && settings.enforcementMode) || 'warning';
-    var isVerifiedBroker = D && D.isVerifiedOrderRestrictionBroker ? D.isVerifiedOrderRestrictionBroker(location.hostname) : false;
+    var label = D && D.getEnforcementLabel ? D.getEnforcementLabel(location.hostname, mode) : null;
 
-    var modeBadgeText = '⚠️ DISCIPLINE WARNING';
-    var modeBadgeBg = 'rgba(245,158,11,0.2)';
-    var modeBadgeColor = '#fbbf24';
-    var modeDesc = 'Page remains interactive. Discipline reminder active.';
-
-    if (mode === 'warning') {
-      modeBadgeText = '⚠️ DISCIPLINE WARNING';
-      modeBadgeBg = 'rgba(245,158,11,0.2)';
-      modeBadgeColor = '#fbbf24';
-      modeDesc = 'Mode A: Page remains interactive. You can still place orders. This is a discipline reminder, not an enforced block.';
-    } else if (mode === 'order_restrict') {
-      if (isVerifiedBroker) {
-        modeBadgeText = '🛡️ ORDER RESTRICTION ACTIVE';
-        modeBadgeBg = 'rgba(59,130,246,0.2)';
-        modeBadgeColor = '#60a5fa';
-        modeDesc = 'Mode B: New orders intercepted on verified broker. Position exits (Square off / Exit / Cancel) remain accessible.';
-      } else {
-        modeBadgeText = '⚠️ ENFORCEMENT UNAVAILABLE';
-        modeBadgeBg = 'rgba(245,158,11,0.2)';
-        modeBadgeColor = '#fbbf24';
-        modeDesc = 'Broker adapter unverified for ' + location.hostname + '. Operating in Warning mode. Orders not blocked.';
-      }
-    } else if (mode === 'full_site') {
-      modeBadgeText = '🔒 FULL TRADING-SITE RESTRICTION';
-      modeBadgeBg = 'rgba(239,68,68,0.2)';
-      modeBadgeColor = '#f87171';
-      modeDesc = 'Mode C: Whole broker site restricted. Warning: Managing open positions may be blocked.';
-    } else if (mode === 'chart_only') {
-      modeBadgeText = '📊 CHART RESTRICTION ACTIVE';
-      modeBadgeBg = 'rgba(168,85,247,0.2)';
-      modeBadgeColor = '#c084fc';
-      modeDesc = 'Mode D: Charting sites restricted. Broker order entry elsewhere is not blocked.';
-    }
+    var modeBadgeText = label ? label.badgeText : '⚠️ DISCIPLINE WARNING';
+    var modeBadgeBg = label ? label.badgeBg : 'rgba(245,158,11,0.2)';
+    var modeBadgeColor = label ? label.badgeColor : '#fbbf24';
+    var modeDesc = label ? label.desc : 'Page remains interactive. Discipline reminder active.';
 
     var root = document.createElement('div');
     root.setAttribute('id', 'tl-lock-root');
@@ -482,7 +453,24 @@
     });
     el.querySelector('#tl-reset').addEventListener('click', function (e) {
       e.preventDefault();
-      if (confirm('Reset today\u2019s Trade Lock counters? This also clears an active lock.')) {
+      var isRuleLock = state.lock && state.lock.active && !state.lock.manual;
+      if (isRuleLock) {
+        if (confirm('An automated risk rule lock is ACTIVE (' + (state.lock.reason || 'Trading Limit') + ').\n\nRule-triggered locks cannot be cleared by resetting daily statistics and remain active until market open (09:15 IST).\n\nDo you want to reset displayed daily statistics only?')) {
+          state = R.resetDailyStats(state, Date.now());
+          saveState(); loop();
+        }
+        return;
+      }
+      var isManualLock = state.lock && state.lock.active && state.lock.manual;
+      if (isManualLock) {
+        if (confirm('You have a voluntary focus lock active. Release focus lock and reset counters?')) {
+          R.releaseManualLock(state, Date.now());
+          state = R.resetDay(state, settings, Date.now());
+          saveState(); loop();
+        }
+        return;
+      }
+      if (confirm('Reset today’s Trade Lock statistics for a new trading session?')) {
         state = R.resetDay(state, settings, Date.now());
         saveState(); loop();
       }
@@ -693,8 +681,33 @@
       sendResponse({ ok: true, state: state });
       return;
     }
-    if (msg.type === 'TL_RESET' || msg.type === 'TL_RELEASED') {
-      state = R.resetDay(state, settings, Date.now()); saveState(); loop();
+    if (msg.type === 'TL_RESET_STATS') {
+      state = R.resetDailyStats(state, Date.now()); saveState(); loop();
+      sendResponse({ ok: true, state: state });
+      return;
+    }
+    if (msg.type === 'TL_RELEASE_MANUAL') {
+      var rel = R.releaseManualLock(state, Date.now());
+      saveState(); loop();
+      sendResponse(rel);
+      return;
+    }
+    if (msg.type === 'TL_EMERGENCY_OVERRIDE') {
+      var em = R.emergencyOverrideLock(state, msg.confirmationCode, msg.reason, Date.now());
+      saveState(); loop();
+      sendResponse(em);
+      return;
+    }
+    if (msg.type === 'TL_RELEASED') {
+      state.lock = { active: false, reason: null, since: null, until: null, manual: false };
+      state.status = 'NORMAL'; state.statusReason = null;
+      saveState(); loop();
+      sendResponse({ ok: true, state: state });
+      return;
+    }
+    if (msg.type === 'TL_RESET') {
+      state = R.resetDay(state, settings, Date.now(), { emergencyOverride: msg.emergencyOverride });
+      saveState(); loop();
       sendResponse({ ok: true, state: state });
       return;
     }

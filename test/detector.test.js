@@ -253,3 +253,63 @@ test('isVerifiedOrderRestrictionBroker verifies supported broker adapters', () =
   assert.strictEqual(D.isVerifiedOrderRestrictionBroker(''), false);
   assert.strictEqual(D.isVerifiedOrderRestrictionBroker(null), false);
 });
+
+test('statusOf distinguishes OPEN pending orders from executed COMPLETE fills', () => {
+  assert.strictEqual(D.statusOf(['INFY', 'BUY', 'OPEN']), 'pending');
+  assert.strictEqual(D.statusOf(['TCS', 'SELL', 'MODIFY']), 'pending');
+  assert.strictEqual(D.statusOf(['SBIN', 'BUY', 'REQUESTED']), 'pending');
+  assert.strictEqual(D.statusOf(['RELIANCE', 'BUY', 'PARTIAL']), 'partial');
+  assert.strictEqual(D.statusOf(['RELIANCE', 'BUY', 'COMPLETE']), 'done');
+  assert.strictEqual(D.statusOf(['RELIANCE', 'BUY', 'EXECUTED']), 'done');
+});
+
+test('detectFromTables separates pending orders from completed fills', () => {
+  const { orders, pending, positions } = D.detectFromTables([{
+    headers: ['Time', 'Instrument', 'Type', 'Quantity', 'Price', 'Status'],
+    rows: [
+      ['09:31:12', 'RELIANCE', 'BUY', '75', '2,450.10', 'COMPLETE'],
+      ['10:02:44', 'INFY', 'BUY', '100', '1,812.00', 'OPEN'],
+      ['10:15:00', 'TATASTEEL', 'SELL', '500', '145.25', 'TRIGGER PENDING'],
+      ['10:30:00', 'SBIN', 'BUY', '200', '810.00', 'PARTIALLY FILLED']
+    ]
+  }]);
+
+  assert.strictEqual(orders.length, 1, 'Only COMPLETE row counted in executed orders');
+  assert.strictEqual(orders[0].symbol, 'RELIANCE');
+  assert.strictEqual(pending.length, 2, 'OPEN and PARTIAL rows placed in pending array');
+  assert.strictEqual(pending[0].symbol, 'INFY');
+  assert.strictEqual(positions.length, 0);
+});
+
+test('getBrokerAdapterProfile returns granular verification status and truthful limits', () => {
+  const kite = D.getBrokerAdapterProfile('kite.zerodha.com');
+  assert.strictEqual(kite.domainRecognized, true);
+  assert.strictEqual(kite.detectionStatus, 'DETECTION_VERIFIED');
+  assert.strictEqual(kite.restrictionStatus, 'RESTRICTION_UNAVAILABLE');
+  assert.strictEqual(kite.newOrderRestrictionTested, false);
+
+  const fakeBroker = D.getBrokerAdapterProfile('fake-broker.local');
+  assert.strictEqual(fakeBroker.domainRecognized, true);
+  assert.strictEqual(fakeBroker.restrictionStatus, 'RESTRICTION_TESTED');
+  assert.strictEqual(fakeBroker.newOrderRestrictionTested, true);
+
+  const unsupported = D.getBrokerAdapterProfile('unknown-site.org');
+  assert.strictEqual(unsupported.domainRecognized, false);
+  assert.strictEqual(unsupported.detectionStatus, 'UNSUPPORTED');
+});
+
+test('getEnforcementLabel provides truthful Mode A-D labels', () => {
+  const modeA = D.getEnforcementLabel('kite.zerodha.com', 'warning');
+  assert.match(modeA.badgeText, /DISCIPLINE WARNING/);
+  assert.match(modeA.desc, /Orders are not blocked/);
+
+  const modeBTested = D.getEnforcementLabel('fake-broker.local', 'order_restrict');
+  assert.match(modeBTested.badgeText, /RESTRICTION VERIFIED/);
+
+  const modeBUnverified = D.getEnforcementLabel('kite.zerodha.com', 'order_restrict');
+  assert.match(modeBUnverified.badgeText, /ENFORCEMENT TEST REQUIRED/);
+
+  const modeC = D.getEnforcementLabel('kite.zerodha.com', 'full_site');
+  assert.match(modeC.badgeText, /FULL TRADING-SITE RESTRICTION/);
+  assert.match(modeC.desc, /Access to open positions may be blocked/);
+});

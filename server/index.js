@@ -157,7 +157,6 @@ async function razorpayCreateOrder(plan, email) {
 }
 
 const inFlightOrders = new Set();
-const processedWebhooks = new Set();
 
 // -------------------------------------------------------------- routes ----
 
@@ -347,15 +346,19 @@ const server = http.createServer(async (req, res) => {
       try { evt = JSON.parse(raw.toString('utf8')); } catch (e) { /* ignore */ }
 
       const eventId = evt.id || (evt.payload && evt.payload.payment && evt.payload.payment.entity && evt.payload.payment.entity.id);
-      if (eventId && processedWebhooks.has(eventId)) {
+      if (eventId && store.processedWebhooks && store.processedWebhooks[eventId]) {
         return json(res, 200, { duplicate: true, received: true });
       }
       if (eventId) {
-        processedWebhooks.add(eventId);
-        if (processedWebhooks.size > 1000) {
-          const first = processedWebhooks.values().next().value;
-          processedWebhooks.delete(first);
+        store.processedWebhooks[eventId] = {
+          receivedAt: Date.now(),
+          event: evt.event || null
+        };
+        const keys = Object.keys(store.processedWebhooks);
+        if (keys.length > 2000) {
+          delete store.processedWebhooks[keys[0]];
         }
+        store.saveSync();
       }
 
       const entity = evt.payload && evt.payload.payment && evt.payload.payment.entity;

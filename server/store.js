@@ -30,9 +30,10 @@ function load() {
     const raw = fs.readFileSync(file, 'utf8');
     const d = JSON.parse(raw);
     if (!d.licenses || !d.orders) throw new Error('bad shape');
+    if (!d.processedWebhooks) d.processedWebhooks = {};
     return d;
   } catch (e) {
-    return { licenses: {}, orders: {} }; // hash -> license, orderId -> order
+    return { licenses: {}, orders: {}, processedWebhooks: {} }; // hash -> license, orderId -> order
   }
 }
 
@@ -68,6 +69,10 @@ function saveSync() {
 module.exports = {
   get licenses() { return data.licenses; },
   get orders() { return data.orders; },
+  get processedWebhooks() {
+    if (!data.processedWebhooks) data.processedWebhooks = {};
+    return data.processedWebhooks;
+  },
   save,
   saveSync,
   reload() { data = load(); },

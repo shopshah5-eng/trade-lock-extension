@@ -863,20 +863,85 @@
 
   if (el('resetDay')) {
     el('resetDay').addEventListener('click', function () {
-      if (!confirm('Reset today\'s counters and clear the lock?')) return;
-      var settings = read();
-      var state = R.resetDay(null, settings, Date.now());
-      chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }, function () {
-        chrome.runtime.sendMessage({ type: 'TL_REFRESH' });
-        chrome.tabs.query({}, function (tabs) {
-          tabs.forEach(function (t) {
-            try {
-              chrome.tabs.sendMessage(t.id, { type: 'TL_RESET' }, function () { void chrome.runtime.lastError; });
-            } catch (e) {}
+      chrome.storage.local.get(['tlState', 'tlSettings'], function (res) {
+        var state = res.tlState || null;
+        var settings = read();
+        var isRuleLock = state && state.lock && state.lock.active && !state.lock.manual;
+
+        if (isRuleLock) {
+          if (!confirm('An automated risk rule lock is ACTIVE (' + (state.lock.reason || 'Trading Limit') + ').\n\nRule-triggered locks cannot be cleared by resetting daily statistics and remain active until next market open (09:15 IST).\n\nDo you want to reset displayed daily statistics only?')) return;
+          R.resetDailyStats(state, Date.now());
+          chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }, function () {
+            chrome.runtime.sendMessage({ type: 'TL_REFRESH' });
+            renderToday(state, settings);
+            toast('Daily stats reset (rule lock remains active)');
           });
+          return;
+        }
+
+        var isManualLock = state && state.lock && state.lock.active && state.lock.manual;
+        if (isManualLock) {
+          if (!confirm('You have an active voluntary focus lock.\n\nRelease focus lock and reset counters?')) return;
+          R.releaseManualLock(state, Date.now());
+          var resetState = R.resetDay(state, settings, Date.now());
+          chrome.storage.local.set({ tlState: resetState, tlSavedAt: Date.now() }, function () {
+            chrome.runtime.sendMessage({ type: 'TL_REFRESH' });
+            renderToday(resetState, settings);
+            toast('Focus lock released and day reset');
+          });
+          return;
+        }
+
+        if (!confirm('Reset today\'s counters for a fresh trading session?')) return;
+        var freshState = R.resetDay(state, settings, Date.now());
+        chrome.storage.local.set({ tlState: freshState, tlSavedAt: Date.now() }, function () {
+          chrome.runtime.sendMessage({ type: 'TL_REFRESH' });
+          chrome.tabs.query({}, function (tabs) {
+            tabs.forEach(function (t) {
+              try {
+                chrome.tabs.sendMessage(t.id, { type: 'TL_RESET' }, function () { void chrome.runtime.lastError; });
+              } catch (e) {}
+            });
+          });
+          renderToday(freshState, settings);
+          toast('Day reset');
         });
-        renderToday(state, settings);
-        toast('Day reset');
+      });
+    });
+  }
+
+  if (el('emergencyOverrideBtn')) {
+    el('emergencyOverrideBtn').addEventListener('click', function () {
+      chrome.storage.local.get(['tlState', 'tlSettings'], function (res) {
+        var state = res.tlState || null;
+        if (!state || !state.lock || !state.lock.active) {
+          alert('No active lock to override.');
+          return;
+        }
+        var phrase = prompt('EMERGENCY LOCK OVERRIDE WARNING:\n\nBypassing a trading discipline lock increases psychological and financial risk.\nAll overrides are permanently recorded in your audit log.\n\nType exactly: I_ACCEPT_THE_RISK to proceed:');
+        if (phrase !== 'I_ACCEPT_THE_RISK') {
+          if (phrase !== null) alert('Override cancelled: confirmation phrase did not match.');
+          return;
+        }
+        var reason = prompt('Please document your justification for overriding this lock:', 'Emergency trade exit');
+        var resOverride = R.emergencyOverrideLock(state, phrase, reason, Date.now());
+        if (!resOverride.success) {
+          alert('Override failed: ' + resOverride.message);
+          return;
+        }
+        var settings = read();
+        chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }, function () {
+          chrome.runtime.sendMessage({ type: 'TL_REFRESH' });
+          chrome.tabs.query({}, function (tabs) {
+            tabs.forEach(function (t) {
+              try {
+                chrome.tabs.sendMessage(t.id, { type: 'TL_RELEASED' }, function () { void chrome.runtime.lastError; });
+              } catch (e) {}
+            });
+          });
+          renderToday(state, settings);
+          toast('Emergency lock override applied and audited');
+        });
       });
     });
   }
