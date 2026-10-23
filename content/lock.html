@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trade Lock</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #07090f; color: #e8ecf5;
+    -webkit-user-select: none; user-select: none;
+  }
+  body {
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+    background:
+      radial-gradient(1200px 700px at 50% -10%, rgba(224,74,74,.22), transparent 60%),
+      radial-gradient(900px 600px at 90% 110%, rgba(255,140,60,.10), transparent 60%),
+      #07090f;
+  }
+  .card {
+    width: min(720px, 100%); text-align: center;
+    padding: 40px 36px 32px;
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+    border: 1px solid rgba(255,255,255,.10);
+    box-shadow: 0 40px 120px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  .ring {
+    width: 116px; height: 116px; margin: 0 auto 22px; position: relative;
+    display: grid; place-items: center;
+  }
+  .ring::before {
+    content: ""; position: absolute; inset: 0; border-radius: 50%;
+    background: conic-gradient(from 0deg, #ff4d4f, #ff9a3d, #ff4d4f);
+    filter: blur(14px); opacity: .55; animation: spin 6s linear infinite;
+  }
+  .ring::after {
+    content: ""; position: absolute; inset: 8px; border-radius: 50%;
+    background: #0b0f18; border: 1px solid rgba(255,255,255,.12);
+  }
+  .ring svg { position: relative; z-index: 1; width: 54px; height: 54px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .eyebrow {
+    font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
+    color: #ff8a8a; font-weight: 700; margin-bottom: 12px;
+  }
+  h1 { margin: 0 0 10px; font-size: clamp(24px, 4.2vw, 34px); line-height: 1.15; font-weight: 800; }
+  .detail { margin: 0 auto 26px; max-width: 520px; color: #a9b3c6; font-size: 15px; line-height: 1.6; }
+
+  .timer {
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(34px, 7vw, 52px); font-weight: 800; letter-spacing: -.02em;
+    margin: 0 0 6px;
+    background: linear-gradient(180deg, #fff, #b9c2d6);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .until { color: #8c97ad; font-size: 13px; margin: 0 0 26px; }
+
+  .grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
+  .stat {
+    background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 14px; padding: 14px 10px;
+  }
+  .stat .k { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: #7f8aa1; margin-bottom: 6px; }
+  .stat .v { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .bar { height: 6px; border-radius: 99px; background: rgba(255,255,255,.09); margin-top: 9px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #ff9a3d, #ff4d4f); }
+
+  .note {
+    font-size: 12.5px; color: #7f8aa1; line-height: 1.65; margin: 0;
+    border-top: 1px solid rgba(255,255,255,.08); padding-top: 18px;
+  }
+  .note b { color: #b9c2d6; font-weight: 600; }
+  .stamp { margin-top: 14px; font-size: 11px; color: #5d6779; letter-spacing: .06em; }
+  .pos { color: #37d39b; } .neg { color: #ff6b6b; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="ring">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b6b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3.5" y="10.5" width="17" height="10.5" rx="2.5" fill="rgba(255,107,107,.12)"/>
+        <path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 9 0v3"/>
+        <circle cx="12" cy="15.5" r="1.6" fill="#ff6b6b" stroke="none"/>
+      </svg>
+    </div>
+
+    <div class="eyebrow" id="eyebrow">Trading screen locked</div>
+    <h1 id="title">You hit your limit</h1>
+    <p class="detail" id="detail">Your rules for today are complete.</p>
+
+    <div class="timer" id="timer">--:--:--</div>
+    <p class="until" id="until">until the next market open</p>
+
+    <div class="grid" id="stats"></div>
+
+    <p class="note" id="note">
+      This lock comes off automatically at the next market open.
+      Change your limits in the <b>Trade Lock</b> extension options.
+    </p>
+    <div class="stamp" id="stamp">Trade Lock</div>
+  </div>
+
+<script src="lockpage.js"></script>
+</body>
+</html>

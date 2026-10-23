@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trade Lock — Rules &amp; Dashboard</title>
+<link rel="stylesheet" href="ui.css">
+<style>
+  .statusline { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+  .hr { height: 1px; background: var(--line); margin: 16px 0; border: 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; background: rgba(0,0,0,.35); padding: 1px 5px; border-radius: 5px; }
+  .kv { font-size: 12px; color: var(--muted); }
+
+  /* Pricing Cards Grid */
+  .plans-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-top: 14px; }
+  .plan-card {
+    background: rgba(0, 0, 0, .28); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px; display: flex; flex-direction: column; position: relative;
+  }
+  .plan-card.featured { border-color: var(--accent); box-shadow: 0 0 16px rgba(59, 130, 246, .2); }
+  .plan-card .p-name { font-size: 14px; font-weight: 750; margin-bottom: 4px; }
+  .plan-card .p-price { font-size: 22px; font-weight: 850; color: #fff; margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+  .plan-card .p-sub { font-size: 11px; color: var(--dim); margin-bottom: 12px; }
+  .plan-card ul { margin: 0 0 16px; padding-left: 18px; font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+
+  /* Supported Brokers Grid */
+  .brokers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 12px; }
+  .broker-card {
+    background: rgba(0, 0, 0, .25); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .broker-card .b-info { font-size: 12px; font-weight: 650; }
+  .broker-card .b-host { font-size: 10.5px; color: var(--dim); }
+
+  /* Prompt Chips */
+  .prompt-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
+  .prompt-chip {
+    background: rgba(255, 255, 255, .05); border: 1px solid var(--line); border-radius: 99px;
+    padding: 5px 11px; font-size: 11.5px; color: var(--muted); cursor: pointer; transition: all .15s;
+  }
+  .prompt-chip:hover { background: rgba(59, 130, 246, .15); border-color: var(--accent); color: #fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="logo">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <rect x="9" y="11" width="6" height="5" rx="1"/>
+        <path d="M10 11V9a2 2 0 0 1 4 0v2"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Trade Lock</h1>
+      <div class="sub">Trading discipline, risk rules &amp; market intelligence for Indian retail traders</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="statusline">
+      <span id="lockPill" class="pill off">UNLOCKED</span>
+      <button id="headerSaveBtn" class="primary" style="padding: 6px 12px; font-size: 11.5px;">Save Rules</button>
+    </div>
+  </header>
+
+  <!-- Dashboard Navigation Tabs -->
+  <nav class="nav-tabs" id="mainTabs">
+    <button class="tab-btn active" data-tab="overview">📊 Overview</button>
+    <button class="tab-btn" data-tab="rules">🛡️ Rules &amp; Limits</button>
+    <button class="tab-btn" data-tab="charts">📈 Chart Analysis</button>
+    <button class="tab-btn" data-tab="options">⚡ Options Analytics</button>
+    <button class="tab-btn" data-tab="ai">🤖 AI Assistant</button>
+    <button class="tab-btn" data-tab="journal">📓 Trade Journal</button>
+    <button class="tab-btn" data-tab="sites">🌐 Supported Sites</button>
+    <button class="tab-btn" data-tab="license">💎 Plans &amp; License</button>
+  </nav>
+
+  <!-- ======================================================== TAB: OVERVIEW -->
+  <div class="tab-content active" id="tab-overview">
+    <div class="callout blue">
+      <b>How the lock operates:</b> When any configured rule trips, supported broker screens are restricted until the next market open (<span id="openTimeLabel">09:15 IST</span>), skipping weekends and holidays. Chart Mode preserves active chart analysis.
+    </div>
+
+    <!-- Bento Telemetry Cards -->
+    <div class="grid4" style="margin-bottom:18px">
+      <div class="stat-card">
+        <span class="stat-lbl">Discipline Score</span>
+        <span class="stat-val" id="ovDisciplineScore">100 / 100</span>
+        <span class="stat-sub" id="ovDisciplineSub">Zero rule violations</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-lbl">Today's Trades</span>
+        <span class="stat-val" id="ovTradesVal">0</span>
+        <span class="stat-sub" id="ovTradesSub">No limit</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-lbl">Realised P&amp;L</span>
+        <span class="stat-val" id="ovPnlVal">₹0.00</span>
+        <span class="stat-sub" id="ovPnlSub">Net closed fills</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-lbl">Consecutive Streak</span>
+        <span class="stat-val" id="ovStreakVal">0</span>
+        <span class="stat-sub" id="ovStreakSub">Loss streak</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Session Telemetry</h2>
+      <p class="desc">Real-time status evaluated directly by the rules engine.</p>
+      <table class="limits" id="todayTable"></table>
+      <div id="proAnalytics" style="margin-top:14px"></div>
+      <div id="aiCoach" style="margin-top:14px"></div>
+      <hr class="hr">
+      <div class="actions">
+        <button id="lockNow" class="danger">Lock screen now</button>
+        <button id="resetDay">Reset day (clears lock)</button>
+        <button id="exportLogBtn">Export trade log (CSV) — Pro</button>
+        <button id="reportBtn">Copy day report — Pro</button>
+        <div class="spacer" style="flex:1"></div>
+        <button id="exportBtn" class="ghost">Export settings</button>
+        <button id="importBtn" class="ghost">Import</button>
+        <input type="file" id="importFile" accept="application/json" style="display:none">
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== TAB: RULES -->
+  <div class="tab-content" id="tab-rules">
+    <!-- Daily plan -->
+    <div class="card">
+      <h2>Your Daily Risk Budget</h2>
+      <p class="desc">Derived directly from your trading capital. Daily loss limits and position sizing rules calculate from this plan.</p>
+      <div class="grid3">
+        <label class="field">
+          <span class="k">Total trading capital (₹)</span>
+          <input type="number" id="totalCapital" min="0" step="1000" placeholder="100000">
+        </label>
+        <label class="field">
+          <span class="k">Max trades planned today</span>
+          <input type="number" id="planTradesMirror" min="0" step="1" placeholder="same as limit below">
+          <span class="h">Mirrors “Max trades per day” below.</span>
+        </label>
+        <label class="field">
+          <span class="k">Daily risk (% of capital)</span>
+          <input type="number" id="dailyRiskPercent" min="0" step="0.1" placeholder="2">
+        </label>
+      </div>
+      <div class="grid2" style="margin-top:12px">
+        <label class="field">
+          <span class="k">Risk per trade (% of capital)</span>
+          <input type="number" id="perTradeRiskPercent" min="0" step="0.05" placeholder="0.5">
+          <span class="h">Default risk committed when logging trades.</span>
+        </label>
+        <div class="callout blue" id="planSummary" style="margin:0">Set capital and percentages to see your derived limits.</div>
+      </div>
+    </div>
+
+    <!-- Limits -->
+    <div class="card">
+      <h2>Risk Limits &amp; Triggers</h2>
+      <p class="desc">Set any value to <code>0</code> to disable that rule. The first limit breached activates the lock.</p>
+      <div class="grid2">
+        <label class="field">
+          <span class="k">Max trades per day</span>
+          <input type="number" id="maxTradesPerDay" min="0" step="1">
+          <span class="h">Counts every closed fill (auto-detected and manual).</span>
+        </label>
+        <label class="field">
+          <span class="k">Max daily loss (₹)</span>
+          <input type="number" id="maxDailyLoss" min="0" step="100">
+          <span class="h">Locks when cumulative loss reaches this threshold upon trade exit.</span>
+        </label>
+        <label class="field">
+          <span class="k">Profit target (₹)</span>
+          <input type="number" id="profitTarget" min="0" step="100">
+          <span class="h">Locks when you are up this amount to protect gains from revenge give-backs.</span>
+        </label>
+        <label class="field">
+          <span class="k">Max consecutive losses</span>
+          <input type="number" id="maxConsecutiveLosses" min="0" step="1">
+          <span class="h">Locks after this many losing trades in a row to halt tilt spirals.</span>
+        </label>
+        <label class="field">
+          <span class="k">Max risk per trade (₹)</span>
+          <input type="number" id="maxRiskPerTrade" min="0" step="100">
+          <span class="h">Locks if any single trade committed more risk than allowed.</span>
+        </label>
+        <label class="field">
+          <span class="k">Max daily risk budget (₹)</span>
+          <input type="number" id="maxDailyRisk" min="0" step="100">
+          <span class="h">Locks once cumulative risk committed today exceeds budget.</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Session & Calendar -->
+    <div class="card">
+      <h2>Session Schedule &amp; Calendar</h2>
+      <p class="desc">Calculated in <code>Asia/Kolkata</code> (IST) time. Trading day counters reset at market open.</p>
+      <div class="grid2">
+        <label class="field">
+          <span class="k">Market open (IST)</span>
+          <input type="text" id="marketOpen" placeholder="09:15">
+          <span class="h">Lock releases at the next market open.</span>
+        </label>
+        <label class="field">
+          <span class="k">Minimum lock duration (minutes)</span>
+          <input type="number" id="minLockMinutes" min="0" step="5">
+          <span class="h">Ensures locks triggered late in the day carry meaningful downtime.</span>
+        </label>
+      </div>
+      <hr class="hr">
+      <label class="switch">
+        <input type="checkbox" id="skipWeekends">
+        <span class="track"></span>
+        <span class="txt"><span class="t">Skip weekends</span>
+        <span class="s">Locks triggered on Friday carry through to Monday 09:15 IST.</span></span>
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="skipHolidays">
+        <span class="track"></span>
+        <span class="txt"><span class="t">Skip exchange holidays</span>
+        <span class="s">Respects verified NSE/BSE trading holidays (2025–2026).</span></span>
+      </label>
+      <label class="field" style="margin-top:12px">
+        <span class="k">Custom holidays (one YYYY-MM-DD per line)</span>
+        <textarea id="holidays" placeholder="2027-01-26&#10;2027-03-23"></textarea>
+      </label>
+      <div id="calendarStatusBox" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>
+    </div>
+
+    <!-- Counting & Detection -->
+    <div class="card">
+      <h2>Trade Detection Settings</h2>
+      <p class="desc">Reads the broker's native order book and positions table. Fills are de-duplicated cryptographically.</p>
+      <label class="switch">
+        <input type="checkbox" id="autoDetect">
+        <span class="track"></span>
+        <span class="txt"><span class="t">Auto-detect from trading web terminals</span>
+        <span class="s">Monitors Kite, Upstox, Angel One, Dhan, 5paisa and supported platforms.</span></span>
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="countAutoTrades">
+        <span class="track"></span>
+        <span class="txt"><span class="t">Count detected fills toward trade limit &amp; P&amp;L</span>
+        <span class="s">Disable if you only want to enforce manually logged trades.</span></span>
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="countAutoRisk">
+        <span class="track"></span>
+        <span class="txt"><span class="t">Count detected risk toward daily risk budget</span>
+        <span class="s">Reads broker P&amp;L column or calculates quantity × price.</span></span>
+      </label>
+      <div class="grid2" style="margin-top:12px">
+        <label class="field">
+          <span class="k">Detection poll interval (ms)</span>
+          <input type="number" id="detectIntervalMs" min="1000" step="500">
+        </label>
+        <label class="field">
+          <span class="k">Risk per unit (₹, 0 = notional estimate)</span>
+          <input type="number" id="riskPerUnit" min="0" step="1">
+          <span class="h">Set to risk-per-point × lot size for futures/options.</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Lock Strength -->
+    <div class="card">
+      <h2>Lock Strength &amp; Safety Policy</h2>
+      <p class="desc">Define the exact enforcement model applied when a daily rule trips.</p>
+      
+      <label class="field" style="margin-bottom:14px">
+        <span class="k">Enforcement Mode Policy</span>
+        <select id="enforcementMode">
+          <option value="warning" selected>Mode A: Warning Overlay (Recommended Default — Banner alert only, broker page remains interactive)</option>
+          <option value="order_restrict">Mode B: Verified New-Order Restriction (Intercepts order placement on verified brokers, keeps exits accessible)</option>
+          <option value="full_site">Mode C: Full Trading-Site Restriction (Redirects broker tab to lock page — may prevent closing open positions)</option>
+          <option value="chart_only">Mode D: Charting-Site Restriction (Restricts charting websites only)</option>
+        </select>
+        <span class="h">Choose between visual behavioral discipline reminders and verified browser-level restriction.</span>
+      </label>
+
+      <div id="fullSiteAckBox" style="display:none;margin-bottom:14px" class="callout danger">
+        <label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer">
+          <input type="checkbox" id="fullSiteAcknowledged" style="margin-top:2px">
+          <span style="font-size:12px;color:#fca5a5;line-height:1.5">
+            <b>Informed Risk Acknowledgment:</b> I understand that Mode C redirects the entire broker website to a lock page and may prevent me from accessing or closing open positions in this browser.
+          </span>
+        </label>
+      </div>
+
+      <label class="switch">
+        <input type="checkbox" id="reloadOnTamper">
+        <span class="track"></span>
+        <span class="txt"><span class="t">Reload tab if lock element is tampered with</span>
+        <span class="s">Removing the overlay frame from DevTools automatically reloads and re-locks.</span></span>
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="blockSiteWhenLocked">
+        <span class="track"></span>
+        <span class="txt"><span class="t">Enable Chrome DNR Redirection when locked (Mode C only)</span>
+        <span class="s">Requires Mode C and explicit risk acknowledgment above.</span></span>
+      </label>
+      <div class="callout" style="margin-top:12px">
+        🛡️ <b>Safe Position Management:</b> Mode A and Mode B leave position reduction and emergency exit actions (Exit, Close, Square Off, Cancel) functional so you are never trapped in open market exposure.
+      </div>
+    </div>
+
+    <div class="actions" style="margin-bottom:24px">
+      <button id="save" class="primary">Save rules</button>
+      <button id="testLock">Preview lock for 10 seconds</button>
+      <span class="kv" id="dirtyNote"></span>
+    </div>
+  </div>
+
+  <!-- ======================================================== TAB: CHARTS -->
+  <div class="tab-content" id="tab-charts">
+    <div class="card">
+      <h2>Technical Chart Intelligence <span class="badge pro">Deterministic</span></h2>
+      <p class="desc">Mathematically computed support &amp; resistance pivots, demand/supply zones, fair value gaps, VWAP, EMA and RSI.</p>
+      <div class="grid3">
+        <label class="field">
+          <span class="k">Instrument</span>
+          <select id="marketSymbol">
+            <option value="NIFTY">NIFTY 50</option>
+            <option value="BANKNIFTY">BANK NIFTY</option>
+            <option value="FINNIFTY">FIN NIFTY</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="k">Timeframe</span>
+          <select id="marketTimeframe">
+            <option value="15m" selected>15 Minutes</option>
+            <option value="5m">5 Minutes</option>
+            <option value="1h">1 Hour</option>
+            <option value="1d">Daily</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="k">Data Source</span>
+          <select id="marketSource">
+            <option value="demo">Verified Sample Candles (Deterministic)</option>
+            <option value="live">Live Fyers Data (Requires server configuration)</option>
+          </select>
+        </label>
+      </div>
+      <div class="actions" style="margin-top:14px">
+        <button id="marketBtn" class="primary">Compute Analysis</button>
+        <span class="kv" id="marketNote"></span>
+      </div>
+      <div id="marketResult" style="margin-top:16px"></div>
+    </div>
+  </div>
+
+  <!-- ======================================================== TAB: OPTIONS -->
+  <div class="tab-content" id="tab-options">
+    <div class="card">
+      <h2>NSE Options Chain &amp; Analytics <span class="badge" style="background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);color:#fbbf24">Simulated Model Chain</span></h2>
+      <p class="desc">Open Interest (OI) distribution, Put-Call Ratio (PCR), and Max Pain computed via mathematical model. Data is simulated for strategy review and not a live exchange feed.</p>
+      <div class="grid3" style="margin-bottom:14px">
+        <label class="field">
+          <span class="k">Underlying Symbol</span>
+          <select id="optionsSymbol">
+            <option value="NIFTY">NIFTY 50</option>
+            <option value="BANKNIFTY">BANK NIFTY</option>
+            <option value="FINNIFTY">FIN NIFTY</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="k">Expiry</span>
+          <select id="optionsExpiry">
+            <option value="current">Current Weekly Expiry</option>
+            <option value="next">Next Weekly Expiry</option>
+          </select>
+        </label>
+        <div style="display:flex;align-items:flex-end">
+          <button id="optionsRefreshBtn" class="primary" style="width:100%">Refresh Chain</button>
+        </div>
+      </div>
+
+      <!-- Options Telemetry -->
+      <div class="grid4" id="optionsMetricsGrid" style="margin-bottom:14px">
+        <div class="stat-card">
+          <span class="stat-lbl">Spot Price</span>
+          <span class="stat-val" id="optSpotPrice">24,520.00</span>
+          <span class="stat-sub">Underlying Index</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">Put-Call Ratio (PCR)</span>
+          <span class="stat-val" id="optPcrVal">1.08</span>
+          <span class="stat-sub" id="optPcrBias">Neutral to Mild Bullish</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">Max Pain Strike</span>
+          <span class="stat-val" id="optMaxPain">24,500</span>
+          <span class="stat-sub">Lowest option payout</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">Theta Decay (DTE 2)</span>
+          <span class="stat-val" id="optThetaDecay">~18% / day</span>
+          <span class="stat-sub">ATM time value decay</span>
+        </div>
+      </div>
+
+      <div class="options-wrap">
+        <table class="options-chain" id="optionsChainTable">
+          <thead>
+            <tr>
+              <th colspan="3" style="color:#6ee7b7">CALLS (CE)</th>
+              <th>STRIKE</th>
+              <th colspan="3" style="color:#fca5a5">PUTS (PE)</th>
+            </tr>
+            <tr>
+              <th>OI (Lots)</th>
+              <th>OI Chg</th>
+              <th>LTP (₹)</th>
+              <th>Strike</th>
+              <th>LTP (₹)</th>
+              <th>OI Chg</th>
+              <th>OI (Lots)</th>
+            </tr>
+          </thead>
+          <tbody id="optionsChainTbody"></tbody>
+        </table>
+      </div>
+
+      <div class="callout" style="margin-top:14px;font-size:11.5px">
+        ℹ️ <b>Options Risk Note:</b> Max pain and PCR are sentiment guides, not directional guarantees. Options can expire worthless. Theta decay accelerates rapidly in the final 48 hours before weekly expiry.
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== TAB: AI -->
+  <div class="tab-content" id="tab-ai">
+    <div class="card">
+      <h2>AI Trading Assistant <span class="badge pro">Context-Grounded</span></h2>
+      <p class="desc">Ask questions about market levels, options structure, your trading session, or discipline tilt. Strictly grounded in mathematical data.</p>
+      
+      <div class="prompt-chips">
+        <button class="prompt-chip" data-prompt="Analyze the current market structure and key support/resistance levels.">📊 Market Structure</button>
+        <button class="prompt-chip" data-prompt="Explain the current options chain OI walls and PCR sentiment.">⚡ Options OI Walls</button>
+        <button class="prompt-chip" data-prompt="Review my trade session today and check if I broke any trading rules.">📓 Review My Session</button>
+        <button class="prompt-chip" data-prompt="What invalidates a bullish setup from the current levels?">🛡️ Invalidation Levels</button>
+      </div>
+
+      <div class="chat-box">
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-msg assistant">
+            Hello! I am your Trade Lock AI Trading Assistant. I can help interpret computed chart levels, analyze options OI structure, and audit your session discipline. What would you like to review?
+          </div>
+        </div>
+        <div class="chat-input-bar">
+          <input type="text" id="chatInput" placeholder="Ask about levels, options, or review today's trades…">
+          <button id="chatSendBtn" class="primary">Send</button>
+        </div>
+      </div>
+
+      <div class="callout blue" style="margin-top:12px;font-size:11.5px">
+        🔒 <b>Safety Boundary:</b> The AI assistant cannot modify your risk rules, clear triggered locks, or guarantee profitable trades.
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== TAB: JOURNAL -->
+  <div class="tab-content" id="tab-journal">
+    <div class="card">
+      <h2>Trade Journal &amp; Session Review</h2>
+      <p class="desc">Log, review, and filter your trades. Computes realized P&amp;L, win rate, and behavioral adherence.</p>
+
+      <!-- New Trade Entry Form -->
+      <div style="background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px">
+        <h3 style="margin:0 0 10px;font-size:13px;font-weight:700">Add Trade Record</h3>
+        <div class="grid4">
+          <label class="field">
+            <span class="k">Symbol</span>
+            <input type="text" id="jSymbol" placeholder="NIFTY 24500 CE">
+          </label>
+          <label class="field">
+            <span class="k">Side</span>
+            <select id="jSide">
+              <option value="BUY">BUY (Long)</option>
+              <option value="SELL">SELL (Short)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="k">Entry Price (₹)</span>
+            <input type="number" id="jEntry" step="0.05" placeholder="120.50">
+          </label>
+          <label class="field">
+            <span class="k">Exit Price (₹)</span>
+            <input type="number" id="jExit" step="0.05" placeholder="145.00">
+          </label>
+        </div>
+        <div class="grid4" style="margin-top:10px">
+          <label class="field">
+            <span class="k">Quantity</span>
+            <input type="number" id="jQty" step="1" placeholder="75">
+          </label>
+          <label class="field">
+            <span class="k">Setup Type</span>
+            <select id="jSetup">
+              <option value="Breakout">Breakout</option>
+              <option value="Pullback">Pullback / Retest</option>
+              <option value="Mean Reversion">Mean Reversion</option>
+              <option value="FVG Fill">Fair Value Gap</option>
+              <option value="Scalp">Quick Scalp</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="k">Notes</span>
+            <input type="text" id="jNotes" placeholder="Reason for trade, discipline notes">
+          </label>
+          <div style="display:flex;align-items:flex-end">
+            <button id="jAddBtn" class="primary" style="width:100%">Save Trade</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Journal Summary Telemetry -->
+      <div class="grid4" style="margin-bottom:14px">
+        <div class="stat-card">
+          <span class="stat-lbl">Total Journal Trades</span>
+          <span class="stat-val" id="jTotalTrades">0</span>
+          <span class="stat-sub" id="jWinLossRatio">0 Wins · 0 Losses</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">Win Rate</span>
+          <span class="stat-val" id="jWinRate">0%</span>
+          <span class="stat-sub">Closed setups</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">Net Realised P&amp;L</span>
+          <span class="stat-val" id="jNetPnl">₹0.00</span>
+          <span class="stat-sub">Sum of logged trades</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">Profit Factor</span>
+          <span class="stat-val" id="jProfitFactor">—</span>
+          <span class="stat-sub">Gross win / Gross loss</span>
+        </div>
+      </div>
+
+      <!-- Filter Bar -->
+      <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
+        <input type="search" id="jSearch" placeholder="Search by symbol, setup, or notes…" style="max-width:300px">
+        <select id="jFilterOutcome" style="max-width:160px">
+          <option value="ALL">All Outcomes</option>
+          <option value="WIN">Wins Only</option>
+          <option value="LOSS">Losses Only</option>
+        </select>
+        <div class="spacer"></div>
+        <button id="jExportCsv" class="ghost">Export CSV</button>
+        <button id="jExportJson" class="ghost">Export JSON</button>
+        <button id="jClearAll" class="danger" style="font-size:11px">Clear Journal</button>
+      </div>
+
+      <!-- Journal Table -->
+      <div style="overflow-x:auto">
+        <table class="styled-table" id="journalTable">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th>Qty</th>
+              <th>Entry</th>
+              <th>Exit</th>
+              <th>P&amp;L (₹)</th>
+              <th>Setup</th>
+              <th>Notes</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="journalTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== TAB: SITES -->
+  <div class="tab-content" id="tab-sites">
+    <div class="card">
+      <h2>Supported Trading Websites &amp; Brokers</h2>
+      <p class="desc">Trade Lock monitors order activity and enforces session discipline across supported Indian web terminals.</p>
+      
+      <div class="brokers-grid">
+        <div class="broker-card">
+          <div><div class="b-info">Zerodha Kite</div><div class="b-host">kite.zerodha.com</div></div>
+          <span class="badge pro">Active</span>
+        </div>
+        <div class="broker-card">
+          <div><div class="b-info">Upstox</div><div class="b-host">upstox.com</div></div>
+          <span class="badge pro">Active</span>
+        </div>
+        <div class="broker-card">
+          <div><div class="b-info">Angel One</div><div class="b-host">angelone.in</div></div>
+          <span class="badge pro">Active</span>
+        </div>
+        <div class="broker-card">
+          <div><div class="b-info">Dhan</div><div class="b-host">dhan.co</div></div>
+          <span class="badge pro">Active</span>
+        </div>
+        <div class="broker-card">
+          <div><div class="b-info">5paisa</div><div class="b-host">5paisa.com</div></div>
+          <span class="badge pro">Active</span>
+        </div>
+        <div class="broker-card">
+          <div><div class="b-info">Fyers Web</div><div class="b-host">trade.fyers.in</div></div>
+          <span class="badge pro">Active</span>
+        </div>
+        <div class="broker-card">
+          <div><div class="b-info">Groww</div><div class="b-host">groww.in</div></div>
+          <span class="badge pro">Active</span>
+        </div>
+        <div class="broker-card">
+          <div><div class="b-info">Shoonya</div><div class="b-host">shoonya.com</div></div>
+          <span class="badge pro">Active</span>
+        </div>
+        <div class="broker-card">
+          <div><div class="b-info">Kotak Neo</div><div class="b-host">kotakneo.com</div></div>
+          <span class="badge pro">Active</span>
+        </div>
+        <div class="broker-card">
+          <div><div class="b-info">TradingView</div><div class="b-host">tradingview.com</div></div>
+          <span class="badge free">Chart Mode</span>
+        </div>
+      </div>
+
+      <div class="callout green" style="margin-top:16px">
+        🛡️ <b>Chart Mode &amp; Emergency Exits Policy:</b>
+        When the session lock triggers, TradingView and charting subframes are never blocked. This ensures you can always inspect market structure and technical levels. Furthermore, broker buttons for closing open positions (Exit, Close, Square Off) remain clickable so you can safely manage risk.
+      </div>
+
+      <label class="field" style="margin-top:14px">
+        <span class="k">Custom Restricted Domains (one per line)</span>
+        <textarea id="blockedHosts" style="min-height:100px"></textarea>
+        <span class="h">Add your custom broker or proprietary trading web terminal host here.</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- ======================================================== TAB: LICENSE -->
+  <div class="tab-content" id="tab-license">
+    <div class="card">
+      <h2>License &amp; Plan Activation</h2>
+      <p class="desc">Activate your Trade Lock license key to enable Pro risk limits, automatic order book detection, and AI market intelligence.</p>
+
+      <div class="callout blue" id="licStatus">Checking license…</div>
+
+      <div class="grid2">
+        <label class="field">
+          <span class="k">License key</span>
+          <input type="text" id="licKey" placeholder="TL-XXXXX-XXXXX-XXXXX-XXXXX" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="field">
+          <span class="k">License server URL</span>
+          <input type="text" id="licApi" placeholder="http://localhost:3000">
+          <span class="h">Defaults to the local/deployed Trade Lock backend server.</span>
+        </label>
+      </div>
+
+      <div class="actions" style="margin-top:14px">
+        <button id="licActivate" class="primary">Activate Key</button>
+        <button id="licBuy" class="ghost">View Pricing…</button>
+        <span class="kv" id="licNote"></span>
+      </div>
+
+      <!-- Pricing Comparison Bento -->
+      <h3 style="margin:22px 0 6px;font-size:14px;font-weight:750">Available Plans</h3>
+      <div class="plans-grid">
+        <div class="plan-card">
+          <div class="p-name">Free</div>
+          <div class="p-price">₹0</div>
+          <div class="p-sub">Essential discipline</div>
+          <ul>
+            <li>Trade-count limit</li>
+            <li>Manual trade logging</li>
+            <li>Session lock overlay</li>
+            <li>Chart Mode preserved</li>
+          </ul>
+        </div>
+        <div class="plan-card featured">
+          <div class="p-name">Pro</div>
+          <div class="p-price">₹199 <span style="font-size:12px;font-weight:400">/ mo</span></div>
+          <div class="p-sub">Complete risk rules</div>
+          <ul>
+            <li>Max loss &amp; streak rules</li>
+            <li>Auto-detect broker fills</li>
+            <li>Capital budget derived limits</li>
+            <li>CSV &amp; JSON trade export</li>
+            <li>Up to 3 devices</li>
+          </ul>
+        </div>
+        <div class="plan-card">
+          <div class="p-name">Pro+ AI</div>
+          <div class="p-price">₹399 <span style="font-size:12px;font-weight:400">/ mo</span></div>
+          <div class="p-sub">Intelligence &amp; Options</div>
+          <ul>
+            <li>All Pro risk rules</li>
+            <li>AI Market Assistant</li>
+            <li>S/R, FVGs, Demand &amp; Supply</li>
+            <li>NSE Options chain &amp; Greeks</li>
+            <li>Daily behavioral coach report</li>
+          </ul>
+        </div>
+        <div class="plan-card">
+          <div class="p-name">Pro Yearly</div>
+          <div class="p-price">₹1,499 <span style="font-size:12px;font-weight:400">/ yr</span></div>
+          <div class="p-sub">Best value (₹125/mo)</div>
+          <ul>
+            <li>Full Pro feature suite</li>
+            <li>12 months continuous access</li>
+            <li>Priority updates</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="saved" id="savedToast">Saved</div>
+
+<script src="../lib/rules.js"></script>
+<script src="../lib/license.js"></script>
+<script src="../lib/insights.js"></script>
+<script src="../lib/market.js"></script>
+<script src="options.js"></script>
+</body>
+</html>

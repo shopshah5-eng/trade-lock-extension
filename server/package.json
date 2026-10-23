@@ -1,0 +1,17 @@
+{
+  "name": "trade-lock-server",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Trade Lock license + Razorpay checkout server (zero dependencies, Node >= 18).",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "serverless-http": "^4.0.0"
+  }
+}

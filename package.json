@@ -1,0 +1,16 @@
+{
+  "name": "trade-lock-extension-tests",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Test harness and build tool for the Trade Lock Chrome extension and license server.",
+  "scripts": {
+    "test": "node --test test/rules.test.js test/detector.test.js test/market.test.js test/insights.test.js test/manifest.test.js && node --test server/test/email.test.js server/test/license.test.js server/test/market.test.js",
+    "test:extension": "node --test test/rules.test.js test/detector.test.js test/market.test.js test/insights.test.js test/manifest.test.js",
+    "test:server": "node --test server/test/email.test.js server/test/license.test.js server/test/market.test.js",
+    "lint": "node --check background.js && node --check lib/rules.js && node --check lib/detector.js && node --check content/lock.js && node --check popup/popup.js && node --check options/options.js && node --check server/index.js && node --check server/license.js && node --check server/ai.js && node --check server/email.js",
+    "package": "node scripts/package-extension.js"
+  },
+  "devDependencies": {
+    "linkedom": "^0.18.0"
+  }
+}

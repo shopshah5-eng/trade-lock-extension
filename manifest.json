@@ -1,0 +1,127 @@
+{
+  "manifest_version": 3,
+  "name": "Trade Lock \u2014 daily trading discipline",
+  "version": "1.0.0",
+  "description": "Locks the trading screen once your daily trade count, loss limit, risk budget or profit target is reached. Releases at the next market open.",
+  "minimum_chrome_version": "102",
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs",
+    "declarativeNetRequest",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://trade-lock-app.netlify.app/*",
+    "https://*.netlify.app/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "*://*.kite.zerodha.com/*",
+    "*://*.zerodha.com/*",
+    "*://*.kitecharts.com/*",
+    "*://*.upstox.com/*",
+    "*://*.angelone.in/*",
+    "*://*.angelbroking.com/*",
+    "*://*.dhan.co/*",
+    "*://*.5paisa.com/*",
+    "*://*.fyers.in/*",
+    "*://*.groww.in/*",
+    "*://*.sahi.com/*",
+    "*://*.shoonya.com/*",
+    "*://*.finvasia.com/*",
+    "*://*.kotakneo.com/*",
+    "*://*.kotaksecurities.com/*",
+    "*://*.paytmmoney.com/*",
+    "*://*.icicidirect.com/*",
+    "*://*.hdfcsky.com/*",
+    "*://*.aliceblueonline.com/*",
+    "*://*.sharekhan.com/*",
+    "*://*.myespresso.com/*",
+    "*://*.motilaloswal.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.kite.zerodha.com/*",
+        "*://*.zerodha.com/*",
+        "*://*.kitecharts.com/*",
+        "*://*.upstox.com/*",
+        "*://*.angelone.in/*",
+        "*://*.angelbroking.com/*",
+        "*://*.dhan.co/*",
+        "*://*.5paisa.com/*",
+        "*://*.fyers.in/*",
+        "*://*.groww.in/*",
+        "*://*.sahi.com/*",
+        "*://*.shoonya.com/*",
+        "*://*.finvasia.com/*",
+        "*://*.kotakneo.com/*",
+        "*://*.kotaksecurities.com/*",
+        "*://*.paytmmoney.com/*",
+        "*://*.icicidirect.com/*",
+        "*://*.hdfcsky.com/*",
+        "*://*.aliceblueonline.com/*",
+        "*://*.sharekhan.com/*",
+        "*://*.myespresso.com/*",
+        "*://*.motilaloswal.com/*"
+      ],
+      "js": [
+        "lib/rules.js",
+        "lib/detector.js",
+        "lib/market.js",
+        "content/lock.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content/lock.html",
+        "content/lockpage.js"
+      ],
+      "matches": [
+        "*://*.kite.zerodha.com/*",
+        "*://*.zerodha.com/*",
+        "*://*.kitecharts.com/*",
+        "*://*.upstox.com/*",
+        "*://*.angelone.in/*",
+        "*://*.angelbroking.com/*",
+        "*://*.dhan.co/*",
+        "*://*.5paisa.com/*",
+        "*://*.fyers.in/*",
+        "*://*.groww.in/*",
+        "*://*.sahi.com/*",
+        "*://*.shoonya.com/*",
+        "*://*.finvasia.com/*",
+        "*://*.kotakneo.com/*",
+        "*://*.kotaksecurities.com/*",
+        "*://*.paytmmoney.com/*",
+        "*://*.icicidirect.com/*",
+        "*://*.hdfcsky.com/*",
+        "*://*.aliceblueonline.com/*",
+        "*://*.sharekhan.com/*",
+        "*://*.myespresso.com/*",
+        "*://*.motilaloswal.com/*"
+      ]
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Trade Lock"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
