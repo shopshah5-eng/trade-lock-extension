@@ -131,8 +131,8 @@ function serveFixture() {
 
     console.log('\n2. Activate the Pro key in Options against the isolated API');
     const options = await browser.newPage();
-    await options.goto('chrome-extension://' + extId + '/options/options.html', { waitUntil: 'domcontentloaded' });
-    await sleep(1000);
+    await options.goto('chrome-extension://' + extId + '/options/options.html#license', { waitUntil: 'domcontentloaded' });
+    await options.waitForSelector('#licActivate', { visible: true, timeout: 10000 });
     await options.type('#licKey', key);
     await options.$eval('#licApi', (element, api) => { element.value = api; }, API);
     await options.click('#licActivate');
@@ -143,6 +143,8 @@ function serveFixture() {
     check('Options shows an active Pro prepaid plan', /Active Prepaid Plan/i.test(licenseStatus) && /Pro/i.test(licenseStatus), licenseStatus.slice(0, 100));
     const lossDisabled = await options.$eval('#maxDailyLoss', e => e.disabled).catch(() => null);
     check('Pro rule inputs are enabled after activation', lossDisabled === false);
+    await options.click('#mainTabs .tab-btn[data-tab="rules"]');
+    await options.waitForSelector('#save', { visible: true, timeout: 10000 });
     await options.click('#save');
     await sleep(1000);
 
