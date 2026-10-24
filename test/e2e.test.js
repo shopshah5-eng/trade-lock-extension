@@ -199,6 +199,17 @@ function serve(root) {
 
   // ------------------------------------ 3. new fills push toward the cap ----
   console.log('\n3. New fills count, then the lock trips');
+  // The default positions table is explicitly empty and therefore authoritative.
+  // Add nonzero Net qty evidence to exercise the deferral path intentionally.
+  await page.evaluate(() => {
+    document.getElementById('positionRows').innerHTML =
+      '<tr><td>RELIANCE</td><td>75</td><td>0</td><td>75</td><td>2,455.00</td><td>367.50</td></tr>';
+  });
+  await sleep(3500);
+  const openEvidence = (await getState()).tlState.session.openTrades;
+  check('nonzero Net qty supplies authoritative open-position evidence', openEvidence === 1,
+    'openTrades=' + openEvidence);
+
   await page.click('#addFill');
   await sleep(3500);
   let after = (await getState()).tlState.session;
@@ -231,6 +242,8 @@ function serve(root) {
                      '</td><td>' + px + '</td><td class="done">COMPLETE</td>';
       rows.appendChild(tr);
     });
+    // An explicitly empty positions table is authoritative evidence of flat.
+    document.getElementById('positionRows').innerHTML = '';
   });
   await sleep(5000);
 
@@ -325,10 +338,10 @@ function serve(root) {
     Object.keys(st.detectorSeen).length === 10, Object.keys(st.detectorSeen).length + ' signatures');
   check('still locked after the reload', st.lock.active === true, st.lock.reason);
 
-  // ------------------------------------------------ 7. HUD before lock ----
-  console.log('\n7. Reset releases the lock and brings the HUD back');
+  // -------------------------------------- 7. release authorization --------
+  console.log('\n7. Raw reset cannot erase the lock; due background release can');
   await sw.evaluate(() => new Promise((res) => {
-    chrome.storage.local.get(['tlState', 'tlSettings'], (r) => {
+    chrome.storage.local.get(['tlState'], (r) => {
       const st2 = r.tlState;
       st2.lock = { active: false, reason: null, since: null, until: null, manual: false };
       st2.session.trades = 0; st2.session.pnl = 0; st2.session.riskUsed = 0;
@@ -336,12 +349,36 @@ function serve(root) {
       chrome.storage.local.set({ tlState: st2 }, res);
     });
   }));
+  await sleep(2000);
+  const guarded = (await getState()).tlState;
+  check('raw storage reset is repaired while the rule lock is unexpired', guarded.lock.active === true,
+    guarded.lock.reason);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await sleep(2500);
+  const protectedOverlay = await page.$('#tl-lock-root, #tl-lock-frame');
+  check('overlay survives the unauthorized reset and reload', !!protectedOverlay);
+
+  await sw.evaluate(() => new Promise((res) => {
+    chrome.storage.local.get(['tlState'], (r) => {
+      const st2 = r.tlState;
+      st2.lock.until = Date.now() - 1000;
+      chrome.storage.local.set({ tlState: st2 }, () => {
+        chrome.runtime.sendMessage({ type: 'TL_CHECK_RELEASE' }, () => {
+          void chrome.runtime.lastError;
+          res();
+        });
+      });
+    });
+  }));
+  await sleep(1500);
+  const released = (await getState()).tlState;
+  check('background releases the lock only after its due timestamp', released.lock.active === false);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await sleep(2500);
   const hudBack = await page.$('#tl-hud');
   const overlayGone = !(await page.$('#tl-lock-root, #tl-lock-frame'));
-  check('HUD is back', !!hudBack);
-  check('overlay is gone', overlayGone);
+  check('HUD is back after authoritative release', !!hudBack);
+  check('overlay is gone after authoritative release', overlayGone);
   await page.screenshot({ path: path.join(SHOTS, 'hud.png') });
   console.log('       screenshot -> screenshots/hud.png');
 
