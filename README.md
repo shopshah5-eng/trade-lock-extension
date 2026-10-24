@@ -106,7 +106,7 @@ npm test
 npm run package
 ```
 
-Unit/integration tests use Node's native test runner and mocked providers; no real credentials or network access is required. Browser tests are separate and require Chrome:
+Unit/integration tests use Node's native test runner and mocked providers; no real credentials or network access is required. Browser tests are separate and require a full Chrome/Chromium executable with extension support (not `chrome-headless-shell`):
 
 ```bash
 CHROME_PATH=/path/to/chrome npm run test:e2e

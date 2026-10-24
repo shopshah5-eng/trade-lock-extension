@@ -99,9 +99,8 @@ function serveFixture() {
     browser = await puppeteer.launch({
       headless: process.env.HEADED === '1' ? false : 'new',
       executablePath: chromeExecutable(puppeteer),
-      ignoreDefaultArgs: ['--disable-extensions'],
-      args: ['--no-sandbox', '--disable-dev-shm-usage',
-        '--disable-extensions-except=' + tmp, '--load-extension=' + tmp]
+      enableExtensions: [tmp],
+      args: ['--no-sandbox', '--disable-dev-shm-usage']
     });
     const swt = await browser.waitForTarget(t => t.type() === 'service_worker' && t.url().includes('/background.js'), { timeout: 20000 });
     const extId = swt.url().split('/')[2];

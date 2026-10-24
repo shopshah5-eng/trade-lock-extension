@@ -27,7 +27,7 @@ function chromeExecutable(puppeteer) {
   ];
   const installed = candidates.find(file => fs.existsSync(file));
   if (installed) return installed;
-  throw new Error('No Chrome executable found. Set CHROME_PATH (or install Chrome and use PUPPETEER_EXECUTABLE_PATH).');
+  throw new Error('No full Chrome executable found. Set CHROME_PATH (or install Chrome and use PUPPETEER_EXECUTABLE_PATH). chrome-headless-shell cannot run these extension tests.');
 }
 
 module.exports = { loadPuppeteer, chromeExecutable };

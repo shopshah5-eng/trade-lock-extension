@@ -114,16 +114,14 @@ function serve(root) {
   const normExtDir = extDir.replace(/\\/g, '/');
   const launchOpts = {
     headless: process.env.HEADED === '1' ? false : 'new',
-    ignoreDefaultArgs: ['--disable-extensions'],
+    enableExtensions: [normExtDir],
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--no-first-run',
       '--no-default-browser-check',
-      '--user-data-dir=' + userDir,
-      '--disable-extensions-except=' + normExtDir,
-      '--load-extension=' + normExtDir
+      '--user-data-dir=' + userDir
     ]
   };
   launchOpts.executablePath = chromeExecutable(puppeteer);
