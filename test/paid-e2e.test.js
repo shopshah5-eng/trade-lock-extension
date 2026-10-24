@@ -22,9 +22,19 @@ const PAGE = 'http://127.0.0.1:' + PORT + '/demo/fake-broker.html';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 let API;
 let failures = 0;
+function ciAnnotation(message) {
+  if (!process.env.GITHUB_ACTIONS) return;
+  const escaped = String(message).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  console.log('::error::' + escaped);
+}
 function check(label, ok, detail) {
   if (ok) console.log('  ok   ' + label + (detail ? '  ' + detail : ''));
-  else { failures++; console.log('  FAIL ' + label + (detail ? '  ' + detail : '')); }
+  else {
+    failures++;
+    const message = label + (detail ? ' — ' + detail : '');
+    console.log('  FAIL ' + message);
+    ciAnnotation('Paid E2E: ' + message);
+  }
 }
 
 async function buyDemoKey() {
@@ -158,4 +168,8 @@ function serveFixture() {
     fs.rmSync(dataFile, { force: true });
     fs.rmSync(dataFile + '.tmp', { force: true });
   }
-})().catch(error => { console.error('paid e2e crashed:', error); process.exitCode = 1; });
+})().catch(error => {
+  console.error('paid e2e crashed:', error);
+  ciAnnotation('Paid E2E crashed: ' + (error && error.stack ? error.stack : error));
+  process.exitCode = 1;
+});

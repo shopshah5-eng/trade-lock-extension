@@ -32,9 +32,19 @@ let tmp;
 let userDir;
 
 let failures = 0;
+function ciAnnotation(message) {
+  if (!process.env.GITHUB_ACTIONS) return;
+  const escaped = String(message).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  console.log('::error::' + escaped);
+}
 function check(label, ok, detail) {
   if (ok) console.log('  ok   ' + label + (detail ? '  ' + detail : ''));
-  else { failures++; console.log('  FAIL ' + label + (detail ? '  ' + detail : '')); }
+  else {
+    failures++;
+    const message = label + (detail ? ' — ' + detail : '');
+    console.log('  FAIL ' + message);
+    ciAnnotation('Regular E2E: ' + message);
+  }
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -346,6 +356,7 @@ function serve(root) {
   process.exitCode = failures === 0 ? 0 : 1;
 })().catch(async (e) => {
   console.error('e2e crashed:', e);
+  ciAnnotation('Regular E2E crashed: ' + (e && e.stack ? e.stack : e));
   if (browser) await browser.close().catch(() => {});
   if (server) await new Promise(resolve => server.close(resolve));
   if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
