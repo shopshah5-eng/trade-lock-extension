@@ -48,9 +48,11 @@ const DEMO_MODE = process.env.TL_DEMO_MODE === '1' && process.env.NODE_ENV !== '
 const IS_SERVERLESS = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY || process.env.VERCEL);
 const PROVIDER_TIMEOUT_MS = Number(process.env.PROVIDER_TIMEOUT_MS || 15000);
 
-const razorpayConfigured = () => Boolean(KEY_ID && KEY_SECRET);
-const demoCheckoutEnabled = () => DEMO_MODE && !razorpayConfigured();
-const paymentPersistenceReady = () => demoCheckoutEnabled() || supabase.isConfigured() || !IS_SERVERLESS;
+const isDemoMode = () => (process.env.TL_DEMO_MODE === '1' || DEMO_MODE) && process.env.NODE_ENV !== 'production';
+const razorpayConfigured = () => Boolean((process.env.RAZORPAY_KEY_ID !== undefined ? process.env.RAZORPAY_KEY_ID : KEY_ID) && (process.env.RAZORPAY_KEY_SECRET !== undefined ? process.env.RAZORPAY_KEY_SECRET : KEY_SECRET));
+const isServerless = () => Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY || process.env.VERCEL || IS_SERVERLESS);
+const demoCheckoutEnabled = () => isDemoMode() && !razorpayConfigured();
+const paymentPersistenceReady = () => demoCheckoutEnabled() || supabase.isConfigured() || !isServerless();
 
 async function providerFetch(url, options = {}) {
   const controller = new AbortController();

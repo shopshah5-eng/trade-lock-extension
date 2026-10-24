@@ -14,7 +14,8 @@ function runAdmin(args, fakeSupabase, failingSave = false) {
     const store = { licenses: { 'old-hash': old }, saveSync() { ${failingSave ? "throw new Error('read-only cache')" : 'return true;'} } };
     const fake = ${fakeSupabase};
     Module._load = function(request, parent, isMain) {
-      if (parent && parent.filename && parent.filename.endsWith('/server/admin.js')) {
+      const fn = (parent && parent.filename) || '';
+      if (fn.includes('server') && fn.endsWith('admin.js')) {
         if (request === './store') return store;
         if (request === './supabase') return fake;
       }

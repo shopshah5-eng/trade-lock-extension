@@ -25,7 +25,7 @@ function loadEnvFile(file) {
     if (fs.existsSync(f)) {
       const parsed = parseEnv(fs.readFileSync(f, 'utf8'));
       for (const [k, v] of Object.entries(parsed)) {
-        if ((process.env[k] === undefined || process.env[k] === '') && v !== '') {
+        if (process.env[k] === undefined && v !== '') {
           process.env[k] = v;
           loaded.push(k);
         }
@@ -42,7 +42,7 @@ function loadEnvFile(file) {
     if (fs.existsSync(globalEnv)) {
       const parsedGlobal = parseEnv(fs.readFileSync(globalEnv, 'utf8'));
       for (const [k, v] of Object.entries(parsedGlobal)) {
-        if ((process.env[k] === undefined || process.env[k] === '') && v !== '') {
+        if (process.env[k] === undefined && v !== '') {
           process.env[k] = v;
           if (!loaded.includes(k)) loaded.push(k);
         }
