@@ -5,11 +5,11 @@
   var R = globalThis.TLRules;
   var els = {};
   ['date', 'planBadge', 'openSettingsTop', 'coachLine', 'banner', 'bannerIcon', 'bannerTitle', 'bannerText', 'bannerCd', 'stats',
-   'sessionCard', 'sessionStatusTag',
+   'sessionCard', 'sessionStatusTag', 'sessionHours', 'sessionSchedule', 'sessionTimeLabel', 'sessionCountdown',
    'focusCard', 'focusText', 'focusEditBtn',
    'qaCharts', 'qaOptions', 'qaTechnicals', 'qaAddTrade', 'qaAi', 'qaJournal', 'qaRules',
    'proUpgradeCard', 'proUpgradeBtn',
-   'logDrawer', 'pnl', 'risk', 'addWin', 'addLoss', 'lockNow', 'undo', 'openOptions',
+   'logDrawer', 'logDrawerBody', 'pnl', 'risk', 'addWin', 'addLoss', 'lockNow', 'lockLabel', 'undo', 'openOptions',
    'openOptions2', 'upgradeHeaderBtn', 'viewPlansBtn', 'openSidePanelBtn', 'openDashboardHero', 'footnote'].forEach(function (id) {
     els[id] = document.getElementById(id);
   });
@@ -18,19 +18,25 @@
     tabUrl: '', hostname: '' };
 
   // Load saved Daily Focus goal
+  function renderFocus(text) {
+    if (els.focusText) els.focusText.textContent = text || 'Stick strictly to predefined setups. Never revenge trade.';
+  }
   function loadFocus() {
     try {
       chrome.storage.local.get(['tlDailyFocus'], function (r) {
-        if (r && r.tlDailyFocus) {
-          els.focusText.innerHTML = '<b>Daily Focus:</b> ' + escapeHtml(r.tlDailyFocus);
-        }
+        if (r && r.tlDailyFocus) renderFocus(r.tlDailyFocus);
       });
     } catch (e) {}
   }
-  function escapeHtml(str) {
-    return String(str || '').replace(/[&<>"']/g, function (m) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
-    });
+  function icon(name) {
+    return '<svg class="tl-icon" aria-hidden="true"><use href="#i-' + name + '"></use></svg>';
+  }
+  function setBannerIcon(name) {
+    if (els.bannerIcon) els.bannerIcon.innerHTML = icon(name);
+  }
+  function setLockLabel(text) {
+    if (els.lockLabel) els.lockLabel.textContent = text;
+    else if (els.lockNow) els.lockNow.textContent = text;
   }
 
   function send(type, extra) {
@@ -64,11 +70,45 @@
     });
   }
 
-  function stat(k, v, lim, pct, cls) {
-    return '<div class="stat"><div class="k">' + k + '</div>' +
-      '<div class="v ' + (cls || '') + '">' + v + '</div>' +
-      '<div class="lim">' + lim + '</div>' +
-      '<div class="mini-bar"><i style="width:' + Math.max(0, Math.min(100, Math.round((pct || 0) * 100))) + '%"></i></div></div>';
+  function stat(k, v, lim, pct, cls, iconName, tone) {
+    return '<div class="stat popup-stat">' +
+      '<span class="metric-icon ' + (tone || 'blue') + '">' + icon(iconName || 'trades') + '</span>' +
+      '<span class="stat-lbl">' + k + '</span>' +
+      '<strong class="stat-val ' + (cls || '') + '" title="' + v + '">' + v + '</strong>' +
+      '<span class="stat-sub" title="' + lim + '">' + lim + '</span></div>';
+  }
+
+  function hhmm(mins) {
+    var m = Math.max(0, Math.min(1439, Number(mins) || 0));
+    return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  }
+
+  function shortCountdown(until, now) {
+    var diff = Math.max(0, (until || 0) - (now || Date.now()));
+    if (!diff) return 'now';
+    var hours = Math.floor(diff / 3600000);
+    var minutes = Math.floor((diff % 3600000) / 60000);
+    return (hours ? hours + 'h ' : '') + String(minutes).padStart(2, '0') + 'm';
+  }
+
+  function renderMarketSession(settings) {
+    var s = settings || R.DEFAULT_SETTINGS;
+    var now = Date.now();
+    var info = R.marketSessionInfo ? R.marketSessionInfo(now, s) :
+      { isMarketOpen: !(R.isClosedDay && R.isClosedDay(now, s)), nextSessionOpen: R.nextMarketOpen(now, s) };
+    if (els.sessionStatusTag) {
+      els.sessionStatusTag.title = info.message || '';
+      els.sessionStatusTag.className = 'session-pill ' + (info.isMarketOpen ? 'live' : 'closed');
+      els.sessionStatusTag.textContent = info.isMarketOpen ? 'Market Open' : 'Planning Mode';
+    }
+    if (els.sessionSchedule) {
+      els.sessionSchedule.textContent = 'Mon–Fri · ' + hhmm(s.marketOpenMin) + '–' + hhmm(s.marketCloseMin || 930) + ' IST';
+    }
+    var until = info.nextSessionOpen;
+    if (info.isMarketOpen && R.istAtMinutes) until = R.istAtMinutes(now, s.marketCloseMin || 930);
+    if (els.sessionTimeLabel) els.sessionTimeLabel.textContent = info.isMarketOpen ? 'Market closes in' : 'Market opens in';
+    if (els.sessionCountdown) els.sessionCountdown.textContent = shortCountdown(until, now);
+    return info;
   }
 
   function render() {
@@ -96,29 +136,22 @@
     if (els.proUpgradeCard) els.proUpgradeCard.style.display = proPlus ? 'none' : 'flex';
     if (els.upgradeHeaderBtn) els.upgradeHeaderBtn.style.display = proPlus ? 'none' : 'inline-block';
 
-    var sessionInfo = R.marketSessionInfo ? R.marketSessionInfo(Date.now(), s) :
-      { isMarketOpen: !(R.isClosedDay && R.isClosedDay(Date.now(), s)), isClosedDay: R.isClosedDay && R.isClosedDay(Date.now(), s) };
+    var sessionInfo = renderMarketSession(s);
     var isClosed = !sessionInfo.isMarketOpen;
-    if (els.sessionStatusTag) {
-      els.sessionStatusTag.title = sessionInfo.message || '';
-      if (isClosed) {
-        els.sessionStatusTag.className = 'session-pill closed';
-        els.sessionStatusTag.textContent = 'Planning Mode';
-      } else {
-        els.sessionStatusTag.className = 'session-pill live';
-        els.sessionStatusTag.textContent = 'Session Active';
-      }
-    }
 
     if (!state) {
       els.banner.className = 'banner open';
-      if (els.bannerIcon) els.bannerIcon.textContent = '🛡️';
-      els.bannerTitle.textContent = 'Trading Active';
-      els.bannerText.innerHTML = 'Open a broker tab (Kite, Upstox, Angel One, Dhan, 5paisa\u2026) ' +
-        'and Trade Lock starts counting from the order book.';
+      setBannerIcon(isClosed ? 'clock' : 'shield');
+      els.bannerTitle.textContent = isClosed ? 'Planning Mode' : 'Trading Unlocked';
+      els.bannerText.textContent = 'Open a broker tab to start your session. Journal and planning tools remain available.';
       els.bannerCd.style.display = 'none';
-      els.stats.innerHTML = '';
-      els.footnote.textContent = 'no session';
+      els.stats.innerHTML =
+        stat('Trades', '0', 'no session', 0, '', 'trades', 'blue') +
+        stat('P&L', R.inr(0), 'today', 0, '', 'wallet', 'green') +
+        stat('Risk Used', R.inr(0), 'no session', 0, '', 'risk', 'violet') +
+        stat('Win Rate', '0%', '0W · 0L', 0, '', 'target', 'amber');
+      els.footnote.textContent = 'No active broker session · planning tools available';
+      setLockLabel('Lock Trading Now');
       return;
     }
 
@@ -131,7 +164,7 @@
 
     els.banner.className = 'banner ' + (locked ? 'locked' : (state && state.pendingLock ? 'warn' : 'open'));
     if (locked) {
-      if (els.bannerIcon) els.bannerIcon.textContent = '🔒';
+      setBannerIcon('lock');
       if (isWarningMode) {
         els.bannerTitle.textContent = 'Full-Screen Discipline Lock Active';
         els.bannerText.textContent = (view.copy && view.copy.detail)
@@ -167,13 +200,13 @@
       }
       els.bannerCd.style.display = 'block';
     } else if (state && state.pendingLock) {
-      if (els.bannerIcon) els.bannerIcon.textContent = '⚠️';
+      setBannerIcon('risk');
       els.bannerTitle.textContent = 'Pending Lock — Locks on Exit';
       els.bannerText.textContent = (state.pendingLock.title || 'Limit reached') +
         ' — terminal remains active so you can square off your open trade. Locks automatically the moment your position closes.';
       els.bannerCd.style.display = 'none';
     } else {
-      if (els.bannerIcon) els.bannerIcon.textContent = isClosed ? '📅' : '🛡️';
+      setBannerIcon(isClosed ? 'clock' : 'shield');
       if (isClosed) {
         els.bannerTitle.textContent = 'Planning Mode (' + ({ WEEKEND: 'Weekend', EXCHANGE_HOLIDAY: 'Holiday',
           PRE_MARKET: 'Before open', POST_MARKET: 'After close' }[sessionInfo.sessionType] || 'Market closed') + ')';
@@ -189,26 +222,28 @@
 
     if (els.coachLine && globalThis.TLInsights) {
       if (!proPlus) {
-        els.coachLine.style.display = 'block';
-        els.coachLine.innerHTML = '🤖 <b>AI Coach (Pro+):</b> deterministic revenge-trade & tilt detection, discipline score, and day report.';
+        els.coachLine.style.display = 'none';
       } else {
         var ia = globalThis.TLInsights.analyze(state.log, sess, s);
         var top = ia.signals.find(function (x) { return x.level !== 'ok'; }) || ia.signals[0];
         els.coachLine.style.display = 'block';
-        els.coachLine.innerHTML = '🤖 <b>Coach ' + ia.score + '/100:</b> ' + (top ? top.text : 'Log a trade to start coaching.');
+        els.coachLine.textContent = 'AI Coach ' + ia.score + '/100 · ' + (top ? top.text : 'Log a trade to start coaching.');
       }
     }
 
     var pnlCls = sess.pnl > 0 ? 'pos' : (sess.pnl < 0 ? 'neg' : '');
     var capLim = R.dailyRiskLimit ? R.dailyRiskLimit(s) : 0;
     var riskLim = capLim || s.maxDailyRisk;
+    var summary = R.summarizeLog ? R.summarizeLog(state.log) : { winRate: 0, wins: 0, losses: 0 };
     els.stats.innerHTML =
       stat('Trades', sess.trades, s.maxTradesPerDay ? 'of ' + s.maxTradesPerDay : 'no cap',
-           R.progress(sess.trades, s.maxTradesPerDay)) +
-      stat('Realised', R.inr(sess.pnl), s.maxDailyLoss ? '\u2212' + R.inr(s.maxDailyLoss) + ' limit' : 'no cap',
-           R.progress(Math.abs(sess.pnl), s.maxDailyLoss), pnlCls) +
-      stat('Risk used', R.inr(sess.riskUsed), riskLim ? R.inr(riskLim) + (capLim ? ' capital budget' : ' budget') : 'no cap',
-           R.progress(sess.riskUsed, riskLim));
+           R.progress(sess.trades, s.maxTradesPerDay), '', 'trades', 'blue') +
+      stat('P&L', (sess.pnl > 0 ? '+' : '') + R.inr(sess.pnl), 'realised today',
+           R.progress(Math.abs(sess.pnl), s.maxDailyLoss), pnlCls, 'wallet', 'green') +
+      stat('Risk Used', R.inr(sess.riskUsed), riskLim ? 'of ' + R.inr(riskLim) : 'no cap',
+           R.progress(sess.riskUsed, riskLim), '', 'risk', 'violet') +
+      stat('Win Rate', (summary.winRate || 0) + '%', (summary.wins || 0) + 'W · ' + (summary.losses || 0) + 'L',
+           0, '', 'target', 'amber');
 
     if (!isClosed && !s.maxTradesPerDay && !s.maxDailyLoss && !s.profitTarget && !s.maxDailyRisk) {
       els.bannerText.innerHTML = '<span class="warn">No limits are switched on.</span> Set them in settings, or the lock will never trigger.';
@@ -222,16 +257,16 @@
     if (els.lockNow) {
       if (locked) {
         if (lock.manual) {
-          els.lockNow.textContent = 'Release focus lock';
+          setLockLabel('Release focus lock');
           els.lockNow.disabled = false;
           els.lockNow.title = 'Release your self-imposed focus lock with confirmation';
         } else {
-          els.lockNow.textContent = 'Rule lock active';
+          setLockLabel('Rule lock active');
           els.lockNow.disabled = true;
           els.lockNow.title = 'Rule-triggered locks cannot be released early';
         }
       } else {
-        els.lockNow.textContent = 'Lock screen now';
+        setLockLabel('Lock Trading Now');
         els.lockNow.disabled = false;
         els.lockNow.title = 'Lock trading terminal immediately';
       }
@@ -239,6 +274,7 @@
   }
 
   function tick() {
+    renderMarketSession(view.settings || R.DEFAULT_SETTINGS);
     var lock = view.state && view.state.lock;
     if (lock && lock.active) els.bannerCd.textContent = R.countdown(lock.until, Date.now());
   }
@@ -434,6 +470,9 @@
     els.planBadge.style.cursor = 'pointer';
     els.planBadge.title = 'Click to view Pro prepaid plans';
     els.planBadge.addEventListener('click', function () { openWorkspace('license'); });
+    els.planBadge.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openWorkspace('license'); }
+    });
   }
 
   function openWorkspace(targetTab) {
@@ -528,10 +567,21 @@
   if (els.qaRules) els.qaRules.addEventListener('click', function () { openWorkspace('rules'); });
   if (els.proUpgradeCard) els.proUpgradeCard.addEventListener('click', function () { openWorkspace('license'); });
 
+  function setLogDrawer(open) {
+    if (!els.logDrawerBody || !els.logDrawer) return;
+    els.logDrawerBody.hidden = !open;
+    els.logDrawer.setAttribute('aria-expanded', open ? 'true' : 'false');
+    var plus = els.logDrawer.querySelector('.log-plus');
+    if (plus) plus.textContent = open ? '−' : '+';
+  }
+  if (els.logDrawer) els.logDrawer.addEventListener('click', function () {
+    setLogDrawer(!els.logDrawerBody || els.logDrawerBody.hidden);
+  });
   if (els.qaAddTrade) els.qaAddTrade.addEventListener('click', function () {
+    setLogDrawer(true);
     if (els.pnl) {
       els.pnl.focus();
-      els.pnl.scrollIntoView({ behavior: 'smooth' });
+      els.pnl.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   });
 
@@ -542,9 +592,7 @@
         var updated = prompt('Set your Daily Trading Focus / Rule:', current);
         if (updated !== null && updated.trim()) {
           var clean = updated.trim();
-          chrome.storage.local.set({ tlDailyFocus: clean }, function () {
-            els.focusText.innerHTML = '<b>Daily Focus:</b> ' + escapeHtml(clean);
-          });
+          chrome.storage.local.set({ tlDailyFocus: clean }, function () { renderFocus(clean); });
         }
       });
     });

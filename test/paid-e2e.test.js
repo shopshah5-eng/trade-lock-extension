@@ -131,6 +131,7 @@ function serveFixture() {
 
     console.log('\n2. Activate the Pro key in Options against the isolated API');
     const options = await browser.newPage();
+    await options.setViewport({ width: 1280, height: 900 });
     await options.goto('chrome-extension://' + extId + '/options/options.html#license', { waitUntil: 'domcontentloaded' });
     await options.waitForSelector('#licActivate', { visible: true, timeout: 10000 });
     await options.type('#licKey', key);

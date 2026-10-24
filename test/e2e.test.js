@@ -382,6 +382,83 @@ function serve(root) {
   await page.screenshot({ path: path.join(SHOTS, 'hud.png') });
   console.log('       screenshot -> screenshots/hud.png');
 
+  console.log('\n14. Reference-inspired popup and responsive workspace');
+  const optionsPage = await browser.newPage();
+  await optionsPage.setViewport({ width: 1440, height: 1000 });
+  await optionsPage.goto('chrome-extension://' + extId + '/options/options.html#overview', { waitUntil: 'domcontentloaded' });
+  await optionsPage.waitForSelector('#overviewChart path', { visible: true, timeout: 10000 });
+  const wide = await optionsPage.evaluate(() => {
+    const sidebar = document.querySelector('.side-nav');
+    const workspace = document.querySelector('.workspace');
+    const firstMetric = document.querySelector('.overview-metric');
+    return {
+      viewport: innerWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      sidebarDisplay: getComputedStyle(sidebar).display,
+      sidebarRight: sidebar.getBoundingClientRect().right,
+      workspaceLeft: workspace.getBoundingClientRect().left,
+      firstMetricLeft: firstMetric.getBoundingClientRect().left,
+      mobileNav: getComputedStyle(document.querySelector('.top-nav')).display,
+      quickActions: document.querySelectorAll('.overview-quick-tile').length,
+      chartPaths: document.querySelectorAll('#overviewChart path').length,
+      demoLabel: document.querySelector('.demo-badge').textContent.trim()
+    };
+  });
+  check('wide workspace clears the persistent sidebar', wide.sidebarDisplay === 'flex' && wide.workspaceLeft >= 220 && wide.firstMetricLeft >= wide.sidebarRight,
+    JSON.stringify(wide));
+  check('wide workspace has no horizontal overflow and uses desktop nav', wide.scrollWidth <= wide.viewport && wide.mobileNav === 'none');
+  check('overview has six quick actions and a rendered chart', wide.quickActions === 6 && wide.chartPaths >= 2);
+  check('overview chart is prominently labelled simulated', wide.demoLabel === 'SIMULATED');
+  await optionsPage.screenshot({ path: path.join(SHOTS, 'options-wide.png'), fullPage: true });
+
+  await optionsPage.select('#overviewSymbol', 'BANKNIFTY');
+  await sleep(200);
+  const chartSync = await optionsPage.evaluate(() => ({
+    overview: document.querySelector('#overviewChartSymbol').textContent,
+    market: document.querySelector('#marketSymbol').value,
+    source: document.querySelector('#overviewChartSource').textContent
+  }));
+  check('overview chart controls stay synchronized with Market & OI', /BANK NIFTY/.test(chartSync.overview) && chartSync.market === 'BANKNIFTY' && /SIMULATED/.test(chartSync.source),
+    JSON.stringify(chartSync));
+
+  await optionsPage.setViewport({ width: 400, height: 800 });
+  await sleep(200);
+  const narrow = await optionsPage.evaluate(() => ({
+    viewport: innerWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    sidebar: getComputedStyle(document.querySelector('.side-nav')).display,
+    mobileNav: getComputedStyle(document.querySelector('.top-nav')).display,
+    mobileLock: getComputedStyle(document.querySelector('#mobileLockNow')).display
+  }));
+  check('narrow side panel switches to compact navigation without overflow', narrow.sidebar === 'none' && narrow.mobileNav === 'flex' && narrow.scrollWidth <= narrow.viewport,
+    JSON.stringify(narrow));
+  check('narrow side panel keeps the trading lock accessible', narrow.mobileLock !== 'none');
+  await optionsPage.screenshot({ path: path.join(SHOTS, 'options-narrow.png'), fullPage: true });
+  await optionsPage.close();
+
+  const popupPage = await browser.newPage();
+  await popupPage.setViewport({ width: 400, height: 600 });
+  await popupPage.goto('chrome-extension://' + extId + '/popup/popup.html', { waitUntil: 'domcontentloaded' });
+  await popupPage.waitForSelector('#stats .popup-stat', { visible: true, timeout: 10000 });
+  const popupLayout = await popupPage.evaluate(() => ({
+    viewport: innerWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    metrics: document.querySelectorAll('#stats .popup-stat').length,
+    quickActions: document.querySelectorAll('.popup-quick-tile').length,
+    lockLabel: document.querySelector('#lockLabel').textContent.trim()
+  }));
+  check('compact popup renders four metrics, six actions, and no overflow', popupLayout.metrics === 4 && popupLayout.quickActions === 6 && popupLayout.scrollWidth <= popupLayout.viewport,
+    JSON.stringify(popupLayout));
+  check('compact popup exposes the real lock action', !!popupLayout.lockLabel);
+  await popupPage.click('#logDrawer');
+  const drawerOpen = await popupPage.$eval('#logDrawerBody', e => !e.hidden);
+  check('popup manual-log drawer opens', drawerOpen);
+  await popupPage.click('#qaAddTrade');
+  const logFocus = await popupPage.evaluate(() => document.activeElement && document.activeElement.id);
+  check('popup Log Trade shortcut focuses the amount field', logFocus === 'pnl', String(logFocus));
+  await popupPage.screenshot({ path: path.join(SHOTS, 'popup.png'), fullPage: true });
+  await popupPage.close();
+
   await browser.close();
   browser = null;
   await new Promise(resolve => server.close(resolve));

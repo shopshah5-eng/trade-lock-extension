@@ -1,539 +1,145 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Trade Lock</title>
-<link rel="stylesheet" href="../options/ui.css">
-<style>
-  body {
-    width: 388px;
-    margin: 0;
-    padding: 14px 14px 16px;
-    background-color: #070d18;
-    background-image:
-      radial-gradient(circle at 12% 10%, rgba(55, 139, 255, 0.18) 0%, transparent 40%),
-      radial-gradient(circle at 88% 12%, rgba(139, 92, 246, 0.16) 0%, transparent 40%),
-      radial-gradient(circle at 50% 95%, rgba(255, 82, 104, 0.10) 0%, transparent 50%);
-    background-attachment: fixed;
-    color: var(--text);
-    font-size: 12.5px;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    overflow-x: hidden;
-  }
-
-  /* Header */
-  .head {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 12px;
-  }
-  .head .logo {
-    width: 34px;
-    height: 34px;
-    border-radius: 10px;
-    display: grid;
-    place-items: center;
-    background: linear-gradient(145deg, #ff5268, #dc2626);
-    box-shadow: 0 4px 14px rgba(255, 82, 104, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.35);
-    flex-shrink: 0;
-  }
-  .head h1 {
-    font-size: 15.5px;
-    margin: 0;
-    font-weight: 800;
-    letter-spacing: -.02em;
-    color: #ffffff;
-    line-height: 1.2;
-  }
-  .head .sub {
-    font-size: 11px;
-    color: var(--muted);
-    margin-top: 1px;
-  }
-  .spacer { flex: 1; }
-
-  .icon-btn {
-    background: rgba(255, 255, 255, 0.07);
-    border: 1px solid var(--glass-border);
-    border-radius: 9px;
-    padding: 6px;
-    cursor: pointer;
-    color: var(--muted);
-    display: grid;
-    place-items: center;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    transition: all .16s ease;
-  }
-  .icon-btn:hover {
-    background: rgba(255, 255, 255, 0.14);
-    color: #fff;
-    border-color: var(--line-strong);
-    transform: translateY(-1px);
-  }
-
-  /* Primary Status Banner Card */
-  .banner {
-    border-radius: 14px;
-    padding: 13px 14px;
-    margin-bottom: 10px;
-    display: flex;
-    gap: 12px;
-    align-items: flex-start;
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-    box-shadow: var(--glass-shadow), var(--glass-highlight);
-    position: relative;
-    overflow: hidden;
-    transition: all .2s ease;
-  }
-  .banner::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; right: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
-  }
-  .banner.open {
-    background: linear-gradient(145deg, rgba(16, 185, 129, 0.12), rgba(10, 17, 32, 0.65));
-    border: 1px solid rgba(16, 185, 129, 0.35);
-  }
-  .banner.locked {
-    background: linear-gradient(145deg, rgba(255, 82, 104, 0.16), rgba(10, 17, 32, 0.70));
-    border: 1px solid rgba(255, 82, 104, 0.5);
-  }
-  .banner.warn {
-    background: linear-gradient(145deg, rgba(245, 158, 11, 0.15), rgba(10, 17, 32, 0.65));
-    border: 1px solid rgba(245, 158, 11, 0.45);
-  }
-  .banner-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-    margin-top: 1px;
-    font-size: 14px;
-  }
-  .banner.open .banner-icon { background: rgba(16, 185, 129, 0.2); color: #34d399; }
-  .banner.locked .banner-icon { background: rgba(255, 82, 104, 0.2); color: #ff5268; }
-  .banner.warn .banner-icon { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
-  .banner .big { font-size: 13.5px; font-weight: 750; margin-bottom: 2px; color: #fff; }
-  .banner .small { font-size: 11px; color: var(--muted); line-height: 1.45; }
-  .banner .cd {
-    font-size: 20px;
-    font-weight: 850;
-    font-variant-numeric: tabular-nums;
-    margin-top: 6px;
-    color: #fca5a5;
-    letter-spacing: .02em;
-  }
-
-  /* Market Session Info Card */
-  .session-card {
-    background: rgba(255, 255, 255, 0.04);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--glass-border);
-    border-radius: 12px;
-    padding: 8px 12px;
-    margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 11px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-  .session-left {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    color: var(--muted);
-  }
-  .session-pill {
-    padding: 2px 7px;
-    border-radius: 6px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .04em;
-    background: rgba(59, 130, 246, 0.15);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    color: #93c5fd;
-  }
-  .session-pill.live {
-    background: rgba(16, 185, 129, 0.15);
-    border-color: rgba(16, 185, 129, 0.35);
-    color: #6ee7b7;
-  }
-  .session-pill.closed {
-    background: rgba(245, 158, 11, 0.14);
-    border-color: rgba(245, 158, 11, 0.35);
-    color: #fde68a;
-  }
-
-  /* Bento Stats Row */
-  .stats {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 7px;
-    margin-bottom: 11px;
-  }
-  .stat {
-    background: rgba(10, 17, 32, 0.55);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border: 1px solid var(--glass-border);
-    border-radius: 12px;
-    padding: 9px 8px;
-    box-shadow: var(--glass-highlight);
-    display: flex;
-    flex-direction: column;
-    transition: transform .15s ease, border-color .15s ease;
-  }
-  .stat:hover {
-    transform: translateY(-1px);
-    border-color: var(--line-strong);
-  }
-  .stat .k {
-    font-size: 9.5px;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    color: var(--muted);
-    font-weight: 750;
-  }
-  .stat .v {
-    font-size: 14.5px;
-    font-weight: 800;
-    margin-top: 3px;
-    font-variant-numeric: tabular-nums;
-    color: #fff;
-  }
-  .stat .lim {
-    font-size: 9.5px;
-    color: var(--dim);
-    margin-top: 2px;
-  }
-  .mini-bar {
-    height: 4px;
-    border-radius: 99px;
-    background: rgba(255, 255, 255, 0.08);
-    margin-top: 6px;
-    overflow: hidden;
-  }
-  .mini-bar > i {
-    display: block;
-    height: 100%;
-    background: linear-gradient(90deg, #10b981, #f59e0b, #ff5268);
-    border-radius: 99px;
-    transition: width .3s ease;
-  }
-
-  /* Dual Action Hero Row */
-  .hero-actions {
-    display: flex;
-    gap: 7px;
-    margin-bottom: 11px;
-  }
-  .hero-actions button {
-    flex: 1;
-    padding: 9px 8px;
-    font-size: 11.5px;
-    font-weight: 750;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    cursor: pointer;
-    transition: all .16s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  #openSidePanelBtn {
-    background: linear-gradient(135deg, #059669, #10b981);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    color: #fff;
-    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  }
-  #openSidePanelBtn:hover {
-    background: linear-gradient(135deg, #047857, #059669);
-    box-shadow: 0 6px 18px rgba(16, 185, 129, 0.45);
-    transform: translateY(-1px);
-  }
-  #openDashboardHero {
-    background: rgba(55, 139, 255, 0.14);
-    border: 1px solid rgba(55, 139, 255, 0.35);
-    color: #93c5fd;
-    backdrop-filter: blur(12px);
-  }
-  #openDashboardHero:hover {
-    background: rgba(55, 139, 255, 0.22);
-    color: #fff;
-    border-color: rgba(55, 139, 255, 0.55);
-    transform: translateY(-1px);
-  }
-
-  /* 6-Tile Quick Actions Grid */
-  .quick-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-    margin-bottom: 11px;
-  }
-  .quick-btn {
-    background: rgba(255, 255, 255, 0.045);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border: 1px solid var(--glass-border);
-    border-radius: 11px;
-    padding: 9px 6px;
-    font-size: 11px;
-    font-weight: 650;
-    color: var(--text);
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    text-align: center;
-    box-shadow: var(--glass-highlight);
-    transition: all .16s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .quick-btn:hover {
-    background: rgba(255, 255, 255, 0.10);
-    border-color: var(--line-strong);
-    transform: translateY(-2px);
-    color: #fff;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25), var(--glass-highlight);
-  }
-  .quick-btn .qb-icon {
-    font-size: 16px;
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-  }
-
-  /* Pro+ AI Coach Card */
-  .pro-card {
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.14), rgba(59, 130, 246, 0.10));
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(139, 92, 246, 0.32);
-    border-radius: 12px;
-    padding: 10px 12px;
-    margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    box-shadow: 0 4px 16px rgba(139, 92, 246, 0.15), var(--glass-highlight);
-    cursor: pointer;
-    transition: all .16s ease;
-  }
-  .pro-card:hover {
-    border-color: rgba(139, 92, 246, 0.55);
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.20), rgba(59, 130, 246, 0.15));
-    transform: translateY(-1px);
-  }
-  .pro-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    background: linear-gradient(135deg, #8b5cf6, #6366f1);
-    display: grid;
-    place-items: center;
-    font-size: 13px;
-    flex-shrink: 0;
-    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
-  }
-  .pro-info { flex: 1; }
-  .pro-title { font-size: 12px; font-weight: 750; color: #fff; }
-  .pro-desc { font-size: 10.5px; color: #c4b5fd; margin-top: 1px; line-height: 1.35; }
-  .pro-cta {
-    font-size: 10.5px;
-    font-weight: 800;
-    color: #fff;
-    background: rgba(255, 255, 255, 0.15);
-    padding: 4px 8px;
-    border-radius: 6px;
-    white-space: nowrap;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-  }
-
-  /* Daily Focus Card */
-  .focus-card {
-    background: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.25);
-    border-radius: 11px;
-    padding: 9px 12px;
-    margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    backdrop-filter: blur(12px);
-  }
-  .focus-icon { font-size: 15px; }
-  .focus-text { flex: 1; font-size: 11.5px; color: #bfdbfe; line-height: 1.4; }
-  .focus-text b { color: #fff; font-weight: 700; }
-  .focus-edit-btn { background: none; border: none; padding: 2px 4px; cursor: pointer; color: var(--muted); font-size: 12px; }
-  .focus-edit-btn:hover { color: #fff; }
-
-  /* Quick Log Drawer */
-  .log {
-    background: rgba(10, 17, 32, 0.55);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border: 1px solid var(--glass-border);
-    border-radius: 12px;
-    padding: 11px;
-    margin-bottom: 10px;
-    box-shadow: var(--glass-highlight);
-  }
-  .log .t { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 7px; font-weight: 750; }
-  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-  .fields input { width: 100%; font-size: 12px; padding: 7px 9px; border-radius: 8px; }
-  .rowbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 7px; }
-  .rowbtns button { padding: 7px; font-size: 12px; border-radius: 8px; }
-
-  .btnrow { display: flex; gap: 7px; }
-  .btnrow button { flex: 1; padding: 8px 10px; font-size: 11.5px; border-radius: 9px; }
-  .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 10.5px; color: var(--dim); }
-  .foot a { color: var(--link); cursor: pointer; text-decoration: none; }
-  .pos { color: #34d399; }
-  .neg { color: #f87171; }
-  .warn { color: #fbbf24; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trade Lock</title>
+  <link rel="stylesheet" href="../options/ui.css">
+  <link rel="stylesheet" href="../options/dashboard.css">
 </head>
-<body>
-  <!-- Header -->
-  <div class="head">
-    <div class="logo">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-        <rect x="9" y="11" width="6" height="5" rx="1"/>
-        <path d="M10 11V9a2 2 0 0 1 4 0v2"/>
-      </svg>
-    </div>
-    <div>
+<body class="trade-lock-popup">
+<svg class="tl-svg-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.2c0 4.6 3.1 8.2 7.5 9.8 4.4-1.6 7.5-5.2 7.5-9.8V6L12 3Z"/><path d="m8.7 12 2.1 2.1 4.6-4.7"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.5" y="10" width="15" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+  <symbol id="i-trades" viewBox="0 0 24 24"><path d="M4 17 9 12l3 3 7-8"/><path d="M14 7h5v5"/><path d="M4 4v16h16"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 6.5h13a3 3 0 0 1 3 3v8a2 2 0 0 1-2 2H5a3 3 0 0 1-3-3v-11a3 3 0 0 1 3-3h11"/><path d="M15 11h7v5h-7a2.5 2.5 0 0 1 0-5Z"/></symbol>
+  <symbol id="i-risk" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.2c0 4.6 3.1 8.2 7.5 9.8 4.4-1.6 7.5-5.2 7.5-9.8V6L12 3Z"/><path d="M12 8v5M12 16.5v.1"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H11v17H6.5A2.5 2.5 0 0 0 4 21.5v-17ZM20 4.5A2.5 2.5 0 0 0 17.5 2H13v17h4.5a2.5 2.5 0 0 1 2.5 2.5v-17Z"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3ZM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14ZM5 14l.7 1.8 1.8.7-1.8.7L5 19l-.7-1.8-1.8-.7 1.8-.7L5 14Z"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 4v16h16"/><path d="m7 15 4-4 3 2 5-6"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h5M15 6h5M4 12h10M18 12h2M4 18h2M12 18h8"/><circle cx="12" cy="6" r="3"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="18" r="3"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l3.5-.7L20 6.8 17.2 4 4.7 16.5 4 20Z"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></symbol>
+</svg>
+
+<main class="popup-shell">
+  <header class="popup-head">
+    <div class="tl-brand-mark"><svg class="tl-icon" aria-hidden="true"><use href="#i-shield"></use></svg></div>
+    <div class="popup-brand-copy">
       <h1>Trade Lock</h1>
-      <div class="sub">Trade with discipline</div>
+      <p>Trade with discipline.</p>
     </div>
-    <div class="spacer"></div>
-    <button type="button" id="planBadge" class="badge free" style="border:0;cursor:pointer" title="View your plan">FREE</button>
-    <button id="upgradeHeaderBtn" class="badge" style="cursor:pointer;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;font-weight:750;padding:4px 9px;border-radius:7px;letter-spacing:0.04em;" title="View Pro &amp; Pro+ AI plans">Upgrade ↗</button>
-    <button class="icon-btn" id="openSettingsTop" title="Open Settings &amp; Dashboard">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-      </svg>
-    </button>
-  </div>
-
-  <!-- Primary Status Card -->
-  <div id="banner" class="banner open">
-    <div class="banner-icon" id="bannerIcon">🛡️</div>
-    <div style="flex:1">
-      <div class="big" id="bannerTitle">Trading Active</div>
-      <div class="small" id="bannerText">Monitoring order fills against risk rules.</div>
-      <div class="cd" id="bannerCd" style="display:none"></div>
+    <div class="popup-head-actions">
+      <span id="planBadge" class="badge free" role="button" tabindex="0" title="View plans">FREE</span>
+      <button id="openSettingsTop" class="popup-icon-btn" type="button" title="Open settings" aria-label="Open settings">
+        <svg class="tl-icon" aria-hidden="true"><use href="#i-settings"></use></svg>
+      </button>
     </div>
-  </div>
+  </header>
 
-  <!-- Market Session Card (Asia/Kolkata + Planning Mode / Countdown) -->
-  <div class="session-card" id="sessionCard">
-    <div class="session-left">
-      <span>🇮🇳 Asia/Kolkata:</span>
-      <b id="date" style="color:#fff">—</b>
+  <section id="banner" class="banner open" aria-label="Trading lock status">
+    <span id="bannerIcon" class="banner-icon" aria-hidden="true"><svg class="tl-icon"><use href="#i-shield"></use></svg></span>
+    <div class="banner-copy">
+      <div class="banner-title-row">
+        <strong id="bannerTitle">Trading Unlocked</strong>
+        <span id="bannerCd" style="display:none"></span>
+      </div>
+      <span id="bannerText">Trading is allowed. Every fill counts toward your limits.</span>
     </div>
-    <div id="sessionStatusTag" class="session-pill live">Session Active</div>
-  </div>
+    <span class="banner-chevron" aria-hidden="true"><svg class="tl-icon"><use href="#i-chevron"></use></svg></span>
+  </section>
 
-  <!-- AI Coach Line -->
-  <div id="coachLine" style="display:none;margin-bottom:10px;font-size:11.5px;line-height:1.5;padding:8px 10px;border-radius:10px;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.35);color:#fde68a"></div>
+  <section id="sessionCard" class="popup-session" aria-label="NSE market session">
+    <span class="session-clock"><svg class="tl-icon" aria-hidden="true"><use href="#i-clock"></use></svg></span>
+    <div class="popup-session-main">
+      <div class="popup-session-title">NSE Session <span id="sessionStatusTag" class="session-pill closed">Planning Mode</span></div>
+      <div id="sessionHours" class="popup-session-meta"><span id="sessionSchedule">Mon–Fri · 09:15–15:30 IST</span> · <span id="date">—</span></div>
+    </div>
+    <div class="popup-session-time">
+      <small id="sessionTimeLabel">Market opens in</small>
+      <strong id="sessionCountdown">—</strong>
+    </div>
+  </section>
 
-  <!-- Bento Stats: Trades Today, Realised P&L, Risk Used -->
-  <div class="stats" id="stats"></div>
+  <section id="stats" class="stats" aria-label="Today's trading metrics"></section>
 
-  <!-- Hero Dual Launchers: Side Panel & Full Tab -->
-  <div class="hero-actions">
-    <button id="openSidePanelBtn" title="Open Market, OI &amp; Journal in Side Panel right beside your broker without a new tab">
-      <span>◨ Side Panel</span>
+  <div class="popup-section-head"><h2>Quick actions</h2><span>Your trading toolkit</span></div>
+  <nav class="popup-quick-grid" aria-label="Quick actions">
+    <button id="qaAddTrade" class="popup-quick-tile" type="button">
+      <span class="quick-icon green"><svg class="tl-icon" aria-hidden="true"><use href="#i-plus"></use></svg></span>
+      <span>Log Trade</span>
     </button>
-    <button id="openDashboardHero" title="Open full expanded terminal in a new tab">
-      <span>⚡ Full Tab ↗</span>
-    </button>
-  </div>
-
-  <!-- 6-Tile Quick Access Grid (Routes directly to Side Panel tabs) -->
-  <div class="quick-grid">
-    <button class="quick-btn" id="qaCharts">
-      <span class="qb-icon">📈</span>
-      <span>Market &amp; OI</span>
-    </button>
-    <button class="quick-btn" id="qaOptions">
-      <span class="qb-icon">⚡</span>
-      <span>Options</span>
-    </button>
-    <button class="quick-btn" id="qaTechnicals">
-      <span class="qb-icon">📊</span>
-      <span>Charts</span>
-    </button>
-    <button class="quick-btn" id="qaJournal">
-      <span class="qb-icon">📓</span>
+    <button id="qaJournal" class="popup-quick-tile" type="button">
+      <span class="quick-icon blue"><svg class="tl-icon" aria-hidden="true"><use href="#i-book"></use></svg></span>
       <span>Journal</span>
     </button>
-    <button class="quick-btn" id="qaAi">
-      <span class="qb-icon">🤖</span>
+    <button id="qaAi" class="popup-quick-tile" type="button">
+      <span class="quick-icon violet"><svg class="tl-icon" aria-hidden="true"><use href="#i-sparkles"></use></svg></span>
       <span>AI Coach</span>
     </button>
-    <button class="quick-btn" id="qaRules">
-      <span class="qb-icon">🛡️</span>
-      <span>Risk Rules</span>
+    <button id="qaCharts" class="popup-quick-tile" type="button">
+      <span class="quick-icon cyan"><svg class="tl-icon" aria-hidden="true"><use href="#i-chart"></use></svg></span>
+      <span>Market &amp; OI</span>
     </button>
-  </div>
+    <button id="qaOptions" class="popup-quick-tile" type="button">
+      <span class="quick-icon amber"><svg class="tl-icon" aria-hidden="true"><use href="#i-layers"></use></svg></span>
+      <span>Options Chain</span>
+    </button>
+    <button id="qaRules" class="popup-quick-tile" type="button">
+      <span class="quick-icon rose"><svg class="tl-icon" aria-hidden="true"><use href="#i-sliders"></use></svg></span>
+      <span>Rules &amp; Limits</span>
+    </button>
+  </nav>
 
-  <!-- Pro+ AI Coach Upgrade Card -->
-  <button type="button" class="pro-card" id="proUpgradeCard" title="Upgrade to Pro+ for deterministic discipline coaching and market analytics" style="width:100%;color:inherit;text-align:left;font-family:inherit">
-    <span class="pro-icon">👑</span>
-    <span class="pro-info">
-      <span class="pro-title" style="display:block">Pro+ AI Coach</span>
-      <span class="pro-desc" style="display:block">Deterministic tilt detection, market analytics &amp; day audits</span>
-    </span>
-    <span class="pro-cta" id="proUpgradeBtn">Upgrade ↗</span>
+  <button id="proUpgradeCard" class="popup-pro-card" type="button" title="View Pro+ AI plans">
+    <span class="popup-pro-icon"><svg class="tl-icon" aria-hidden="true"><use href="#i-sparkles"></use></svg></span>
+    <span class="popup-pro-copy"><strong>Upgrade to Pro+ AI</strong><small>Market intelligence &amp; discipline coaching</small></span>
+    <span id="proUpgradeBtn" class="popup-pro-cta">Upgrade ↗</span>
   </button>
 
-  <!-- Daily Focus Card -->
-  <div class="focus-card" id="focusCard">
-    <span class="focus-icon">🎯</span>
-    <div class="focus-text" id="focusText"><b>Daily Focus:</b> Stick strictly to predefined setups. Never revenge trade.</div>
-    <button class="focus-edit-btn" id="focusEditBtn" title="Change daily focus">✎</button>
-  </div>
+  <section id="focusCard" class="popup-focus-card" aria-label="Daily trading focus">
+    <svg class="tl-icon" aria-hidden="true"><use href="#i-target"></use></svg>
+    <div class="popup-focus-copy"><small>Daily focus</small><p id="focusText">Stick strictly to predefined setups. Never revenge trade.</p></div>
+    <button id="focusEditBtn" class="popup-focus-edit" type="button" title="Edit daily focus" aria-label="Edit daily focus"><svg class="tl-icon" aria-hidden="true"><use href="#i-edit"></use></svg></button>
+  </section>
 
-  <!-- Manual Trade Quick Logger Drawer -->
-  <div class="log" id="logDrawer">
-    <div class="t">Log Closed Trade (Manual / Mobile)</div>
-    <div class="fields">
-      <input id="pnl" type="number" step="0.01" placeholder="P&amp;L ₹ (use - for loss)">
-      <input id="risk" type="number" step="0.01" placeholder="Risk ₹ (defaults to plan)">
+  <button id="logDrawer" class="popup-log-toggle" type="button" aria-expanded="false" aria-controls="logDrawerBody">
+    <svg class="tl-icon" aria-hidden="true"><use href="#i-plus"></use></svg><span>Manual Trade Log</span><span class="log-plus">+</span>
+  </button>
+  <section id="logDrawerBody" class="popup-log-drawer" hidden>
+    <div class="popup-log-fields">
+      <input id="pnl" type="number" step="0.01" min="0" placeholder="P&amp;L amount (₹)" aria-label="Profit or loss amount in rupees">
+      <input id="risk" type="number" step="0.01" min="0" placeholder="Risk used (₹)" aria-label="Risk used in rupees">
     </div>
-    <div class="rowbtns">
-      <button class="primary" id="addWin" style="background:linear-gradient(135deg,#059669,#10b981);border-color:transparent;color:#fff">Log win</button>
-      <button class="danger" id="addLoss">Log loss</button>
+    <div class="popup-log-actions">
+      <button id="addWin" class="win" type="button">+ Log Win</button>
+      <button id="addLoss" class="loss" type="button">− Log Loss</button>
     </div>
+    <button id="undo" class="popup-undo" type="button">↶ Undo last manual trade</button>
+  </section>
+
+  <div id="coachLine" class="popup-coach" style="display:none"></div>
+
+  <div class="popup-lock-wrap">
+    <button id="lockNow" class="popup-lock-btn" type="button">
+      <svg class="tl-icon" aria-hidden="true"><use href="#i-lock"></use></svg><span id="lockLabel">Lock Trading Now</span>
+    </button>
+    <p class="popup-lock-hint">Protect your capital. Lock in your discipline.</p>
   </div>
 
-  <!-- Terminal Actions -->
-  <div class="btnrow">
-    <button id="lockNow" class="danger">Lock screen now</button>
-    <button id="undo" class="ghost">Undo last</button>
-  </div>
-  <div class="btnrow" style="margin-top:6px">
-    <button id="openOptions" class="ghost">Dashboard &amp; Settings</button>
-    <button id="viewPlansBtn" class="ghost" style="color:#a78bfa;font-weight:700">★ Plans &amp; Pricing</button>
-  </div>
-
-  <!-- Footer -->
-  <div class="foot">
-    <span id="footnote">—</span>
-    <button type="button" id="openOptions2" style="background:none;border:0;padding:0;color:var(--link);cursor:pointer;font:inherit">rules</button>
-  </div>
+  <footer class="popup-footer">
+    <button id="openSidePanelBtn" type="button">Open side panel</button><span>·</span>
+    <button id="openOptions" type="button">Full dashboard</button><span>·</span>
+    <button id="openOptions2" type="button">Rules</button>
+  </footer>
+  <div id="footnote" class="popup-footnote">Loading your session…</div>
+</main>
 
 <script src="../lib/rules.js"></script>
 <script src="../lib/detector.js"></script>

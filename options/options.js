@@ -39,21 +39,21 @@
     if (!name) name = 'overview';
     var clean = name.replace(/^#/, '');
     if (clean === 'charts') clean = 'market';
-    var btns = document.querySelectorAll('#mainTabs .tab-btn');
+    var btns = document.querySelectorAll('.nav-tab');
     var contents = document.querySelectorAll('.tab-content');
-    var targetBtn = document.querySelector('#mainTabs .tab-btn[data-tab="' + clean + '"]');
+    var targetBtns = document.querySelectorAll('.nav-tab[data-tab="' + clean + '"]');
     var targetContent = el('tab-' + clean);
 
     if (!targetContent) {
       clean = 'overview';
-      targetBtn = document.querySelector('#mainTabs .tab-btn[data-tab="overview"]');
+      targetBtns = document.querySelectorAll('.nav-tab[data-tab="overview"]');
       targetContent = el('tab-overview');
     }
 
     btns.forEach(function (b) { b.classList.remove('active'); });
     contents.forEach(function (c) { c.classList.remove('active'); });
 
-    if (targetBtn) targetBtn.classList.add('active');
+    targetBtns.forEach(function (b) { b.classList.add('active'); });
     if (targetContent) targetContent.classList.add('active');
 
     if (clean === 'market') {
@@ -68,7 +68,7 @@
   }
 
   function initTabs() {
-    var btns = document.querySelectorAll('#mainTabs .tab-btn');
+    var btns = document.querySelectorAll('.nav-tab');
     btns.forEach(function (btn) {
       btn.addEventListener('click', function () {
         switchTab(btn.getAttribute('data-tab'));
@@ -214,9 +214,112 @@
     return '<tr><td class="k">' + k + '</td><td class="v ' + (off ? 'off' : '') + '">' + v + '</td></tr>';
   }
 
+  function setText(id, value) {
+    var node = el(id);
+    if (node) node.textContent = value;
+  }
+
+  function setBar(id, ratio) {
+    var node = el(id);
+    if (node) node.style.width = Math.max(0, Math.min(100, Math.round((Number(ratio) || 0) * 100))) + '%';
+  }
+
+  function renderOverview(state, settings) {
+    settings = settings || R.DEFAULT_SETTINGS;
+    var now = Date.now();
+    var hasSession = !!(state && state.session);
+    var s = hasSession ? state.session : {
+      date: R.todayIST(), trades: 0, autoTrades: 0, pnl: 0, riskUsed: 0, consecutiveLosses: 0
+    };
+    var lock = (state && state.lock) || {};
+    var log = (state && state.log) || [];
+    var summary = R.summarizeLog(log);
+    var info = R.marketSessionInfo(now, settings);
+    var riskLim = (R.dailyRiskLimit ? R.dailyRiskLimit(settings) : 0) || settings.maxDailyRisk || 0;
+    var tradeRatio = settings.maxTradesPerDay ? R.progress(s.trades, settings.maxTradesPerDay) : 0;
+    var riskRatio = riskLim ? R.progress(s.riskUsed, riskLim) : 0;
+    var pnlLimit = s.pnl > 0 ? settings.profitTarget : settings.maxDailyLoss;
+    var winRatio = Math.max(0, Math.min(1, (summary.winRate || 0) / 100));
+
+    var hour = Math.floor(R.istMinutesOfDay(now) / 60);
+    var greeting = hour < 12 ? 'Good morning' : (hour < 17 ? 'Good afternoon' : 'Good evening');
+    setText('overviewGreeting', greeting + ', Trader 👋');
+    setText('headerDate', new Date(now).toLocaleDateString('en-IN', {
+      weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata'
+    }));
+
+    setText('ovPnlVal', (s.pnl > 0 ? '+' : '') + R.inr(s.pnl));
+    if (el('ovPnlVal')) el('ovPnlVal').className = 'overview-metric-value stat-val ' + (s.pnl > 0 ? 'pos' : (s.pnl < 0 ? 'neg' : ''));
+    setText('ovPnlSub', pnlLimit ? (s.pnl > 0 ? 'Profit target ' : 'Loss limit ') + R.inr(pnlLimit) : 'Net closed fills · no P&L limit');
+    setText('ovTradesVal', s.trades + (settings.maxTradesPerDay ? ' / ' + settings.maxTradesPerDay : ''));
+    setText('ovTradesSub', hasSession ? ((s.autoTrades || 0) + ' auto · ' + Math.max(0, s.trades - (s.autoTrades || 0)) + ' manual') : 'No broker session yet');
+    setText('ovRiskVal', R.inr(s.riskUsed || 0));
+    setText('ovRiskSub', riskLim ? 'of ' + R.inr(riskLim) + ' daily budget' : 'No risk budget set');
+    setText('ovWinRateVal', (summary.winRate || 0) + '%');
+    setText('ovWinRateSub', (summary.wins || 0) + ' wins · ' + (summary.losses || 0) + ' losses');
+    setBar('ovPnlBar', pnlLimit ? R.progress(Math.abs(s.pnl), pnlLimit) : 0);
+    setBar('ovTradesBar', tradeRatio);
+    setBar('ovRiskBar', riskRatio);
+    setBar('ovWinRateBar', winRatio);
+
+    setText('overviewSessionDate', (s.date || R.todayIST()) + ' · Asia/Kolkata');
+    setText('overviewSessionState', lock.active ? 'Discipline Lock Active' : (info.isMarketOpen ? 'Trading Session Active' : 'Planning Mode'));
+    setText('overviewSessionStateSub', lock.active ? 'Trading paused by your discipline rules' : (info.isMarketOpen ? 'Every counted fill updates your limits' : 'Journal and planning tools available'));
+    setText('overviewMarketStatus', info.isMarketOpen ? 'Market open' : 'Market closed');
+    if (el('overviewMarketStatus')) el('overviewMarketStatus').className = 'overview-market-status' + (info.isMarketOpen ? '' : ' closed');
+    setText('overviewTradeProgress', s.trades + ' / ' + (settings.maxTradesPerDay || 'No cap'));
+    setText('overviewProgressPct', settings.maxTradesPerDay ? Math.round(tradeRatio * 100) + '%' : '—');
+    setBar('overviewTradeProgressBar', tradeRatio);
+    if (el('overviewProgressRing')) el('overviewProgressRing').style.setProperty('--progress', Math.round(tradeRatio * 360) + 'deg');
+    setText('overviewSessionTime', info.isMarketOpen
+      ? 'Market closes at ' + minutesToHHMM(settings.marketCloseMin || 930) + ' IST'
+      : 'Next market open · ' + R.istLabel(info.nextSessionOpen));
+
+    if (I) {
+      var analysis = I.analyze(log, s, settings);
+      setText('ovDisciplineScore', analysis.score + ' / 100');
+      setText('ovDisciplineSub', s.trades ? analysis.grade + ' discipline rating' : 'Awaiting trade data');
+    }
+    setText('ovStreakVal', s.consecutiveLosses || 0);
+    setText('ovStreakSub', settings.maxConsecutiveLosses ? 'Max ' + settings.maxConsecutiveLosses + ' allowed' : 'No streak limit');
+
+    if (lock.active) {
+      setText('overviewDisciplineTitle', 'Your discipline lock is protecting you');
+      setText('overviewDisciplineText', 'Trading is paused while the lock is active. Step away, review your plan, and return with a clear process rather than an emotional reaction.');
+    } else if ((s.consecutiveLosses || 0) >= 2) {
+      setText('overviewDisciplineTitle', 'Pause. Reset. Follow the plan.');
+      setText('overviewDisciplineText', 'Consecutive losses can lead to revenge trading. Take a break and reassess before committing more risk.');
+    } else if (!s.trades) {
+      setText('overviewDisciplineTitle', 'Your edge is patience');
+      setText('overviewDisciplineText', 'No trades logged yet. Protect your capital by waiting for a valid setup instead of forcing the first trade.');
+    } else if (s.pnl > 0) {
+      setText('overviewDisciplineTitle', 'Protect today’s progress');
+      setText('overviewDisciplineText', 'A profitable session is not a reason to loosen your rules. Keep position sizing consistent and avoid giving back gains.');
+    } else {
+      setText('overviewDisciplineTitle', 'Discipline over impulse');
+      setText('overviewDisciplineText', 'Your session is being measured against the limits you chose. Let the plan—not the last trade—drive the next decision.');
+    }
+
+    var pill = el('lockPill');
+    if (pill) {
+      pill.textContent = lock.active ? (lock.manual ? 'Focus Lock Active' : 'Rule Lock Active') : 'Trading Unlocked';
+      pill.className = 'lock-pill pill ' + (lock.active ? 'on locked' : 'off');
+    }
+    setText('sideLockLabel', lock.active ? 'Trading Locked' : 'Lock Trading Now');
+    if (el('lockNow')) {
+      el('lockNow').disabled = !!lock.active;
+      el('lockNow').title = lock.active ? 'An active lock is in effect. Use the popup for eligible manual-lock release.' : 'Lock trading until the next market open';
+    }
+    if (el('mobileLockNow')) {
+      el('mobileLockNow').disabled = !!lock.active;
+      el('mobileLockNow').title = lock.active ? 'Trading lock active' : 'Lock trading now';
+    }
+  }
+
   function renderToday(state, settings) {
     currentState = state;
     currentSettings = settings || currentSettings;
+    renderOverview(state, currentSettings);
     var t = el('todayTable');
     if (!t) return;
 
@@ -226,23 +329,6 @@
     }
     var s = state.session;
     var lock = state.lock || {};
-
-    // Telemetry Bento cards on Overview tab
-    if (el('ovTradesVal')) el('ovTradesVal').textContent = s.trades + (settings.maxTradesPerDay ? ' / ' + settings.maxTradesPerDay : '');
-    if (el('ovTradesSub')) el('ovTradesSub').textContent = (s.autoTrades || 0) + ' auto · ' + Math.max(0, s.trades - (s.autoTrades || 0)) + ' manual';
-    if (el('ovPnlVal')) {
-      el('ovPnlVal').textContent = R.inr(s.pnl);
-      el('ovPnlVal').className = 'stat-val ' + (s.pnl > 0 ? 'pos' : (s.pnl < 0 ? 'neg' : ''));
-    }
-    if (el('ovPnlSub')) el('ovPnlSub').textContent = settings.maxDailyLoss ? 'Max loss ₹' + settings.maxDailyLoss : 'No loss limit';
-    if (el('ovStreakVal')) el('ovStreakVal').textContent = s.consecutiveLosses;
-    if (el('ovStreakSub')) el('ovStreakSub').textContent = settings.maxConsecutiveLosses ? 'Max ' + settings.maxConsecutiveLosses + ' allowed' : 'No streak limit';
-
-    if (I) {
-      var ia = I.analyze(state.log, s, settings);
-      if (el('ovDisciplineScore')) el('ovDisciplineScore').textContent = ia.score + ' / 100';
-      if (el('ovDisciplineSub')) el('ovDisciplineSub').textContent = ia.grade + ' discipline rating';
-    }
 
     t.innerHTML =
       row('Session date', s.date || '—') +
@@ -258,11 +344,6 @@
         : 'not locked', false) +
       row('Tamper events seen', state.tamperCount || 0);
 
-    var pill = el('lockPill');
-    if (pill) {
-      pill.textContent = lock.active ? 'LOCKED' : 'UNLOCKED';
-      pill.className = 'pill ' + (lock.active ? 'on' : 'off');
-    }
     renderProAnalytics(state, settings, currentLicense);
   }
 
@@ -291,7 +372,9 @@
     document.querySelectorAll('[data-tab="market"], [data-tab="options"], [data-tab="ai"]').forEach(function (tab) {
       tab.disabled = !plan.proPlus;
       tab.title = plan.proPlus ? '' : 'Pro+ AI or Founder Lifetime required';
-      tab.setAttribute('aria-label', tab.textContent.trim() + (plan.proPlus ? '' : ' (Pro+ required)'));
+      if (tab.classList.contains('nav-tab')) {
+        tab.setAttribute('aria-label', tab.textContent.trim() + (plan.proPlus ? '' : ' (Pro+ required)'));
+      }
     });
     ['marketEnabled', 'marketSource', 'chatInput', 'chatSendBtn'].forEach(function (id) {
       if (el(id)) el(id).disabled = !plan.proPlus;
@@ -328,10 +411,17 @@
   function renderLicense(lic, settings) {
     currentLicense = lic;
     currentSettings = settings || currentSettings;
+    var plan = planState(settings, lic);
     applyPlanGating(settings, lic);
+    setText('sidePlanName', plan.proPlus ? 'Pro+ AI Active' : (plan.pro ? 'Pro Active' : 'Unlock Pro+ AI'));
+    setText('sidePlanNote', plan.proPlus
+      ? 'Your market intelligence and discipline coaching entitlements are active.'
+      : 'Market intelligence, options analytics and discipline coaching.');
+    setText('sideUpgradeBtn', plan.proPlus ? 'Manage your plan →' : (plan.pro ? 'Explore Pro+ AI ↗' : 'View upgrade options ↗'));
+    setText('sideUserPlan', (plan.proPlus ? 'Pro+ AI' : (plan.pro ? 'Pro' : 'Free plan')) + ' · local & private');
     var box = el('licStatus');
     if (!box) return;
-    var pro = R.isPro(lic, Date.now());
+    var pro = plan.pro;
     var planId = R.canonicalPlanId ? R.canonicalPlanId((lic && lic.plan) || 'free') : ((lic && lic.plan) || 'free');
     if (lic && lic.key && el('licKey')) el('licKey').value = lic.key;
 
@@ -643,11 +733,12 @@
   // -------------------------------------------------------------- load ----
 
   function loadAll() {
-    chrome.storage.local.get(['tlSettings', 'tlState', 'tlLicense', 'tlJournal', 'tlUserEmail'], function (res) {
+    chrome.storage.local.get(['tlSettings', 'tlState', 'tlLicense', 'tlJournal', 'tlUserEmail', 'tlDailyFocus'], function (res) {
       if (res.tlUserEmail && el('checkoutEmail') && !el('checkoutEmail').value) {
         el('checkoutEmail').value = res.tlUserEmail;
       }
       currentLicense = res.tlLicense || null;
+      setText('overviewFocusText', res.tlDailyFocus || 'Stick strictly to predefined setups. Never revenge trade.');
       var s = R.effectiveSettings(res.tlSettings, currentLicense, Date.now());
       currentSettings = s;
       if (!dirty) fill(s);
@@ -720,6 +811,47 @@
   if (el('ovJumpToJournal')) {
     el('ovJumpToJournal').addEventListener('click', function () {
       switchTab('journal');
+    });
+  }
+
+  document.querySelectorAll('.overview-action[data-tab]').forEach(function (btn) {
+    btn.addEventListener('click', function () { switchTab(btn.getAttribute('data-tab')); });
+  });
+  if (el('sideUpgradeBtn')) el('sideUpgradeBtn').addEventListener('click', function () { switchTab('license'); });
+  if (el('overviewLogTrade')) {
+    el('overviewLogTrade').addEventListener('click', function () {
+      switchTab('journal');
+      if (el('jAddFormDrawer')) el('jAddFormDrawer').style.display = 'block';
+      setTimeout(function () {
+        if (el('jSymbol')) {
+          el('jSymbol').scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el('jSymbol').focus();
+        }
+      }, 50);
+    });
+  }
+  if (el('overviewFocusEdit')) {
+    el('overviewFocusEdit').addEventListener('click', function () {
+      chrome.storage.local.get('tlDailyFocus', function (res) {
+        var current = res.tlDailyFocus || 'Stick strictly to predefined setups. Never revenge trade.';
+        var updated = prompt('Set your Daily Trading Focus / Rule:', current);
+        if (updated === null || !updated.trim()) return;
+        var clean = updated.trim();
+        chrome.storage.local.set({ tlDailyFocus: clean }, function () {
+          setText('overviewFocusText', clean);
+          toast('Daily focus saved');
+        });
+      });
+    });
+  }
+  if (el('mobileLockNow')) {
+    el('mobileLockNow').addEventListener('click', function () {
+      if (el('lockNow')) el('lockNow').click();
+    });
+  }
+  if (el('sideOpenFullTab')) {
+    el('sideOpenFullTab').addEventListener('click', function () {
+      chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html#overview') });
     });
   }
 
@@ -802,6 +934,80 @@
     return candles;
   }
   function round(n) { return Math.round(n * 100) / 100; }
+
+  // Lightweight overview chart. Uses the same deterministic series as Market & OI.
+  function renderOverviewChart() {
+    var svg = el('overviewChart');
+    if (!svg || !chartState.candles || !chartState.candles.length) return;
+    var candles = chartState.candles.slice(-42).filter(function (c) {
+      return c && [c.o, c.h, c.l, c.c].every(function (v) { return Number.isFinite(Number(v)); });
+    });
+    if (!candles.length) return;
+
+    var cfg = getInstrumentConfig(chartState.symbol);
+    var last = candles[candles.length - 1];
+    var first = candles[0];
+    var change = Number(last.c) - Number(first.o);
+    var changePct = first.o ? (change / Number(first.o)) * 100 : 0;
+    setText('overviewChartSymbol', cfg.name + ' · ' + cfg.exchange + ' · ' + chartState.timeframe);
+    setText('overviewChartPrice', Number(last.c).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    setText('overviewChartChange', (change >= 0 ? '+' : '') + change.toFixed(2) + ' (' + (changePct >= 0 ? '+' : '') + changePct.toFixed(2) + '%) · simulated');
+    if (el('overviewChartChange')) el('overviewChartChange').className = change >= 0 ? 'pos' : 'neg';
+    setText('overviewChartSource', 'SIMULATED · ' + candles.length + ' deterministic ' + chartState.timeframe + ' candles · Not a live market feed');
+    if (el('overviewSymbol')) el('overviewSymbol').value = chartState.symbol;
+    if (el('overviewTimeframe') && Array.from(el('overviewTimeframe').options).some(function (o) { return o.value === chartState.timeframe; })) {
+      el('overviewTimeframe').value = chartState.timeframe;
+    }
+
+    var width = 720, height = 220;
+    var left = 8, right = 56, top = 12, bottom = 25;
+    var plotWidth = width - left - right;
+    var plotHeight = height - top - bottom;
+    var min = Math.min.apply(null, candles.map(function (c) { return Number(c.l); }));
+    var max = Math.max.apply(null, candles.map(function (c) { return Number(c.h); }));
+    var pad = Math.max(1, (max - min) * 0.12);
+    min -= pad;
+    max += pad;
+    var range = Math.max(1, max - min);
+    var points = candles.map(function (c, i) {
+      return {
+        x: left + (i / Math.max(1, candles.length - 1)) * plotWidth,
+        y: top + ((max - Number(c.c)) / range) * plotHeight,
+        candle: c
+      };
+    });
+    var linePath = points.map(function (p, i) { return (i ? 'L' : 'M') + p.x.toFixed(2) + ',' + p.y.toFixed(2); }).join(' ');
+    var baseY = height - bottom;
+    var areaPath = 'M' + points[0].x.toFixed(2) + ',' + baseY + ' ' +
+      points.map(function (p) { return 'L' + p.x.toFixed(2) + ',' + p.y.toFixed(2); }).join(' ') +
+      ' L' + points[points.length - 1].x.toFixed(2) + ',' + baseY + ' Z';
+    var html = '<title>Simulated ' + escapeHtml(cfg.name) + ' overview — not live market data</title>' +
+      '<desc>Deterministic demonstration series. Last simulated value ' + Number(last.c).toFixed(2) +
+      ', change ' + change.toFixed(2) + ' (' + changePct.toFixed(2) + ' percent).</desc>' +
+      '<defs><linearGradient id="overviewAreaGradient" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="#6366f1" stop-opacity=".32"/><stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>' +
+      '</linearGradient><linearGradient id="overviewLineGradient" x1="0" y1="0" x2="1" y2="0">' +
+      '<stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#a78bfa"/></linearGradient></defs>';
+
+    for (var g = 0; g <= 4; g++) {
+      var gy = top + (g / 4) * plotHeight;
+      var value = max - (g / 4) * range;
+      html += '<line x1="' + left + '" y1="' + gy.toFixed(2) + '" x2="' + (width - right) + '" y2="' + gy.toFixed(2) + '" stroke="rgba(148,163,184,.10)" stroke-width="1" vector-effect="non-scaling-stroke"/>' +
+        '<text x="' + (width - right + 8) + '" y="' + (gy + 3).toFixed(2) + '" fill="#64748b" font-size="9" font-family="Inter,sans-serif">' + value.toFixed(0) + '</text>';
+    }
+    for (var t = 0; t < 4; t++) {
+      var idx = Math.round((t / 3) * (candles.length - 1));
+      var p = points[idx];
+      var time = new Date(p.candle.t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+      html += '<text x="' + p.x.toFixed(2) + '" y="' + (height - 6) + '" text-anchor="' + (t === 0 ? 'start' : (t === 3 ? 'end' : 'middle')) + '" fill="#64748b" font-size="9" font-family="Inter,sans-serif">' + time + '</text>';
+    }
+    var end = points[points.length - 1];
+    html += '<path d="' + areaPath + '" fill="url(#overviewAreaGradient)"/>' +
+      '<path d="' + linePath + '" fill="none" stroke="url(#overviewLineGradient)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
+      '<circle cx="' + end.x.toFixed(2) + '" cy="' + end.y.toFixed(2) + '" r="7" fill="rgba(167,139,250,.14)"/>' +
+      '<circle cx="' + end.x.toFixed(2) + '" cy="' + end.y.toFixed(2) + '" r="3.2" fill="#c4b5fd" stroke="#111827" stroke-width="1.5" vector-effect="non-scaling-stroke"/>';
+    svg.innerHTML = html;
+  }
 
   // Canvas Candlestick & Volume Chart Renderer
   function drawMarketCandleChart() {
@@ -1304,6 +1510,19 @@
     });
   }
 
+  if (el('overviewSymbol')) {
+    el('overviewSymbol').addEventListener('change', function () {
+      if (el('marketSymbol')) el('marketSymbol').value = el('overviewSymbol').value;
+      renderMarketAndOiDashboard();
+    });
+  }
+  if (el('overviewTimeframe')) {
+    el('overviewTimeframe').addEventListener('change', function () {
+      if (el('marketTimeframe')) el('marketTimeframe').value = el('overviewTimeframe').value;
+      renderMarketAndOiDashboard();
+    });
+  }
+
   function computeLocalMarket(symbol, tf) {
     var cfg = getInstrumentConfig(symbol);
     var candles = generateSampleCandles(cfg.basePrice, 60, tf, symbol);
@@ -1316,6 +1535,7 @@
     if (el('chartIntervalBadge')) el('chartIntervalBadge').textContent = tf;
     if (el('chartCandleCount')) el('chartCandleCount').textContent = candles.length + ' candles';
 
+    renderOverviewChart();
     initChartCanvasEvents();
 
     if (!M) {
