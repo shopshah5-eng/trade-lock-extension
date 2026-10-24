@@ -1926,7 +1926,7 @@
   if (el('jExportScope')) {
     el('jExportScope').addEventListener('change', function () {
       var scope = el('jExportScope').value;
-      var box = el('jCustomRangeBox');
+      var box = el('jCustomRangeFields') || el('jCustomRangeBox');
       if (box) box.style.display = scope === 'custom' ? 'flex' : 'none';
     });
   }
@@ -2024,10 +2024,14 @@
 
   if (el('lockNow')) {
     el('lockNow').addEventListener('click', function () {
-      if (!confirm('Lock the trading screen until the next market open?')) return;
       var settings = read();
       chrome.storage.local.get('tlState', function (res) {
         var state = res.tlState ? R.syncSession(res.tlState, settings, Date.now()) : R.defaultState(Date.now());
+        if (state.lock && state.lock.active && !state.lock.manual) {
+          alert('A rule-triggered discipline lock is active and cannot be converted to a manual focus lock.');
+          return;
+        }
+        if (!confirm('Lock the trading screen until the next market open?')) return;
         R.lockNow(state, settings, Date.now());
         chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }, function () {
           chrome.runtime.sendMessage({ type: 'TL_REFRESH' });

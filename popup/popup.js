@@ -4,9 +4,11 @@
 
   var R = globalThis.TLRules;
   var els = {};
-  ['date', 'planBadge', 'openSettingsTop', 'coachLine', 'banner', 'bannerTitle', 'bannerText', 'bannerCd', 'stats',
+  ['date', 'planBadge', 'openSettingsTop', 'coachLine', 'banner', 'bannerIcon', 'bannerTitle', 'bannerText', 'bannerCd', 'stats',
+   'sessionCard', 'sessionStatusTag',
    'focusCard', 'focusText', 'focusEditBtn',
-   'qaCharts', 'qaOptions', 'qaAddTrade', 'qaAi', 'qaJournal', 'qaRules',
+   'qaCharts', 'qaOptions', 'qaTechnicals', 'qaAddTrade', 'qaAi', 'qaJournal', 'qaRules',
+   'proUpgradeCard', 'proUpgradeBtn',
    'logDrawer', 'pnl', 'risk', 'addWin', 'addLoss', 'lockNow', 'undo', 'openOptions',
    'openOptions2', 'upgradeHeaderBtn', 'viewPlansBtn', 'openSidePanelBtn', 'openDashboardHero', 'footnote'].forEach(function (id) {
     els[id] = document.getElementById(id);
@@ -72,7 +74,8 @@
     var s = view.settings || R.DEFAULT_SETTINGS;
     var state = view.state;
 
-    els.date.textContent = state && state.session ? state.session.date : '\u2014';
+    var istDate = (state && state.session && state.session.date) ? state.session.date : (R.todayIST ? R.todayIST() : '\u2014');
+    if (els.date) els.date.textContent = istDate;
     if (els.planBadge) {
       if (s.freeTier) {
         els.planBadge.textContent = 'FREE';
@@ -83,9 +86,21 @@
       }
     }
 
+    var isClosed = R.isClosedDay && R.isClosedDay(Date.now(), s);
+    if (els.sessionStatusTag) {
+      if (isClosed) {
+        els.sessionStatusTag.className = 'session-pill closed';
+        els.sessionStatusTag.textContent = 'Planning Mode';
+      } else {
+        els.sessionStatusTag.className = 'session-pill live';
+        els.sessionStatusTag.textContent = 'Session Active';
+      }
+    }
+
     if (!state) {
       els.banner.className = 'banner open';
-      els.bannerTitle.textContent = 'No data yet';
+      if (els.bannerIcon) els.bannerIcon.textContent = '🛡️';
+      els.bannerTitle.textContent = 'Trading Active';
       els.bannerText.innerHTML = 'Open a broker tab (Kite, Upstox, Angel One, Dhan, 5paisa\u2026) ' +
         'and Trade Lock starts counting from the order book.';
       els.bannerCd.style.display = 'none';
@@ -103,19 +118,20 @@
 
     els.banner.className = 'banner ' + (locked ? 'locked' : (state && state.pendingLock ? 'warn' : 'open'));
     if (locked) {
+      if (els.bannerIcon) els.bannerIcon.textContent = '🔒';
       if (isWarningMode) {
-        els.bannerTitle.textContent = '🔒 Full-Screen Discipline Lock Active';
+        els.bannerTitle.textContent = 'Full-Screen Discipline Lock Active';
         els.bannerText.textContent = (view.copy && view.copy.detail)
           ? view.copy.detail + ' Terminal covered by full-screen discipline overlay until next market open.'
           : 'Trading limit reached. Opaque lock overlay covers broker terminal until next market open.';
       } else if (mode === 'order_restrict') {
-        els.bannerTitle.textContent = '🛡️ Order Restriction Active';
+        els.bannerTitle.textContent = 'Order Restriction Active';
         els.bannerText.textContent = 'New orders blocked on verified broker page. Emergency exits (Square off / Exit) remain accessible.';
       } else if (mode === 'full_site') {
-        els.bannerTitle.textContent = '🔒 Full Site Restriction Active';
+        els.bannerTitle.textContent = 'Full Site Restriction Active';
         els.bannerText.textContent = 'Broker domain restricted. Notice: Managing open positions may be affected.';
       } else if (mode === 'chart_only') {
-        els.bannerTitle.textContent = '📊 Charting Site Restricted';
+        els.bannerTitle.textContent = 'Charting Site Restricted';
         els.bannerText.textContent = 'Charts restricted. Broker order entry elsewhere is not blocked.';
       } else {
         els.bannerTitle.textContent = (view.copy && view.copy.title) || 'Trading limit reached';
@@ -123,18 +139,19 @@
       }
       els.bannerCd.style.display = 'block';
     } else if (state && state.pendingLock) {
-      els.bannerTitle.textContent = '⚠️ Pending Lock — Locks on Exit';
+      if (els.bannerIcon) els.bannerIcon.textContent = '⚠️';
+      els.bannerTitle.textContent = 'Pending Lock — Locks on Exit';
       els.bannerText.textContent = (state.pendingLock.title || 'Limit reached') +
         ' — terminal remains active so you can square off your open trade. Locks automatically the moment your position closes.';
       els.bannerCd.style.display = 'none';
     } else {
-      var isClosed = R.isClosedDay && R.isClosedDay(Date.now(), s);
+      if (els.bannerIcon) els.bannerIcon.textContent = isClosed ? '📅' : '🛡️';
       if (isClosed) {
-        els.bannerTitle.textContent = '📅 Planning Mode (Weekend / Holiday)';
+        els.bannerTitle.textContent = 'Planning Mode (Weekend / Holiday)';
         var nextSession = R.nextMarketOpen ? R.istLabel(R.nextMarketOpen(Date.now(), s)) : 'next market session';
         els.bannerText.textContent = 'Markets closed until ' + nextSession + '. Full access to Journal, Charts, Options and AI tools is open.';
       } else {
-        els.bannerTitle.textContent = 'Screen unlocked';
+        els.bannerTitle.textContent = 'Trading Unlocked';
         var next = view.violationWarning;
         els.bannerText.textContent = next || 'Trading is allowed. Every fill counts toward your limits.';
       }
@@ -465,9 +482,12 @@
 
   if (els.qaCharts) els.qaCharts.addEventListener('click', function () { openWorkspace('market'); });
   if (els.qaOptions) els.qaOptions.addEventListener('click', function () { openWorkspace('options'); });
+  if (els.qaTechnicals) els.qaTechnicals.addEventListener('click', function () { openWorkspace('market'); });
   if (els.qaAi) els.qaAi.addEventListener('click', function () { openWorkspace('ai'); });
   if (els.qaJournal) els.qaJournal.addEventListener('click', function () { openWorkspace('journal'); });
   if (els.qaRules) els.qaRules.addEventListener('click', function () { openWorkspace('rules'); });
+  if (els.proUpgradeCard) els.proUpgradeCard.addEventListener('click', function () { openWorkspace('license'); });
+  if (els.proUpgradeBtn) els.proUpgradeBtn.addEventListener('click', function (e) { e.stopPropagation(); openWorkspace('license'); });
   if (els.qaAddTrade) els.qaAddTrade.addEventListener('click', function () {
     if (els.pnl) {
       els.pnl.focus();

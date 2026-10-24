@@ -410,11 +410,12 @@
       // pending lock and apply it the moment the last trade closes.
       var open = (opts && typeof opts.openTrades === 'number')
         ? opts.openTrades : (state.session.openTrades || 0);
-      var deferExpired = state.pendingLock && (t - state.pendingLock.at > 3 * 60 * 1000);
-      if (open > 0 && !deferExpired) {
+      if (open > 0) {
         if (!state.pendingLock || state.pendingLock.rule !== v.rule) {
           state.pendingLock = { rule: v.rule, title: v.title, at: t, openTrades: open };
           changed = true;
+        } else {
+          state.pendingLock.openTrades = open;
         }
         state.status = 'REVIEW';
         state.statusTimestamp = t;
@@ -511,6 +512,10 @@
     var s = Object.assign({}, DEFAULT_SETTINGS, settings || {});
     var t = now || Date.now();
     syncSession(state, s, t);
+    // CRITICAL SECURITY: Never allow manual lock to overwrite an active rule-triggered lock!
+    if (state.lock && state.lock.active && !state.lock.manual) {
+      return state;
+    }
     var nextOpen = nextMarketOpen(t, s);
     var durationMin = (opts && typeof opts.durationMinutes === 'number' && opts.durationMinutes > 0)
       ? opts.durationMinutes : null;
@@ -561,6 +566,9 @@
     s.pnl = round2(s.pnl - e.pnl);
     s.riskUsed = Math.max(0, round2(s.riskUsed - e.risk));
     if (e.pnl < 0) s.consecutiveLosses = Math.max(0, s.consecutiveLosses - 1);
+    var maxRisk = 0;
+    state.log.forEach(function (x) { if ((x.risk || 0) > maxRisk) maxRisk = x.risk; });
+    s.maxTradeRisk = maxRisk;
     if (!state.journal) state.journal = { version: 2, months: {} };
     archiveDayToJournal(state.journal, state.session.date, state.log, state.session);
     return e;
@@ -1115,6 +1123,7 @@
     canonicalPlanId: canonicalPlanId,
     inr: inr,
     istLabel: istLabel,
+    todayIST: function (t) { return istDate(t || Date.now()); },
     countdown: countdown,
     progress: progress,
     round2: round2

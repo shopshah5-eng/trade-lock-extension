@@ -151,7 +151,6 @@
         var st = statusOf(text);
 
         var qty = neti !== -1 ? parseQty(cell(row, neti)) : parseQty(cell(row, qi));
-        if (!qty) return;
         var price = pi !== -1 ? parseNum(cell(row, pi)) : 0;
         var pnl = pnli !== -1 ? parseNum(cell(row, pnli)) : 0;
         var risk = opts.riskPerUnit > 0 ? Math.abs(qty) * opts.riskPerUnit : Math.abs(qty) * Math.abs(price);
@@ -175,8 +174,12 @@
         }
 
         if (neti !== -1 && st !== 'done') {
-          positions.push(rec);          // positions table: has "Net qty", no status word
-        } else if (st === 'done') {
+          positions.push(rec);          // positions table: has "Net qty", retain even if qty === 0
+          return;
+        }
+
+        if (!qty) return;
+        if (st === 'done') {
           orders.push(rec);             // order book: status says the fill happened
         } else {
           // No status text at all: treat a "Net qty" column as positions.

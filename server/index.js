@@ -262,6 +262,14 @@ const server = http.createServer(async (req, res) => {
       inFlightOrders.add(orderId);
 
       try {
+        if (DEMO_MODE && !razorpayConfigured()) {
+          if (!String(orderId).startsWith('order_DEMO_')) return json(res, 400, { error: 'bad_demo_order' }, req);
+        } else {
+          if (!signature || !L.verifyPaymentSignature(orderId, paymentId, signature, KEY_SECRET)) {
+            return json(res, 400, { error: 'signature_mismatch' }, req);
+          }
+        }
+
         // Idempotency: If order was already paid and fulfilled, return existing license without generating duplicate key
         if (order.status === 'paid' && order.fulfillmentStatus === 'FULFILLED') {
           const existingLic = Object.values(store.licenses).find(l => l.orderId === orderId || (l.paymentId && l.paymentId === (order.paymentId || paymentId)));
@@ -275,14 +283,6 @@ const server = http.createServer(async (req, res) => {
               alreadyFulfilled: true,
               note: 'Order already fulfilled. Key delivered via confirmation email.'
             }, req);
-          }
-        }
-
-        if (DEMO_MODE && !razorpayConfigured()) {
-          if (!String(orderId).startsWith('order_DEMO_')) return json(res, 400, { error: 'bad_demo_order' }, req);
-        } else {
-          if (!signature || !L.verifyPaymentSignature(orderId, paymentId, signature, KEY_SECRET)) {
-            return json(res, 400, { error: 'signature_mismatch' }, req);
           }
         }
 
@@ -459,15 +459,14 @@ const server = http.createServer(async (req, res) => {
       }
       const now = Date.now();
       const activeLic = matched.find(l => !l.expiresAt || l.expiresAt > now) || matched[0];
-      const plainKey = issuedThisProcess.get(activeLic.paymentId) || null;
       return json(res, 200, {
         ok: true,
         found: true,
         plan: activeLic.plan,
         hint: activeLic.hint,
         expiresAt: activeLic.expiresAt,
-        licenseKey: plainKey,
-        note: plainKey ? 'Active license key restored.' : 'Subscription active on server. Check your registration email for the full license key.'
+        licenseKey: null,
+        note: 'Subscription active. For security, your license key was delivered to your registered email.'
       }, req);
     }
 
@@ -557,6 +556,7 @@ const server = http.createServer(async (req, res) => {
       let chain = null;
       try { chain = fyers.normalizeOptionChain(await client.optionChain({ symbol, strikeCount: 12 })); } catch (e) { chain = null; }
       const analysis = TLMarket.analyze(candles, { symbol, timeframe: resolution + 'm', optionChain: chain });
+      const brief = await ai.summarize({ apiKey: OPENROUTER_API_KEY, geminiApiKey: GEMINI_API_KEY, analysis });
       return json(res, 200, { symbol, candles: candles.length, analysis, brief }, req);
     }
 
