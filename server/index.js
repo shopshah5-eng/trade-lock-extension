@@ -397,6 +397,20 @@ const server = http.createServer(async (req, res) => {
           }
         }
       }
+      if ((evt.event === 'refund.processed' || evt.event === 'payment.refunded') && entity) {
+        const paymentId = entity.payment_id || entity.id;
+        const lic = Object.values(store.licenses).find(l => l.paymentId === paymentId);
+        if (lic) {
+          lic.revoked = true;
+          lic.revokedReason = 'refund';
+          lic.revokedAt = Date.now();
+          store.save();
+          if (supabase.isConfigured()) {
+            supabase.syncLicense(lic).catch(() => {});
+          }
+          console.log('[webhook] Revoked license due to refund for payment:', paymentId);
+        }
+      }
       return json(res, 200, { received: true });
     }
 
@@ -426,6 +440,34 @@ const server = http.createServer(async (req, res) => {
         expiresAt: lic ? lic.expiresAt : null,
         hint: lic ? lic.hint : null,
         devicesUsed: lic ? lic.devices.length : 0, maxDevices: MAX_DEVICES,
+      }, req);
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/restore-subscription') {
+      if (isRateLimited(req, 10, 60000)) return json(res, 429, { error: 'rate_limited', detail: 'Too many requests' }, req);
+      const { email } = await readJson(req);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || '')) {
+        return json(res, 400, { error: 'valid_email_required', detail: 'Valid email is required to restore subscription' }, req);
+      }
+      const normalizedEmail = String(email).toLowerCase().trim();
+      let matched = Object.values(store.licenses).filter(l => l.email === normalizedEmail && !l.revoked);
+      if (matched.length === 0 && supabase.isConfigured()) {
+        // Query remote supabase if configured
+      }
+      if (matched.length === 0) {
+        return json(res, 404, { error: 'no_subscription_found', message: 'No active subscription found for ' + normalizedEmail }, req);
+      }
+      const now = Date.now();
+      const activeLic = matched.find(l => !l.expiresAt || l.expiresAt > now) || matched[0];
+      const plainKey = issuedThisProcess.get(activeLic.paymentId) || null;
+      return json(res, 200, {
+        ok: true,
+        found: true,
+        plan: activeLic.plan,
+        hint: activeLic.hint,
+        expiresAt: activeLic.expiresAt,
+        licenseKey: plainKey,
+        note: plainKey ? 'Active license key restored.' : 'Subscription active on server. Check your registration email for the full license key.'
       }, req);
     }
 

@@ -184,6 +184,18 @@ test('undoLastTrade reverses the counters exactly', () => {
   assert.strictEqual(st.session.riskUsed, before.risk - 400);
 });
 
+test('undoLastTrade refuses to erase verified broker-imported trades', () => {
+  const t0 = ist(2026, 10, 13, 10, 0);
+  const st = R.syncSession(R.defaultState(t0), S, t0);
+  R.logTrade(st, S, { pnl: -2500, risk: 1000, source: 'auto', provenance: 'broker-imported' }, t0);
+  const tradeCount = st.session.trades;
+  const res = R.undoLastTrade(st);
+  assert.ok(res && res.rejected, 'Must reject undo on verified broker trade');
+  assert.strictEqual(res.reason, 'BROKER_EXECUTION_PROTECTED');
+  assert.strictEqual(st.session.trades, tradeCount, 'Trade count must not decrease');
+  assert.strictEqual(st.log.length, 1, 'Log must retain verified broker trade');
+});
+
 test('counters roll over at the next market open', () => {
   const t0 = ist(2026, 10, 13, 10, 0);
   const st = R.syncSession(R.defaultState(t0), S, t0);
@@ -451,6 +463,8 @@ test('isPro recognises valid, expired and bogus licenses', () => {
   assert.strictEqual(R.isPro({ key: 'TL-X', plan: 'lifetime', expiresAt: null }, now), true);
   assert.strictEqual(R.isPro({ key: 'TL-X', plan: 'pro_yearly', expiresAt: now - 1 }, now), false);
   assert.strictEqual(R.isPro({ key: 'TL-X', plan: 'pro_yearly', active: false, expiresAt: now + 1000 }, now), false);
+  assert.strictEqual(R.isPro({ key: 'TL-X', plan: 'pro_yearly', revoked: true, expiresAt: now + 1000 }, now), false);
+  assert.strictEqual(R.isPro({ key: 'TL-X', plan: 'unknown_super_pro', expiresAt: now + 1000 }, now), false);
   assert.strictEqual(R.isPro({ plan: 'free' }, now), false);
   assert.strictEqual(R.isPro(null, now), false);
 });
@@ -587,15 +601,31 @@ test('emergencyOverrideLock requires exact confirmation phrase and records audit
   const s = R.defaultState(t0);
   s.lock = { active: true, reason: 'Max trades hit', until: t0 + 20000, manual: false };
 
-  const failedOverride = R.emergencyOverrideLock(s, 'WRONG_CODE', 'test', t0);
-  assert.strictEqual(failedOverride.success, false);
+  // Fails with wrong code
+  const failedCode = R.emergencyOverrideLock(s, 'WRONG_CODE', 'Valid reason explaining position exit', t0);
+  assert.strictEqual(failedCode.success, false);
+  assert.strictEqual(failedCode.reason, 'INVALID_CONFIRMATION');
   assert.strictEqual(s.lock.active, true);
 
+  // Fails with empty or short reason (less than 10 chars)
+  const failedReasonShort = R.emergencyOverrideLock(s, 'I_ACCEPT_THE_RISK', 'short', t0);
+  assert.strictEqual(failedReasonShort.success, false);
+  assert.strictEqual(failedReasonShort.reason, 'REASON_REQUIRED');
+  assert.strictEqual(s.lock.active, true);
+
+  const failedReason9 = R.emergencyOverrideLock(s, 'I_ACCEPT_THE_RISK', '123456789', t0);
+  assert.strictEqual(failedReason9.success, false);
+  assert.strictEqual(failedReason9.reason, 'REASON_REQUIRED');
+  assert.strictEqual(s.lock.active, true);
+
+  // Succeeds with exact confirmation code and documented reason (>= 10 chars)
   const okOverride = R.emergencyOverrideLock(s, 'I_ACCEPT_THE_RISK', 'Need to adjust hedge position', t0);
   assert.strictEqual(okOverride.success, true);
   assert.strictEqual(s.lock.active, false);
+  assert.strictEqual(s.lock.emergencyOverridden, true);
   assert.strictEqual(s.audit.length, 1);
   assert.strictEqual(s.audit[0].action, 'EMERGENCY_LOCK_OVERRIDE');
+  assert.strictEqual(s.audit[0].policy, 'ADMIN_EMERGENCY_EXCEPTION');
   assert.strictEqual(s.audit[0].justification, 'Need to adjust hedge position');
 });
 

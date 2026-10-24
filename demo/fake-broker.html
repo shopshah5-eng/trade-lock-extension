@@ -88,6 +88,7 @@
         <div class="btn-grid">
           <button id="btnScenarioPending" class="primary">1. Pending Order (OPEN)</button>
           <button id="btnScenarioComplete" class="success">2. Completed Fill (COMPLETE)</button>
+          <button id="addFill" class="success">+ Add COMPLETE Fill (SBIN)</button>
           <button id="btnScenarioPartial" class="warning">3. Partial Fill (PARTIAL)</button>
           <button id="btnScenarioMultiPartial">4. Multiple Partial Fills</button>
           <button id="btnScenarioOpenPos" class="primary">5. Open Position (Net qty > 0)</button>
@@ -114,10 +115,10 @@
               <th>Time</th><th>Instrument</th><th>Type</th><th>Quantity</th><th>Price</th><th>Status</th>
             </tr>
           </thead>
-          <tbody id="orderRows">
+          <tbody id="rows">
             <tr><td>09:31:12</td><td>RELIANCE</td><td>BUY</td><td>75</td><td>2,450.10</td><td class="status-complete">COMPLETE</td></tr>
             <tr><td>09:48:03</td><td>TATASTEEL</td><td>SELL</td><td>500</td><td>145.25</td><td class="status-complete">COMPLETE</td></tr>
-            <tr><td>10:02:55</td><td>INFY</td><td>BUY</td><td>100</td><td>1,812.00</td><td class="status-open">OPEN</td></tr>
+            <tr><td>10:02:55</td><td>INFY</td><td>BUY</td><td>100</td><td>1,812.00</td><td class="status-rejected">REJECTED</td></tr>
           </tbody>
         </table>
         <div class="pagination" id="orderPagination" style="display:none">
@@ -143,7 +144,7 @@
       <!-- Positions Section -->
       <div class="card" id="positionsCard">
         <h2>
-          <span>Positions (<span id="posCount">2</span> rows)</span>
+          <span>Positions (<span id="posCount">0</span> rows)</span>
           <span style="font-size:12px;color:var(--muted)">Net Qty != 0 indicates open exposure</span>
         </h2>
         <table id="positionTable">
@@ -153,8 +154,6 @@
             </tr>
           </thead>
           <tbody id="positionRows">
-            <tr><td>SBIN</td><td>200</td><td>0</td><td>200</td><td>812.35</td><td style="color:var(--red)">(1,240.00)</td></tr>
-            <tr><td>HDFCBANK</td><td>150</td><td>150</td><td>0</td><td>1,690.00</td><td style="color:var(--green)">+3,510.50</td></tr>
           </tbody>
         </table>
       </div>
@@ -206,15 +205,27 @@
     </div>
   </div>
 
+  <span id="clickCount" style="display:none">clicks reached the page: 0</span>
+
 <script>
   'use strict';
+  // Lets the e2e test prove the tamper-reload actually happened.
+  try {
+    var c = Number(localStorage.getItem('tl-test-reloads') || '0') + 1;
+    localStorage.setItem('tl-test-reloads', String(c));
+  } catch (e) {}
+
   var clickCount = 0;
   var actionFeedback = document.getElementById('actionFeedback');
   var statClicks = document.getElementById('statClicks');
+  var elClickCount = document.getElementById('clickCount');
 
   document.addEventListener('click', function (e) {
+    if (e.target && (e.target.id === 'addFill' || e.target.id === 'clear')) return;
+    if (e.target && (e.target.id === 'tl-lock-root' || (e.target.closest && e.target.closest('#tl-lock-root')))) return;
     clickCount++;
     statClicks.textContent = clickCount;
+    if (elClickCount) elClickCount.textContent = 'clicks reached the page: ' + clickCount;
   }, true);
 
   function logAction(name, permitted) {
@@ -228,16 +239,43 @@
   document.getElementById('btnMockSquareOff').addEventListener('click', function () { logAction('Square off (Risk-Reducing Exit)', true); });
   document.getElementById('btnMockCancel').addEventListener('click', function () { logAction('Cancel Order', true); });
 
-  var tbodyOrders = document.getElementById('orderRows');
+  var tbodyOrders = document.getElementById('rows') || document.getElementById('orderRows');
   var tbodyPositions = document.getElementById('positionRows');
   var orderTable = document.getElementById('orderTable');
   var headerRow = document.getElementById('orderHeaderRow');
 
+  var fillCounter = 2;
+  var btnAddFill = document.getElementById('addFill');
+  if (btnAddFill) {
+    btnAddFill.addEventListener('click', function () {
+      fillCounter++;
+      var tr = document.createElement('tr');
+      var t = new Date().toTimeString().slice(0, 8);
+      tr.innerHTML = '<td>' + t + '</td><td>SBIN-' + fillCounter + '</td><td>BUY</td><td>100</td>' +
+                     '<td>812.35</td><td class="status-complete">COMPLETE</td>';
+      tbodyOrders.appendChild(tr);
+      updateCounts();
+      logAction('Added Fill: SBIN-' + fillCounter + ' BUY 100 @ 812.35', true);
+    });
+  }
+
   function updateCounts() {
     var rows = tbodyOrders.querySelectorAll('tr');
     document.getElementById('orderCount').textContent = rows.length;
-    var posRows = tbodyPositions.querySelectorAll('tr');
+    var posRows = tbodyPositions ? tbodyPositions.querySelectorAll('tr') : [];
     document.getElementById('posCount').textContent = posRows.length;
+    var openPos = 0, closedPos = 0;
+    for (var i = 0; i < posRows.length; i++) {
+      var cells = posRows[i].querySelectorAll('td');
+      if (cells.length >= 4) {
+        var net = parseFloat(cells[3].textContent.replace(/,/g, ''));
+        if (net !== 0) openPos++; else closedPos++;
+      }
+    }
+    var statOpen = document.getElementById('statOpenPositions');
+    var statClosed = document.getElementById('statClosedPositions');
+    if (statOpen) statOpen.textContent = openPos;
+    if (statClosed) statClosed.textContent = closedPos;
   }
 
   // Preset Scenario Handlers

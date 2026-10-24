@@ -33,14 +33,16 @@ check('manifest_version is 3', m.manifest_version === 3);
 check('has name/version/description', !!(m.name && m.version && m.description));
 check('background.service_worker set', !!(m.background && m.background.service_worker));
 check('permissions declared',
-  ['storage', 'alarms', 'tabs', 'declarativeNetRequest'].every((p) => m.permissions.includes(p)),
+  ['storage', 'alarms', 'tabs', 'declarativeNetRequest', 'sidePanel'].every((p) => m.permissions.includes(p)),
   m.permissions.join(', '));
+check('minimum_chrome_version supports Side Panel (>= 114)', parseInt(m.minimum_chrome_version, 10) >= 114);
 
 console.log('\nreferenced files exist');
 const refs = [];
 refs.push(m.background.service_worker);
 refs.push(m.action.default_popup);
 refs.push(m.options_ui.page);
+if (m.side_panel && m.side_panel.default_path) refs.push(m.side_panel.default_path);
 m.content_scripts.forEach((cs) => cs.js.forEach((j) => refs.push(j)));
 m.web_accessible_resources.forEach((w) => w.resources.forEach((r) => refs.push(r)));
 Object.values(m.icons).forEach((i) => refs.push(i));

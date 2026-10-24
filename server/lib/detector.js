@@ -371,6 +371,36 @@
       restrictionStatus: 'RESTRICTION_UNAVAILABLE',
       lastVerificationDate: null,
       limitations: 'TradingView chart embed handles orders independently of parent DOM.'
+    },
+    'web.sahi.com': {
+      name: 'Sahi Web',
+      domain: 'web.sahi.com',
+      domainRecognized: true,
+      pageStructureRecognized: true,
+      tradeDataDetectionVerified: true,
+      positionStateDetectionVerified: true,
+      newOrderRestrictionImplemented: false,
+      newOrderRestrictionTested: false,
+      riskReducingActionBehaviorTested: false,
+      detectionStatus: 'DETECTION_VERIFIED',
+      restrictionStatus: 'RESTRICTION_UNAVAILABLE',
+      lastVerificationDate: '2026-10-23',
+      limitations: 'Order book and position detection verified on Sahi Web terminal. Direct order button blocking is unavailable; warning lock overlay is enforced.'
+    },
+    'sahi.com': {
+      name: 'Sahi',
+      domain: 'sahi.com',
+      domainRecognized: true,
+      pageStructureRecognized: true,
+      tradeDataDetectionVerified: true,
+      positionStateDetectionVerified: true,
+      newOrderRestrictionImplemented: false,
+      newOrderRestrictionTested: false,
+      riskReducingActionBehaviorTested: false,
+      detectionStatus: 'DETECTION_VERIFIED',
+      restrictionStatus: 'RESTRICTION_UNAVAILABLE',
+      lastVerificationDate: '2026-10-23',
+      limitations: 'Order book and position detection verified on Sahi Web terminal. Direct order button blocking is unavailable; warning lock overlay is enforced.'
     }
   };
 

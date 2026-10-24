@@ -3,14 +3,18 @@
   "name": "Trade Lock \u2014 daily trading discipline",
   "version": "1.0.0",
   "description": "Locks the trading screen once your daily trade count, loss limit, risk budget or profit target is reached. Releases at the next market open.",
-  "minimum_chrome_version": "102",
+  "minimum_chrome_version": "116",
   "permissions": [
     "storage",
     "alarms",
     "tabs",
     "declarativeNetRequest",
-    "scripting"
+    "scripting",
+    "sidePanel"
   ],
+  "side_panel": {
+    "default_path": "options/options.html"
+  },
   "host_permissions": [
     "https://trade-lock-app.netlify.app/*",
     "https://*.netlify.app/*",
@@ -116,7 +120,7 @@
   },
   "options_ui": {
     "page": "options/options.html",
-    "open_in_tab": true
+    "open_in_tab": false
   },
   "icons": {
     "16": "icons/icon16.png",

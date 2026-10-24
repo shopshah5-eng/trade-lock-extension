@@ -76,26 +76,46 @@ in the paid build to gate Pro features (see `effectiveSettings` in `lib/rules.js
 Full walkthrough: **[RAZORPAY_SETUP.md](RAZORPAY_SETUP.md)** — account, test
 keys, webhooks, deployment, going live, support ops.
 
-## Testing
+## Testing & Reviewing Without API Keys
 
+Reviewers and testers do **NOT** need any API keys or a running backend server to test all features. Trade Lock includes a deterministic demo model engine that simulates candles, order books, and option Greeks out of the box.
+
+### Quick Review via Chrome
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/shopshah5-eng/trade-lock-extension.git
+   cd trade-lock-extension
+   ```
+2. Open Chrome and go to `chrome://extensions/`.
+3. Enable **Developer mode** (top-right toggle).
+4. Click **Load unpacked** and select the repository folder.
+5. Click the Trade Lock icon in Chrome:
+   - **Side Panel**: Opens Trade Lock inside Chrome's native right-hand side panel.
+   - **Full Tab**: Opens the full workspace in a tab (deduplicating existing tabs).
+   - **Charts & Indices**: Explore interactive candlestick & volume charts across 6 indices (NIFTY, BANK NIFTY, FIN NIFTY, MIDCPNIFTY, SENSEX, BANKEX) and 12 timeframes (1m to 1W) with EMA 9/20 and VWAP.
+   - **Options Chain**: View Black-Scholes Greeks, separate Call vs Put Theta, and strike-by-strike time decay.
+   - **India VIX**: Inspect real-time volatility regime, IV rank, and spike alert monitoring.
+   - **Planning Mode**: On weekends or holidays, access Journal, Analytics, and Planning without lockout.
+
+### Automated Test Suite
+Run the 180 unit and integration tests:
 ```bash
 npm install
-node --test test/          # 54 unit tests: rules engine, IST/session math, detectors
-node test/manifest.test.js  # manifest + DNR ruleset validation
-node test/e2e.test.js       # loads the real extension in headless Chrome
-                            # against demo/fake-broker.html (needs puppeteer)
+npm test
 ```
+All tests run locally using Node's native test runner with 0 external network dependencies.
 
 ## Files
 
 | Path | What |
 |---|---|
-| `manifest.json` | MV3 manifest, host permissions, content scripts |
-| `background.js` | Service worker: badge, release alarm, optional hard block (DNR) |
-| `lib/rules.js` | Pure rules engine — limits, IST session/holiday math, lock timing |
-| `lib/detector.js` | Generic order-book/positions table parser |
+| `manifest.json` | MV3 manifest, side panel declaration, host permissions, content scripts |
+| `background.js` | Service worker: badge, release alarm, side panel router, optional hard block |
+| `lib/rules.js` | Pure rules engine — limits, IST session/holiday math, lock timing, planning mode |
+| `lib/market.js` | Market analytics engine — 6 indices, 12 timeframes, Black-Scholes Greeks, India VIX |
+| `lib/detector.js` | Generic order-book/positions table parser for Indian brokers |
 | `content/lock.js` | Content script: HUD, detector poll, overlay, tamper watchdog |
 | `content/lock.html` + `lockpage.js` | The lock screen itself |
-| `popup/` | Toolbar popup: stats, manual logging, lock/reset |
-| `options/` | Full settings page |
-| `demo/fake-broker.html` | Fake broker page used by the e2e test |
+| `popup/` | Toolbar popup: stats, manual logging, Side Panel & Full Tab launchers, lock controls |
+| `options/` | Full settings & workspace: interactive charts, options chain, monthly journal, licensing |
+| `demo/fake-broker.html` | Fake broker page used for testing and demonstrations |

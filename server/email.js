@@ -11,7 +11,11 @@ function formatPlanName(planId) {
     pro_monthly: 'Pro — Monthly (₹199/mo)',
     pro_yearly: 'Pro — Yearly (₹1,499/yr)',
     pro_plus_ai: 'Pro+ AI Markets — Monthly (₹399/mo)',
-    lifetime: 'Founder Lifetime (₹2,999 one-time)'
+    pro_plus_ai_monthly: 'Pro+ AI Markets — Monthly (₹399/mo)',
+    pro_plus_ai_yearly: 'Pro+ AI Markets — Yearly (₹3,999/yr)',
+    lifetime: 'Founder Lifetime (₹2,999 one-time)',
+    founder_lifetime: 'Founder Lifetime (₹2,999 one-time)',
+    free: 'Free'
   };
   return names[planId] || planId || 'Pro';
 }

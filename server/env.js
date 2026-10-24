@@ -19,16 +19,40 @@ function parseEnv(text) {
 }
 
 function loadEnvFile(file) {
+  const loaded = [];
   const f = file || path.join(__dirname, '.env');
   try {
-    const parsed = parseEnv(fs.readFileSync(f, 'utf8'));
-    for (const [k, v] of Object.entries(parsed)) {
-      if (process.env[k] === undefined) process.env[k] = v;
+    if (fs.existsSync(f)) {
+      const parsed = parseEnv(fs.readFileSync(f, 'utf8'));
+      for (const [k, v] of Object.entries(parsed)) {
+        if ((process.env[k] === undefined || process.env[k] === '') && v !== '') {
+          process.env[k] = v;
+          loaded.push(k);
+        }
+      }
     }
-    return Object.keys(parsed);
   } catch (e) {
-    return []; // no .env — environment-only configuration is fine
+    // Ignore read errors
   }
+
+  // Also check global_api_keys.env fallback (Rule 15)
+  try {
+    const home = process.env.USERPROFILE || process.env.HOME || '';
+    const globalEnv = path.join(home, '.gemini', 'config', 'global_api_keys.env');
+    if (fs.existsSync(globalEnv)) {
+      const parsedGlobal = parseEnv(fs.readFileSync(globalEnv, 'utf8'));
+      for (const [k, v] of Object.entries(parsedGlobal)) {
+        if ((process.env[k] === undefined || process.env[k] === '') && v !== '') {
+          process.env[k] = v;
+          if (!loaded.includes(k)) loaded.push(k);
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore global env read errors
+  }
+
+  return loaded;
 }
 
 module.exports = { parseEnv, loadEnvFile };

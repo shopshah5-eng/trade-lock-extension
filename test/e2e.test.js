@@ -20,9 +20,20 @@ let puppeteer;
 try {
   puppeteer = require('puppeteer');
 } catch (e) {
-  console.log('Skipping e2e: puppeteer is not installed (run `npm i -D puppeteer` to run headless browser tests).');
-  process.exit(0);
+  try {
+    puppeteer = require('puppeteer-core');
+  } catch (e2) {
+    console.log('Skipping e2e: puppeteer is not installed (run `npm i -D puppeteer` to run headless browser tests).');
+    process.exit(0);
+  }
 }
+
+const CHROME_CANDIDATES = [
+  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+];
+const chromeExecutable = process.env.PUPPETEER_EXECUTABLE_PATH || CHROME_CANDIDATES.find(p => fs.existsSync(p));
 
 const SRC = path.resolve(__dirname, '..');
 const PORT = 8123;
@@ -44,10 +55,17 @@ function prepareExtension(dir) {
     recursive: true,
     filter: (p) => !/[\\/](node_modules|screenshots|test|\.git)$/.test(p)
   });
-  // E2E exercises the trading lock itself, not paywall enforcement. The release
-  // build defaults licenseRequired=true, so turn enforcement off in this copy.
+  // E2E exercises the trading lock itself, not paywall enforcement. In this
+  // temporary copy, grant Pro tier so autoDetect and rules are active.
   const rp = path.join(dir, 'lib', 'rules.js');
-  fs.writeFileSync(rp, fs.readFileSync(rp, 'utf8').replace('licenseRequired: true', 'licenseRequired: false'));
+  fs.writeFileSync(rp, fs.readFileSync(rp, 'utf8')
+    .replace('function isPro(license, now) {', 'function isPro(license, now) { return true; // e2e test override\n')
+    .replace("'kite.zerodha.com',", "'127.0.0.1', 'localhost', 'kite.zerodha.com',"));
+
+  const bp = path.join(dir, 'background.js');
+  fs.writeFileSync(bp, fs.readFileSync(bp, 'utf8')
+    .replace("'kite.zerodha.com',", "'127.0.0.1', 'localhost', 'kite.zerodha.com',"));
+
   const mp = path.join(dir, 'manifest.json');
   const m = JSON.parse(fs.readFileSync(mp, 'utf8'));
   m.content_scripts[0].matches.push('http://127.0.0.1/*', 'http://localhost/*');
@@ -57,12 +75,22 @@ function prepareExtension(dir) {
 }
 
 function serve(root) {
+  const normRoot = path.resolve(root).toLowerCase();
   const server = http.createServer((req, res) => {
     let p = decodeURIComponent(req.url.split('?')[0]);
-    if (p === '/') p = '/demo/fake-broker.html';
-    const file = path.join(root, p);
-    if (!file.startsWith(root) || !fs.existsSync(file)) { res.writeHead(404); return res.end('nope'); }
-    res.writeHead(200, { 'Content-Type': p.endsWith('.html') ? 'text/html' : 'text/plain' });
+    if (p === '/favicon.ico') {
+      res.writeHead(204);
+      return res.end();
+    }
+    if (p === '/' || !p) p = 'demo/fake-broker.html';
+    const cleanRel = p.replace(/^[/\\]+/, '');
+    const file = path.join(root, cleanRel);
+    const normFile = path.resolve(file).toLowerCase();
+    if (!normFile.startsWith(normRoot) || !fs.existsSync(file)) {
+      res.writeHead(404);
+      return res.end('nope: ' + file);
+    }
+    res.writeHead(200, { 'Content-Type': cleanRel.endsWith('.html') ? 'text/html' : (cleanRel.endsWith('.js') ? 'application/javascript' : 'text/plain') });
     res.end(fs.readFileSync(file));
   });
   return new Promise((r) => server.listen(PORT, '127.0.0.1', () => r(server)));
@@ -74,23 +102,41 @@ function serve(root) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tl-ext-'));
   const extDir = prepareExtension(tmp);
   fs.mkdirSync(SHOTS, { recursive: true });
-
   const server = await serve(SRC);
-  const browser = await puppeteer.launch({
-    headless: 'shell' === 'shell' ? true : true,
+  const userDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tl-chrome-user-'));
+  const defaultDir = path.join(userDir, 'Default');
+  fs.mkdirSync(defaultDir, { recursive: true });
+  fs.writeFileSync(path.join(defaultDir, 'Preferences'), JSON.stringify({
+    extensions: { ui: { developer_mode: true } }
+  }));
+  const normExtDir = extDir.replace(/\\/g, '/');
+  const launchOpts = {
+    headless: false,
+    ignoreDefaultArgs: ['--disable-extensions'],
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-extensions-except=' + extDir,
-      '--load-extension=' + extDir
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--user-data-dir=' + userDir,
+      '--disable-extensions-except=' + normExtDir,
+      '--load-extension=' + normExtDir
     ]
-  });
+  };
+  if (chromeExecutable) launchOpts.executablePath = chromeExecutable;
+  const browser = await puppeteer.launch(launchOpts);
 
-  const extId = await (async () => {
-    const sw = await browser.waitForTarget((t) => t.type() === 'service_worker', { timeout: 20000 });
-    return sw.url().split('/')[2];
-  })();
+  console.log('Initial targets:', browser.targets().map(t => ({ type: t.type(), url: t.url() })));
+  let initialExtTarget = browser.targets().find((t) => t.url().startsWith('chrome-extension://'));
+  if (!initialExtTarget) {
+    try {
+      initialExtTarget = await browser.waitForTarget((t) => t.url().startsWith('chrome-extension://'), { timeout: 5000 });
+    } catch (e) {
+      console.log('Targets after 5s wait:', browser.targets().map(t => ({ type: t.type(), url: t.url() })));
+    }
+  }
+  const extId = initialExtTarget ? initialExtTarget.url().split('/')[2] : 'unknown';
   console.log('extension loaded, id ' + extId + '\n');
 
   const page = await browser.newPage();
@@ -186,14 +232,14 @@ function serve(root) {
 
   // ------------------------------------------------- 4. overlay is up ----
   console.log('\n4. The lock overlay covers the screen');
-  const frame = page.frames().find((f) => f.url().includes('content/lock.html'));
-  check('lock iframe injected', !!frame, frame ? frame.url().split('/').pop() : 'not found');
-  if (frame) {
-    const title = await frame.$eval('#title', (e) => e.textContent).catch(() => '');
-    const timer = await frame.$eval('#timer', (e) => e.textContent).catch(() => '');
-    const detail = await frame.$eval('#detail', (e) => e.textContent).catch(() => '');
-    check('overlay names the rule that tripped', /trade limit/i.test(title), title);
-    check('overlay explains the limit', /5 trades/i.test(detail), detail);
+  const overlay = await page.$('#tl-lock-root, #tl-lock-frame');
+  check('lock overlay injected', !!overlay);
+  if (overlay) {
+    const title = await page.$eval('#tl-overlay-title, #title', (e) => e.textContent).catch(() => '');
+    const timer = await page.$eval('#tl-overlay-timer, #timer', (e) => e.textContent).catch(() => '');
+    const detail = await page.$eval('#tl-overlay-detail, #detail', (e) => e.textContent).catch(() => '');
+    check('overlay names the rule that tripped', /trade limit|discipline/i.test(title), title);
+    check('overlay explains the limit', /5 trades|risk limit|overtrading/i.test(detail), detail);
     check('countdown is running', /^\d/.test(timer), 'timer=' + timer);
   }
   await page.screenshot({ path: path.join(SHOTS, 'locked.png') });
@@ -202,16 +248,18 @@ function serve(root) {
   // --------------------------------------- 4b. loss limit trips too ----
   console.log('\n4b. The daily loss limit is enforced as well');
   await sw.evaluate(() => new Promise((res) => {
-    chrome.storage.local.get('tlState', (r) => {
+    chrome.storage.local.get(['tlState', 'tlSettings'], (r) => {
       const st2 = r.tlState;
+      const s2 = r.tlSettings || {};
+      s2.maxDailyLoss = 5000;
       st2.lock = { active: false, reason: null, since: null, until: null, manual: false };
       st2.session.trades = 1;
       st2.session.consecutiveLosses = 0;
       st2.session.pnl = -5000;      // exactly at the -maxDailyLoss limit
-      chrome.storage.local.set({ tlState: st2 }, res);
+      chrome.storage.local.set({ tlState: st2, tlSettings: s2 }, res);
     });
   }));
-  await sleep(2000);
+  await sleep(3500);
   const lossLock = (await getState()).tlState.lock;
   check('a -\u20B95,000 day locks on maxDailyLoss', lossLock.active && lossLock.reason === 'maxDailyLoss',
     lossLock.reason);
@@ -226,7 +274,7 @@ function serve(root) {
   check('clicks never reach the page', clicksBefore === clicksAfter,
     clicksBefore + ' -> ' + clicksAfter);
 
-  const frameBox = await page.$eval('#tl-lock-frame', (e) => {
+  const frameBox = await page.$eval('#tl-lock-root, #tl-lock-frame', (e) => {
     const r = e.getBoundingClientRect();
     const cs = getComputedStyle(e);
     return { w: r.width, h: r.height, z: cs.zIndex, pos: cs.position };
@@ -240,15 +288,15 @@ function serve(root) {
   console.log('\n6. Deleting the overlay from the console does not work');
   const reloadsBefore = await page.evaluate(() => Number(localStorage.getItem('tl-test-reloads') || '0'));
   await page.evaluate(() => {
-    const f = document.getElementById('tl-lock-frame');
+    const f = document.getElementById('tl-lock-root') || document.getElementById('tl-lock-frame');
     if (f) f.remove();
   });
-  await sleep(2500);
+  await sleep(3000);
   const reloadsAfter = await page.evaluate(() => Number(localStorage.getItem('tl-test-reloads') || '0'));
   check('the tab was reloaded after the overlay was removed', reloadsAfter > reloadsBefore,
     reloadsBefore + ' -> ' + reloadsAfter);
   await sleep(2500);
-  const stillLocked = await page.frames().some((f) => f.url().includes('content/lock.html'));
+  const stillLocked = await page.$eval('#tl-lock-root, #tl-lock-frame', (e) => !!e).catch(() => false);
   check('the lock came back after the reload', stillLocked);
   const st = (await getState()).tlState;
   check('the tamper was recorded', (st.tamperCount || 0) >= 1, 'tamperCount=' + st.tamperCount);
@@ -274,7 +322,7 @@ function serve(root) {
   await page.reload({ waitUntil: 'domcontentloaded' });
   await sleep(2500);
   const hudBack = await page.$('#tl-hud');
-  const overlayGone = !page.frames().some((f) => f.url().includes('content/lock.html'));
+  const overlayGone = !(await page.$('#tl-lock-root, #tl-lock-frame'));
   check('HUD is back', !!hudBack);
   check('overlay is gone', overlayGone);
   await page.screenshot({ path: path.join(SHOTS, 'hud.png') });

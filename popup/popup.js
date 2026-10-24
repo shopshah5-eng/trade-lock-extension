@@ -8,7 +8,7 @@
    'focusCard', 'focusText', 'focusEditBtn',
    'qaCharts', 'qaOptions', 'qaAddTrade', 'qaAi', 'qaJournal', 'qaRules',
    'logDrawer', 'pnl', 'risk', 'addWin', 'addLoss', 'lockNow', 'undo', 'openOptions',
-   'openOptions2', 'resetDay', 'footnote'].forEach(function (id) {
+   'openOptions2', 'upgradeHeaderBtn', 'viewPlansBtn', 'openSidePanelBtn', 'openDashboardHero', 'footnote'].forEach(function (id) {
     els[id] = document.getElementById(id);
   });
 
@@ -101,13 +101,13 @@
     var mode = (s && s.enforcementMode) || (lock && lock.mode) || 'warning';
     var isWarningMode = mode === 'warning';
 
-    els.banner.className = 'banner ' + (locked ? (isWarningMode ? 'warn' : 'locked') : (state && state.pendingLock ? 'warn' : 'open'));
+    els.banner.className = 'banner ' + (locked ? 'locked' : (state && state.pendingLock ? 'warn' : 'open'));
     if (locked) {
       if (isWarningMode) {
-        els.bannerTitle.textContent = '⚠️ Discipline Warning Active';
+        els.bannerTitle.textContent = '🔒 Full-Screen Discipline Lock Active';
         els.bannerText.textContent = (view.copy && view.copy.detail)
-          ? view.copy.detail + ' Terminal remains active — this is a discipline reminder.'
-          : 'Trading limit hit. Page remains interactive. This is a behavioral reminder, not an enforced lock.';
+          ? view.copy.detail + ' Terminal covered by full-screen discipline overlay until next market open.'
+          : 'Trading limit reached. Opaque lock overlay covers broker terminal until next market open.';
       } else if (mode === 'order_restrict') {
         els.bannerTitle.textContent = '🛡️ Order Restriction Active';
         els.bannerText.textContent = 'New orders blocked on verified broker page. Emergency exits (Square off / Exit) remain accessible.';
@@ -128,9 +128,16 @@
         ' — terminal remains active so you can square off your open trade. Locks automatically the moment your position closes.';
       els.bannerCd.style.display = 'none';
     } else {
-      els.bannerTitle.textContent = 'Screen unlocked';
-      var next = view.violationWarning;
-      els.bannerText.textContent = next || 'Trading is allowed. Every fill counts toward your limits.';
+      var isClosed = R.isClosedDay && R.isClosedDay(Date.now(), s);
+      if (isClosed) {
+        els.bannerTitle.textContent = '📅 Planning Mode (Weekend / Holiday)';
+        var nextSession = R.nextMarketOpen ? R.istLabel(R.nextMarketOpen(Date.now(), s)) : 'next market session';
+        els.bannerText.textContent = 'Markets closed until ' + nextSession + '. Full access to Journal, Charts, Options and AI tools is open.';
+      } else {
+        els.bannerTitle.textContent = 'Screen unlocked';
+        var next = view.violationWarning;
+        els.bannerText.textContent = next || 'Trading is allowed. Every fill counts toward your limits.';
+      }
       els.bannerCd.style.display = 'none';
     }
 
@@ -165,6 +172,24 @@
     els.footnote.textContent = auto
       ? auto + ' auto \u00b7 ' + Math.max(0, sess.trades - auto) + ' manual \u00b7 streak ' + sess.consecutiveLosses
       : 'streak ' + sess.consecutiveLosses + ' \u00b7 all manual';
+
+    if (els.lockNow) {
+      if (locked) {
+        if (lock.manual) {
+          els.lockNow.textContent = 'Release focus lock';
+          els.lockNow.disabled = false;
+          els.lockNow.title = 'Release your self-imposed focus lock with confirmation';
+        } else {
+          els.lockNow.textContent = 'Rule lock active';
+          els.lockNow.disabled = true;
+          els.lockNow.title = 'Rule-triggered locks cannot be released early';
+        }
+      } else {
+        els.lockNow.textContent = 'Lock screen now';
+        els.lockNow.disabled = false;
+        els.lockNow.title = 'Lock trading terminal immediately';
+      }
+    }
   }
 
   function tick() {
@@ -297,92 +322,152 @@
   els.addWin.addEventListener('click', function () { logTrade(1); });
   els.addLoss.addEventListener('click', function () { logTrade(-1); });
   els.lockNow.addEventListener('click', function () {
-    if (confirm('Lock the trading screen until the next market open?')) act('TL_LOCK_NOW');
+    var lock = view.state && view.state.lock;
+    if (lock && lock.active) {
+      if (lock.manual) {
+        if (confirm('Are you sure you want to release your self-imposed focus lock early? Automatic risk limit locks cannot be released.')) {
+          send('TL_RELEASE_MANUAL', { confirmed: true }).then(function (res) {
+            if (res && res.success) {
+              refresh();
+            } else {
+              alert((res && (res.message || res.error)) || 'Could not release lock.');
+            }
+          });
+        }
+      } else {
+        alert('Discipline lock is active. Rule-triggered locks cannot be released early.');
+      }
+      return;
+    }
+    var s = view.settings || R.DEFAULT_SETTINGS;
+    var isClosed = R.isClosedDay && R.isClosedDay(Date.now(), s);
+    var nextSession = R.nextMarketOpen ? R.istLabel(R.nextMarketOpen(Date.now(), s)) : 'next market session';
+    var msg = isClosed
+      ? 'Market is currently closed (Weekend / Holiday planning mode).\n\nReopen session: ' + nextSession + '.\n\nLock trading terminal now?'
+      : 'Lock the trading terminal screen until ' + nextSession + '?';
+    if (confirm(msg)) act('TL_LOCK_NOW');
   });
   els.undo.addEventListener('click', function () {
     chrome.storage.local.get(['tlState', 'tlSettings'], function (res) {
       var settings = Object.assign({}, R.DEFAULT_SETTINGS, res.tlSettings || {});
       var state = res.tlState ? R.syncSession(res.tlState, settings, Date.now()) : null;
       if (!state) return;
+      if (state.lock && state.lock.active && !state.lock.manual) {
+        alert('Discipline lock is active. Trade counts and losses cannot be reversed while locked.');
+        return;
+      }
       var e = R.undoLastTrade(state);
       if (!e) { alert('Nothing to undo.'); return; }
-      if (state.lock.active && !state.lock.manual) R.releaseLock(state);
+      if (e.rejected) {
+        alert(e.message || 'Verified broker executions cannot be erased.');
+        return;
+      }
       chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }, function () {
         send('TL_REFRESH'); view.state = state; view.copy = null; render(); tick();
       });
     });
   });
-  els.resetDay.addEventListener('click', function () {
-    var st = view.state;
-    var isRuleLock = st && st.lock && st.lock.active && !st.lock.manual;
-    if (isRuleLock) {
-      if (!confirm('An automated risk rule lock is ACTIVE (' + (st.lock.reason || 'Trading Limit') + ').\n\nRule-triggered locks cannot be cleared by resetting daily statistics and remain active until next market open (09:15 IST).\n\nDo you want to reset displayed daily statistics only?')) return;
-      activeTab().then(function (tab) {
-        var p = (tab && tab.id) ? tabMessage(tab.id, 'TL_RESET_STATS') : Promise.resolve(null);
-        p.then(function (res) {
-          if (res && res.ok) { view.state = res.state; render(); tick(); return; }
-          chrome.storage.local.get(['tlState', 'tlSettings'], function (r2) {
-            var cur = r2.tlState || st;
-            R.resetDailyStats(cur, Date.now());
-            chrome.storage.local.set({ tlState: cur, tlSavedAt: Date.now() }, function () {
-              send('TL_REFRESH'); view.state = cur; render(); tick();
+  if (els.upgradeHeaderBtn) {
+    els.upgradeHeaderBtn.addEventListener('click', function () { openWorkspace('license'); });
+  }
+  if (els.viewPlansBtn) {
+    els.viewPlansBtn.addEventListener('click', function () { openWorkspace('license'); });
+  }
+  if (els.planBadge) {
+    els.planBadge.style.cursor = 'pointer';
+    els.planBadge.title = 'Click to view Pro plans and subscriptions';
+    els.planBadge.addEventListener('click', function () { openWorkspace('license'); });
+  }
+
+  function openWorkspace(targetTab) {
+    var tabKey = targetTab || 'overview';
+    try {
+      chrome.storage.local.set({ tlActiveTab: tabKey });
+    } catch (e) {}
+
+    // In Chrome MV3, chrome.sidePanel.open MUST execute directly within the active user click gesture
+    if (chrome.sidePanel && typeof chrome.sidePanel.open === 'function') {
+      chrome.windows.getCurrent(function (win) {
+        if (win && win.id) {
+          if (chrome.sidePanel.setOptions) {
+            chrome.sidePanel.setOptions({
+              windowId: win.id,
+              path: 'options/options.html#' + tabKey,
+              enabled: true
+            }, function () {
+              void chrome.runtime.lastError;
+              chrome.sidePanel.open({ windowId: win.id }, function () {
+                if (chrome.runtime.lastError) {
+                  openTab(tabKey);
+                } else {
+                  try {
+                    chrome.runtime.sendMessage({ type: 'TL_SWITCH_TAB', tab: tabKey }, function () {
+                      void chrome.runtime.lastError;
+                    });
+                  } catch (err) {}
+                  window.close();
+                }
+              });
             });
+            return;
+          }
+          chrome.sidePanel.open({ windowId: win.id }, function () {
+            if (chrome.runtime.lastError) {
+              openTab(tabKey);
+            } else {
+              try {
+                chrome.runtime.sendMessage({ type: 'TL_SWITCH_TAB', tab: tabKey }, function () {
+                  void chrome.runtime.lastError;
+                });
+              } catch (err) {}
+              window.close();
+            }
           });
-        });
+          return;
+        }
+        openTab(tabKey);
       });
       return;
     }
-    var isManualLock = st && st.lock && st.lock.active && st.lock.manual;
-    if (isManualLock) {
-      if (!confirm('You have an active voluntary focus lock.\n\nRelease this focus lock and reset counters?')) return;
-      activeTab().then(function (tab) {
-        var p = (tab && tab.id) ? tabMessage(tab.id, 'TL_RELEASE_MANUAL') : Promise.resolve(null);
-        p.then(function () {
-          chrome.storage.local.get(['tlState', 'tlSettings'], function (r2) {
-            var settings = Object.assign({}, R.DEFAULT_SETTINGS, r2.tlSettings || {});
-            var state = R.resetDay(r2.tlState, settings, Date.now());
-            chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }, function () {
-              send('TL_REFRESH'); view.state = state; view.copy = null; render(); tick();
-            });
-          });
-        });
+    openTab(tabKey);
+  }
+
+  function openTab(targetTab) {
+    var tabKey = targetTab || 'overview';
+    var targetUrl = chrome.runtime.getURL('options/options.html#' + tabKey);
+    // Reuse existing options tab if already open, avoiding duplicate tabs
+    chrome.tabs.query({}, function (tabs) {
+      var existing = (tabs || []).find(function (t) {
+        return t.url && t.url.indexOf(chrome.runtime.getURL('options/options.html')) !== -1;
       });
-      return;
-    }
-    if (!confirm('Reset today’s counters for a fresh trading session?')) return;
-    activeTab().then(function (tab) {
-      var p = (tab && tab.id) ? tabMessage(tab.id, 'TL_RESET') : Promise.resolve(null);
-      p.then(function (res) {
-        if (res && res.ok) { view.state = res.state; render(); tick(); return; }
-        chrome.storage.local.get(['tlState', 'tlSettings'], function (r2) {
-          var settings = Object.assign({}, R.DEFAULT_SETTINGS, r2.tlSettings || {});
-          var state = R.resetDay(r2.tlState || null, settings, Date.now());
-          chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }, function () {
-            send('TL_REFRESH'); view.state = state; view.copy = null; render(); tick();
-          });
+      if (existing && existing.id) {
+        chrome.tabs.update(existing.id, { active: true, url: targetUrl }, function () {
+          if (existing.windowId) chrome.windows.update(existing.windowId, { focused: true });
+          window.close();
         });
-      });
-    });
-  });
-  function openTab(tab) {
-    send('TL_OPEN_OPTIONS', { tab: tab }).then(function () {
-      window.close();
+      } else {
+        chrome.tabs.create({ url: targetUrl }, function () {
+          window.close();
+        });
+      }
     });
   }
 
-  function openOptions() {
-    chrome.runtime.openOptionsPage();
+  if (els.openSettingsTop) els.openSettingsTop.addEventListener('click', function () { openWorkspace('rules'); });
+  els.openOptions.addEventListener('click', function () { openWorkspace('overview'); });
+  els.openOptions2.addEventListener('click', function () { openWorkspace('rules'); });
+  if (els.openSidePanelBtn) {
+    els.openSidePanelBtn.addEventListener('click', function () { openWorkspace('overview'); });
+  }
+  if (els.openDashboardHero) {
+    els.openDashboardHero.addEventListener('click', function () { openTab('overview'); });
   }
 
-  if (els.openSettingsTop) els.openSettingsTop.addEventListener('click', openOptions);
-  els.openOptions.addEventListener('click', openOptions);
-  els.openOptions2.addEventListener('click', openOptions);
-
-  if (els.qaCharts) els.qaCharts.addEventListener('click', function () { openTab('charts'); });
-  if (els.qaOptions) els.qaOptions.addEventListener('click', function () { openTab('options'); });
-  if (els.qaAi) els.qaAi.addEventListener('click', function () { openTab('ai'); });
-  if (els.qaJournal) els.qaJournal.addEventListener('click', function () { openTab('journal'); });
-  if (els.qaRules) els.qaRules.addEventListener('click', function () { openTab('rules'); });
+  if (els.qaCharts) els.qaCharts.addEventListener('click', function () { openWorkspace('market'); });
+  if (els.qaOptions) els.qaOptions.addEventListener('click', function () { openWorkspace('options'); });
+  if (els.qaAi) els.qaAi.addEventListener('click', function () { openWorkspace('ai'); });
+  if (els.qaJournal) els.qaJournal.addEventListener('click', function () { openWorkspace('journal'); });
+  if (els.qaRules) els.qaRules.addEventListener('click', function () { openWorkspace('rules'); });
   if (els.qaAddTrade) els.qaAddTrade.addEventListener('click', function () {
     if (els.pnl) {
       els.pnl.focus();

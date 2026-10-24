@@ -74,6 +74,13 @@ function getState() {
   return chrome.storage.local.get('tlState').then(function (res) { return res.tlState || null; });
 }
 
+var opQueue = Promise.resolve();
+function enqueueOp(fn) {
+  var p = opQueue.then(fn, fn);
+  opQueue = p.catch(function () {});
+  return p;
+}
+
 // --------------------------------------------------------------- badge ----
 
 function lockBadgeImage() {
@@ -223,7 +230,7 @@ function enforceLockOnBrokerTabs() {
     return chrome.tabs.query({}).then(function (tabs) {
       return Promise.all(tabs.map(function (tab) {
         if (!tab.url || !isBrokerUrl(tab.url)) return Promise.resolve();
-        return chrome.tabs.sendMessage(tab.id, { type: 'TL_LOCK_NOW' }).catch(function () {
+        return chrome.tabs.sendMessage(tab.id, { type: 'TL_ENFORCE_LOCK', state: state }).catch(function () {
           if (chrome.scripting && chrome.scripting.executeScript) {
             return chrome.scripting.executeScript({
               target: { tabId: tab.id },
@@ -262,13 +269,37 @@ function notifyTabs(type, payload) {
 }
 
 function releaseIfDue() {
-  return getState().then(function (state) {
-    if (!state || !state.lock || !state.lock.active) return refresh();
-    if (Date.now() < state.lock.until) return refresh();
-    state.lock = { active: false, reason: null, since: null, until: null, manual: false };
-    return chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() })
-      .then(function () { return notifyTabs('TL_RELEASED'); })
-      .then(refresh);
+  return enqueueOp(function () {
+    return Promise.all([getState(), getSettings()]).then(function (r) {
+      var state = r[0], settings = r[1];
+      if (!state || !state.lock || !state.lock.active) return refresh();
+      var now = Date.now();
+      var until = Number(state.lock.until);
+
+      // Safeguard against missing, malformed, or invalid unlock timestamps.
+      // An active lock must NEVER be released simply because 'until' is missing, NaN, <= 0, or invalid!
+      if (isNaN(until) || until <= 0) {
+        console.warn('[Trade Lock Security] Active lock has invalid until timestamp. Repairing until market open.');
+        var repairedUntil = (typeof TLRules !== 'undefined' && TLRules.nextMarketOpen)
+          ? TLRules.nextMarketOpen(now, settings)
+          : (now + 18 * 3600 * 1000);
+        state.lock.until = repairedUntil;
+        return chrome.storage.local.set({ tlState: state, tlSavedAt: now }).then(refresh);
+      }
+
+      // Only release if the configured unlock condition is actually satisfied!
+      if (now < until) return refresh();
+
+      // Authoritative background release transition
+      state.lock = { active: false, reason: null, since: null, until: null, manual: false, mode: (settings && settings.enforcementMode) || 'warning' };
+      state.status = 'NORMAL';
+      state.statusReason = null;
+      return chrome.storage.local.set({ tlState: state, tlSavedAt: now })
+        .then(function () {
+          return notifyTabs('TL_RELEASED', { state: state, released: true });
+        })
+        .then(refresh);
+    });
   });
 }
 
@@ -332,26 +363,84 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     return true;
   }
   if (msg.type === 'TL_LOCK_NOW') {
-    getSettings().then(function (settings) {
-      getState().then(function (st) {
-        var state = st || {
-          version: 1,
-          session: { start: Date.now(), date: '', trades: 0, autoTrades: 0, pnl: 0, riskUsed: 0,
-                     consecutiveLosses: 0, maxTradeRisk: 0, lastTradeAt: null },
-          lock: { active: false, reason: null, since: null, until: null, manual: false },
-          detectorSeen: {}, log: [], tamperCount: 0
-        };
-        var until = (typeof TLRules !== 'undefined' && TLRules.nextMarketOpen)
-          ? TLRules.nextMarketOpen(Date.now(), settings)
-          : (Date.now() + 18 * 3600 * 1000);
-        state.lock = { active: true, reason: 'Manual lock', since: Date.now(), until: until, manual: true };
-        chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }).then(function () {
-          refresh().then(function () {
-            enforceLockOnBrokerTabs();
-            sendResponse({ ok: true, state: state });
+    enqueueOp(function () {
+      return getSettings().then(function (settings) {
+        return getState().then(function (st) {
+          var state = st || {
+            version: 1,
+            session: { start: Date.now(), date: '', trades: 0, autoTrades: 0, pnl: 0, riskUsed: 0,
+                       consecutiveLosses: 0, maxTradeRisk: 0, lastTradeAt: null },
+            lock: { active: false, reason: null, since: null, until: null, manual: false },
+            detectorSeen: {}, log: [], tamperCount: 0
+          };
+          var until = (typeof TLRules !== 'undefined' && TLRules.nextMarketOpen)
+            ? TLRules.nextMarketOpen(Date.now(), settings)
+            : (Date.now() + 18 * 3600 * 1000);
+          state.lock = { active: true, reason: 'Manual lock', since: Date.now(), until: until, manual: true };
+          return chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }).then(function () {
+            return refresh().then(function () {
+              enforceLockOnBrokerTabs();
+              sendResponse({ ok: true, state: state });
+            });
           });
         });
       });
+    });
+    return true;
+  }
+  if (msg.type === 'TL_RELEASE_MANUAL') {
+    if (sender && sender.id && sender.id !== chrome.runtime.id) {
+      sendResponse({ success: false, error: 'UNAUTHORIZED_SENDER', message: 'Unauthorized message sender context.' });
+      return;
+    }
+    var isTabSender = !!(sender && sender.tab);
+    var isWebUrl = !!(sender && sender.url && !sender.url.startsWith('chrome-extension://'));
+    if (isTabSender || isWebUrl) {
+      sendResponse({ success: false, error: 'UNAUTHORIZED_SENDER', message: 'Unauthorized message sender context. Manual release must originate from the extension popup.' });
+      return;
+    }
+    if (!msg.confirmed) {
+      sendResponse({ success: false, error: 'CONFIRMATION_REQUIRED', message: 'Manual release requires explicit user confirmation.' });
+      return;
+    }
+    enqueueOp(function () {
+      return getState().then(function (state) {
+        if (!state || !state.lock || !state.lock.active) {
+          sendResponse({ success: false, reason: 'NO_ACTIVE_LOCK' });
+          return;
+        }
+        if (!state.lock.manual) {
+          sendResponse({
+            success: false,
+            error: 'RULE_LOCK_PROTECTED',
+            message: 'Rule-triggered locks cannot be released manually.'
+          });
+          return;
+        }
+        state.lock = { active: false, reason: null, since: null, until: null, manual: false };
+        state.status = 'NORMAL';
+        state.statusReason = null;
+        state.audit = (state.audit || []).concat([{
+          action: 'MANUAL_LOCK_RELEASED',
+          releasedAt: Date.now(),
+          source: (sender && sender.url) || 'extension'
+        }]).slice(-50);
+        return chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }).then(function () {
+          return refresh().then(function () {
+            return notifyTabs('TL_RELEASED', { state: state, released: true }).then(function () {
+              sendResponse({ success: true, message: 'Focus lock released.' });
+            });
+          });
+        });
+      });
+    });
+    return true;
+  }
+  if (msg.type === 'TL_EMERGENCY_OVERRIDE') {
+    sendResponse({
+      success: false,
+      error: 'FORBIDDEN_OPERATION',
+      message: 'Emergency override is strictly disabled in production builds. Active rule locks cannot be bypassed.'
     });
     return true;
   }
@@ -369,9 +458,66 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     sendResponse({ ok: false });
     return true;
   }
+  if (msg.type === 'TL_OPEN_SIDE_PANEL') {
+    var requestedTab = msg.tab || 'overview';
+    var targetUrl = chrome.runtime.getURL('options/options.html#' + requestedTab);
+    chrome.storage.local.set({ tlActiveTab: requestedTab }).catch(function () {});
+    if (chrome.sidePanel && chrome.sidePanel.open) {
+      chrome.windows.getCurrent().then(function (win) {
+        if (!win || !win.id) throw new Error('No window');
+        if (chrome.sidePanel.setOptions) {
+          chrome.sidePanel.setOptions({
+            windowId: win.id,
+            path: 'options/options.html#' + requestedTab,
+            enabled: true
+          }).catch(function () {});
+        }
+        return chrome.sidePanel.open({ windowId: win.id });
+      }).then(function () {
+        try {
+          chrome.runtime.sendMessage({ type: 'TL_SWITCH_TAB', tab: requestedTab }, function () {
+            void chrome.runtime.lastError;
+          });
+        } catch (e) {}
+        sendResponse({ ok: true, sidePanel: true, tab: requestedTab });
+      }).catch(function () {
+        if (chrome.tabs && chrome.tabs.create) {
+          chrome.tabs.create({ url: targetUrl });
+        } else {
+          chrome.runtime.openOptionsPage();
+        }
+        sendResponse({ ok: true, fallback: true, tab: requestedTab });
+      });
+      return true;
+    } else {
+      if (chrome.tabs && chrome.tabs.create) {
+        chrome.tabs.create({ url: targetUrl });
+      } else {
+        chrome.runtime.openOptionsPage();
+      }
+      sendResponse({ ok: true, fallback: true, tab: requestedTab });
+      return true;
+    }
+  }
   if (msg.type === 'TL_OPEN_OPTIONS') {
     var targetUrl = chrome.runtime.getURL('options/options.html' + (msg.tab ? '#' + msg.tab : ''));
-    if (chrome.tabs && chrome.tabs.create) {
+    if (chrome.tabs && chrome.tabs.query) {
+      chrome.tabs.query({}, function (tabs) {
+        var existing = (tabs || []).find(function (t) {
+          return t.url && t.url.indexOf(chrome.runtime.getURL('options/options.html')) !== -1;
+        });
+        if (existing && existing.id) {
+          chrome.tabs.update(existing.id, { active: true, url: targetUrl });
+          if (existing.windowId && chrome.windows && chrome.windows.update) {
+            chrome.windows.update(existing.windowId, { focused: true });
+          }
+        } else if (chrome.tabs.create) {
+          chrome.tabs.create({ url: targetUrl });
+        } else {
+          chrome.runtime.openOptionsPage();
+        }
+      });
+    } else if (chrome.tabs && chrome.tabs.create) {
       chrome.tabs.create({ url: targetUrl });
     } else {
       chrome.runtime.openOptionsPage();
@@ -384,6 +530,12 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   }
   if (msg.type === 'TL_SETTINGS_SAVED') {
     refresh().then(function (r) { sendResponse({ ok: true }); });
+    return true;
+  }
+  if (msg.type === 'TL_CHECK_RELEASE') {
+    releaseIfDue().then(function (r) {
+      sendResponse({ ok: true, active: r ? r.active : false });
+    });
     return true;
   }
 });

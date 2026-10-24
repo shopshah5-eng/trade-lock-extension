@@ -60,8 +60,17 @@ var R = null;
   function fromStorage() {
     if (!STANDALONE || !window.chrome || !chrome.storage) return;
     chrome.storage.local.get(['tlState', 'tlSettings'], function (res) {
-      var st = (res && res.tlState) || {};
-      var lock = st.lock || {};
+      if (chrome.runtime.lastError || !res || !res.tlState || !res.tlState.lock || typeof res.tlState.lock.active !== 'boolean') {
+        // Fail-closed recovery: Do not assume lock is released if storage is unreadable or missing.
+        // Maintain locked appearance while waiting for authoritative background confirmation.
+        document.getElementById('eyebrow').textContent = 'Trade Lock Active';
+        document.getElementById('title').textContent = 'Verifying lock state…';
+        document.getElementById('detail').textContent =
+          'Validating authoritative discipline state with extension background service worker.';
+        return;
+      }
+      var st = res.tlState;
+      var lock = st.lock;
       if (!lock.active) {
         document.getElementById('eyebrow').textContent = 'Lock released';
         document.getElementById('title').textContent = 'You are unlocked';

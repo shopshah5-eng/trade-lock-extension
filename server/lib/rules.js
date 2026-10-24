@@ -33,6 +33,8 @@
 
     // ---- session ----
     marketOpenMin: 555,        // 09:15 IST
+    marketCloseMin: 930,       // 15:30 IST
+    weekendPlanningMode: true, // Allow unrestricted planning, charts, and journal on weekends/holidays
     minLockMinutes: 15,        // never lock for less than this
     skipWeekends: true,
     skipHolidays: true,
@@ -131,6 +133,44 @@
 
   function isTradingDay(ms, settings) { return !isClosedDay(ms, settings); }
 
+  function isMarketOpenHours(ms, settings) {
+    var s = settings || {};
+    if (isClosedDay(ms, s)) return false;
+    var mins = istMinutesOfDay(ms);
+    var openMin = typeof s.marketOpenMin === 'number' ? s.marketOpenMin : DEFAULT_SETTINGS.marketOpenMin;
+    var closeMin = typeof s.marketCloseMin === 'number' ? s.marketCloseMin : (DEFAULT_SETTINGS.marketCloseMin || 930);
+    return mins >= openMin && mins < closeMin;
+  }
+
+  function isPlanningSession(ms, settings) {
+    return !isMarketOpenHours(ms, settings);
+  }
+
+  function marketSessionInfo(ms, settings) {
+    var s = settings || {};
+    var t = ms || Date.now();
+    var closed = isClosedDay(t, s);
+    var inHours = isMarketOpenHours(t, s);
+    var nextOpen = nextMarketOpen(t, s);
+    var w = istWeekday(t);
+    var isWeekend = (w === 0 || w === 6);
+    var reason = inHours ? 'MARKET_OPEN' : (closed ? (isWeekend ? 'WEEKEND' : 'EXCHANGE_HOLIDAY') : 'POST_MARKET');
+    return {
+      isTradingDay: !closed,
+      isMarketOpen: inHours,
+      isOpen: inHours,
+      isPlanningMode: !inHours,
+      planningMode: !inHours,
+      isWeekend: isWeekend,
+      sessionType: reason,
+      nextSessionOpen: nextOpen,
+      nextSessionLabel: istLabel(nextOpen),
+      message: !inHours
+        ? ('📅 Planning Mode (' + (isWeekend ? 'Weekend' : 'Holiday') + ') — Markets closed until ' + istLabel(nextOpen) + '. Full access to Journal, Charts, Options and AI tools is open.')
+        : 'Active Trading Session'
+    };
+  }
+
   /**
    * Next market open strictly after `from` (UTC epoch ms), skipping weekends
    * and holidays. Always returns a value >= from.
@@ -190,6 +230,7 @@
       enforcement: { status: 'IDLE', error: null, mode: 'warning' },
       detectorSeen: {},   // order signature -> true, so a fill is counted once
       log: [],
+      journal: { version: 2, months: {} },
       tamperCount: 0,
       resetCount: 0,
       audit: []
@@ -209,16 +250,31 @@
     if (!('enforcement' in state)) state.enforcement = { status: 'IDLE', error: null, mode: 'warning' };
     if (!Array.isArray(state.log)) state.log = [];
     if (!Array.isArray(state.audit)) state.audit = [];
+    if (!state.journal || typeof state.journal !== 'object' || !state.journal.months) {
+      state.journal = { version: 2, months: {} };
+    }
     var start = sessionStart(t, settings);
     if (state.session.start !== start) {
+      if (state.session.date && state.log.length > 0) {
+        archiveDayToJournal(state.journal, state.session.date, state.log, state.session);
+      }
       state.session = newSession(start);
       state.detectorSeen = {};
-      state.status = 'NORMAL';
-      state.statusTimestamp = t;
-      state.statusReason = null;
-      // A rule lock always expires at market open, so it clears with the rollover.
-      if (state.lock.active && !state.lock.manual) {
-        state.lock = { active: false, reason: null, since: null, until: null, manual: false, mode: (settings && settings.enforcementMode) || 'warning' };
+      // Do NOT clear an active risk rule lock merely because date rolled over!
+      // Only clear if the unlock condition (lock.until) has actually been reached.
+      var until = Number(state.lock && state.lock.until);
+      if (state.lock && state.lock.active && (isNaN(until) || until <= 0 || t < until)) {
+        state.status = 'LOCKED';
+        if (isNaN(until) || until <= 0) {
+          state.lock.until = nextMarketOpen(t, settings);
+        }
+      } else {
+        state.status = 'NORMAL';
+        state.statusTimestamp = t;
+        state.statusReason = null;
+        if (state.lock && state.lock.active && t >= until) {
+          state.lock = { active: false, reason: null, since: null, until: null, manual: false, mode: (settings && settings.enforcementMode) || 'warning' };
+        }
       }
     }
     return state;
@@ -319,7 +375,17 @@
     syncSession(state, s, t);
 
     if (state.lock.active) {
-      if (t >= state.lock.until) {
+      var until = Number(state.lock.until);
+      // Malformed, NaN, missing, or non-positive until timestamp must NEVER release the lock!
+      if (isNaN(until) || until <= 0) {
+        var repairedUntil = nextMarketOpen(t, s);
+        var floor = t + Math.max(0, s.minLockMinutes) * MIN;
+        if (repairedUntil < floor) repairedUntil = floor;
+        state.lock.until = repairedUntil;
+        until = repairedUntil;
+        changed = true;
+      }
+      if (t >= until) {
         state.lock = { active: false, reason: null, since: null, until: null, manual: false, mode: s.enforcementMode || 'warning' };
         state.status = 'NORMAL';
         state.statusTimestamp = t;
@@ -411,25 +477,63 @@
     sess.lastTradeAt = t;
     if (pnl < 0) sess.consecutiveLosses += 1; else if (pnl > 0) sess.consecutiveLosses = 0;
 
-    state.log.push({
-      at: t, symbol: entry.symbol || '', side: entry.side || '', qty: Number(entry.qty) || 0,
-      pnl: pnl, risk: risk, source: entry.source || 'manual'
-    });
+    var trId = entry.id || ('tl_' + t + '_' + Math.random().toString(36).substr(2, 6));
+    var ch = Number(entry.charges) || 0;
+    var net = entry.netPnl !== undefined ? round2(entry.netPnl) : round2(pnl - ch);
+    var trObj = {
+      id: trId,
+      at: t,
+      symbol: entry.symbol || 'INDEX',
+      side: entry.side || 'BUY',
+      direction: entry.direction || (entry.side === 'SELL' ? 'SHORT' : 'LONG'),
+      qty: Number(entry.qty) || 1,
+      entry: Number(entry.entry) || 0,
+      exit: Number(entry.exit) || 0,
+      pnl: pnl,
+      charges: ch,
+      netPnl: net,
+      risk: risk,
+      setup: entry.setup || '',
+      notes: entry.notes || '',
+      adherence: entry.adherence || 'COMPLIANT',
+      source: entry.source || 'manual',
+      provenance: entry.provenance || (entry.source === 'auto' ? 'broker-imported' : 'manual')
+    };
+
+    state.log.push(trObj);
     if (state.log.length > 500) state.log = state.log.slice(-500);
+    if (!state.journal) state.journal = { version: 2, months: {} };
+    archiveDayToJournal(state.journal, state.session.date, state.log, state.session);
     return state;
   }
 
-  function lockNow(state, settings, now) {
+  function lockNow(state, settings, now, opts) {
     var s = Object.assign({}, DEFAULT_SETTINGS, settings || {});
     var t = now || Date.now();
     syncSession(state, s, t);
-    var until = nextMarketOpen(t, s);
+    var nextOpen = nextMarketOpen(t, s);
+    var durationMin = (opts && typeof opts.durationMinutes === 'number' && opts.durationMinutes > 0)
+      ? opts.durationMinutes : null;
+    var until = durationMin ? (t + durationMin * MIN) : nextOpen;
     var floor = t + Math.max(0, s.minLockMinutes) * MIN;
     if (until < floor) until = floor;
-    state.lock = { active: true, reason: 'manual', since: t, until: until, manual: true, mode: s.enforcementMode || 'warning' };
+    var closed = isClosedDay(t, s);
+    var defaultReason = closed ? 'Manual focus lock (Weekend/Holiday)' : 'manual';
+    var reason = (opts && (opts.reason || opts.weekendMode)) || defaultReason;
+    state.lock = {
+      active: true,
+      reason: reason,
+      since: t,
+      until: until,
+      manual: true,
+      mode: s.enforcementMode || 'warning',
+      nextSessionOpen: nextOpen,
+      planningPermitted: true,
+      weekendPlanningAllowed: true
+    };
     state.status = 'LOCKED';
     state.statusTimestamp = t;
-    state.statusReason = 'manual';
+    state.statusReason = reason;
     return state;
   }
 
@@ -442,13 +546,23 @@
   }
 
   function undoLastTrade(state) {
+    if (!state || !Array.isArray(state.log) || state.log.length === 0) return null;
+    if (state.lock && state.lock.active && !state.lock.manual) {
+      return { rejected: true, reason: 'RULE_LOCK_ACTIVE', message: 'Discipline lock is active. Trade counts and losses cannot be reversed while locked.' };
+    }
+    var last = state.log[state.log.length - 1];
+    // Safeguard verified broker executions: cannot be erased via manual undo
+    if (last && (last.source === 'auto' || last.provenance === 'broker-imported')) {
+      return { rejected: true, reason: 'BROKER_EXECUTION_PROTECTED', message: 'Verified broker orders cannot be erased.' };
+    }
     var e = state.log.pop();
-    if (!e) return null;
     var s = state.session;
     s.trades = Math.max(0, s.trades - 1);
     s.pnl = round2(s.pnl - e.pnl);
     s.riskUsed = Math.max(0, round2(s.riskUsed - e.risk));
     if (e.pnl < 0) s.consecutiveLosses = Math.max(0, s.consecutiveLosses - 1);
+    if (!state.journal) state.journal = { version: 2, months: {} };
+    archiveDayToJournal(state.journal, state.session.date, state.log, state.session);
     return e;
   }
 
@@ -504,16 +618,34 @@
         message: 'Must provide exact confirmation phrase: I_ACCEPT_THE_RISK'
       };
     }
+    if (!reason || String(reason).trim().length < 10) {
+      return {
+        success: false,
+        reason: 'REASON_REQUIRED',
+        message: 'A documented justification reason (minimum 10 characters) is required for emergency override.'
+      };
+    }
     var t = now || Date.now();
     var prevReason = state.lock.reason;
-    state.lock = { active: false, reason: null, since: null, until: null, manual: false };
+    var durationActive = t - (state.lock.since || t);
+    state.lock = {
+      active: false,
+      reason: null,
+      since: null,
+      until: null,
+      manual: false,
+      emergencyOverridden: true,
+      overriddenAt: t
+    };
     state.status = 'NORMAL';
     state.statusReason = null;
     state.audit = (state.audit || []).concat([{
       action: 'EMERGENCY_LOCK_OVERRIDE',
       overriddenAt: t,
       previousLockReason: prevReason,
-      justification: reason || 'Explicit trader emergency override'
+      durationActiveMs: durationActive,
+      justification: String(reason).trim(),
+      policy: 'ADMIN_EMERGENCY_EXCEPTION'
     }]).slice(-50);
     return { success: true, message: 'Emergency lock override applied and logged.' };
   }
@@ -546,6 +678,11 @@
       };
       fresh.audit = prevAudit.concat([resetEvent]).slice(-50);
       fresh.resetCount = (state.resetCount || 0) + 1;
+      fresh.journal = state.journal ? JSON.parse(JSON.stringify(state.journal)) : { version: 2, months: {} };
+      if (state.session && state.session.date && Array.isArray(state.log) && state.log.length > 0) {
+        archiveDayToJournal(fresh.journal, state.session.date, state.log, state.session);
+      }
+      fresh.log = Array.isArray(state.log) ? state.log.slice() : [];
     }
     return fresh;
   }
@@ -604,13 +741,276 @@
     return out;
   }
 
+  // --------------------------------------------- monthly journal & export ----
+
+  function formatCsvCell(v) {
+    if (v == null) return '';
+    var s = String(v);
+    // Protect against spreadsheet formula injection (CSV injection)
+    if (/^[=+\-@\t\r]/.test(s)) {
+      s = "'" + s;
+    }
+    if (/[",\n\r]/.test(s)) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  function istMonthKey(ms) {
+    return istDate(ms || Date.now()).slice(0, 7);
+  }
+
+  function calculateDaySummary(trades) {
+    var rows = Array.isArray(trades) ? trades : [];
+    var out = {
+      trades: rows.length, totalTrades: rows.length, wins: 0, losses: 0, breakeven: 0,
+      grossProfit: 0, grossLoss: 0, grossPnl: 0, netPnl: 0, totalRisk: 0, charges: 0,
+      winRate: 0, avgWin: 0, avgLoss: 0, largestWin: 0, largestLoss: 0,
+      profitFactor: 0, ruleViolations: 0, autoTrades: 0, manualTrades: 0,
+      brokerVerifiedCount: 0, manualCount: 0
+    };
+    rows.forEach(function (e) {
+      var pnl = Number(e.pnl) || 0;
+      var ch = Number(e.charges) || 0;
+      var net = e.netPnl !== undefined ? Number(e.netPnl) : (pnl - ch);
+      out.netPnl = round2(out.netPnl + net);
+      out.charges = round2(out.charges + ch);
+      out.totalRisk = round2(out.totalRisk + Math.max(0, Number(e.risk) || 0));
+      var isBroker = (e.provenance || '').indexOf('broker') !== -1 || e.source === 'auto';
+      if (isBroker) {
+        out.autoTrades++;
+        out.brokerVerifiedCount++;
+      } else {
+        out.manualTrades++;
+        out.manualCount++;
+      }
+      if (e.adherence === 'VIOLATION') out.ruleViolations++;
+      if (net > 0) {
+        out.wins++;
+      } else if (net < 0) {
+        out.losses++;
+      } else {
+        out.breakeven++;
+      }
+      if (pnl > 0) {
+        out.grossProfit = round2(out.grossProfit + pnl);
+        out.largestWin = Math.max(out.largestWin, pnl);
+      } else if (pnl < 0) {
+        out.grossLoss = round2(out.grossLoss + pnl);
+        out.largestLoss = Math.min(out.largestLoss, pnl);
+      }
+    });
+    out.grossPnl = round2(out.grossProfit + out.grossLoss);
+    var decided = out.wins + out.losses;
+    out.winRate = decided ? Math.round((out.wins / decided) * 1000) / 10 : 0;
+    out.avgWin = out.wins ? round2(out.grossProfit / out.wins) : 0;
+    out.avgLoss = out.losses ? round2(out.grossLoss / out.losses) : 0;
+    out.profitFactor = out.grossLoss < 0 ? round2(out.grossProfit / Math.abs(out.grossLoss)) : (out.grossProfit > 0 ? 999 : 0);
+    return out;
+  }
+
+  function calculateMonthSummary(daysObj) {
+    var days = daysObj || {};
+    var dates = Object.keys(days).sort();
+    var out = {
+      totalTrades: 0, wins: 0, losses: 0, breakeven: 0,
+      winRate: 0, grossPnl: 0, netPnl: 0, charges: 0, totalRisk: 0,
+      avgWin: 0, avgLoss: 0, profitFactor: 0, ruleViolations: 0,
+      bestDay: null, worstDay: null, tradingDaysCount: dates.length
+    };
+    var grossWin = 0, grossLoss = 0;
+    dates.forEach(function (dateStr) {
+      var d = days[dateStr];
+      var s = d.summary || calculateDaySummary(d.trades || []);
+      out.totalTrades += s.trades || s.totalTrades || 0;
+      out.wins += s.wins || 0;
+      out.losses += s.losses || 0;
+      out.breakeven += s.breakeven || 0;
+      grossWin += (s.grossProfit || 0);
+      grossLoss += (s.grossLoss || 0);
+      out.netPnl = round2(out.netPnl + (s.netPnl || 0));
+      out.charges = round2(out.charges + (s.charges || 0));
+      out.totalRisk = round2(out.totalRisk + (s.totalRisk || 0));
+      out.ruleViolations += (s.ruleViolations || 0);
+
+      var dayNetPnl = round2(s.netPnl || 0);
+      if (!out.bestDay || dayNetPnl > (out.bestDay.netPnl !== undefined ? out.bestDay.netPnl : out.bestDay.pnl)) {
+        out.bestDay = { date: dateStr, pnl: dayNetPnl, netPnl: dayNetPnl };
+      }
+      if (!out.worstDay || dayNetPnl < (out.worstDay.netPnl !== undefined ? out.worstDay.netPnl : out.worstDay.pnl)) {
+        out.worstDay = { date: dateStr, pnl: dayNetPnl, netPnl: dayNetPnl };
+      }
+    });
+
+    out.grossPnl = round2(grossWin + grossLoss);
+    var decided = out.wins + out.losses;
+    out.winRate = decided ? Math.round((out.wins / decided) * 1000) / 10 : 0;
+    out.avgWin = out.wins ? round2(grossWin / out.wins) : 0;
+    out.avgLoss = out.losses ? round2(grossLoss / out.losses) : 0;
+    out.profitFactor = grossLoss < 0 ? round2(grossWin / Math.abs(grossLoss)) : (grossWin > 0 ? 999 : 0);
+    return out;
+  }
+
+  function archiveDayToJournal(journal, dateStr, trades, sessionInfo) {
+    if (!journal || typeof journal !== 'object') journal = { months: {} };
+    if (!journal.months) journal.months = {};
+    var monthKey = String(dateStr || '').slice(0, 7) || istMonthKey();
+    if (!journal.months[monthKey]) {
+      journal.months[monthKey] = { monthKey: monthKey, summary: null, days: {} };
+    }
+    var monthRecord = journal.months[monthKey];
+    if (!monthRecord.days) monthRecord.days = {};
+
+    var existingDay = monthRecord.days[dateStr] || { date: dateStr, trades: [] };
+    var merged = (existingDay.trades || []).slice();
+    var seenIds = new Set(merged.map(function (x) { return x.id; }));
+    (trades || []).forEach(function (tr) {
+      if (!seenIds.has(tr.id)) {
+        merged.push(tr);
+        seenIds.add(tr.id);
+      }
+    });
+
+    monthRecord.days[dateStr] = {
+      date: dateStr,
+      sessionId: (sessionInfo && sessionInfo.start) ? String(sessionInfo.start) : dateStr,
+      summary: calculateDaySummary(merged),
+      trades: merged
+    };
+
+    monthRecord.summary = calculateMonthSummary(monthRecord.days);
+    return journal;
+  }
+
+  function exportJournalData(journal, opts) {
+    opts = opts || {};
+    var format = opts.format || 'csv';
+    var scope = opts.scope || 'all';
+    var j = journal || { months: {} };
+    var months = j.months || {};
+
+    var tradesToExport = [];
+    var monthKeys = Object.keys(months).sort();
+
+    monthKeys.forEach(function (mKey) {
+      if (scope === 'month' && opts.month && mKey !== opts.month) return;
+      var m = months[mKey];
+      var days = m.days || {};
+      Object.keys(days).sort().forEach(function (dKey) {
+        if (scope === 'day' && opts.date && dKey !== opts.date) return;
+        if (scope === 'custom') {
+          if (opts.startDate && dKey < opts.startDate) return;
+          if (opts.endDate && dKey > opts.endDate) return;
+        }
+        var d = days[dKey];
+        (d.trades || []).forEach(function (tr) {
+          tradesToExport.push(Object.assign({ tradingDate: dKey }, tr));
+        });
+      });
+    });
+
+    if (format === 'json') {
+      var parsedData = {
+        exportedAt: new Date().toISOString(),
+        scope: scope,
+        recordCount: tradesToExport.length,
+        summary: calculateDaySummary(tradesToExport),
+        trades: tradesToExport
+      };
+      var jsonContent = JSON.stringify(parsedData, null, 2);
+      return {
+        format: 'json',
+        filename: 'trade-lock-journal-' + scope + '-' + (opts.date || opts.month || 'export') + '.json',
+        content: jsonContent,
+        text: jsonContent,
+        data: parsedData,
+        count: tradesToExport.length,
+        recordCount: tradesToExport.length
+      };
+    }
+
+    var headers = [
+      'id', 'date', 'time_ist', 'symbol', 'instrument', 'side', 'direction',
+      'quantity', 'entry_price', 'exit_price', 'gross_pnl', 'charges', 'net_pnl',
+      'risk', 'setup', 'notes', 'rule_adherence', 'provenance', 'created_at'
+    ];
+
+    var rows = tradesToExport.map(function (t) {
+      var atDate = t.at ? new Date(t.at) : new Date();
+      var timeIst = atDate.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+      var side = t.side || (t.direction === 'SHORT' ? 'SELL' : 'BUY');
+      var direction = t.direction || (side === 'SELL' ? 'SHORT' : 'LONG');
+      var grossPnl = t.pnl !== undefined ? t.pnl : ((t.exit - t.entry) * (t.qty || 1) * (side === 'BUY' ? 1 : -1));
+      var charges = t.charges || 0;
+      var netPnl = t.netPnl !== undefined ? t.netPnl : (grossPnl - charges);
+
+      return [
+        formatCsvCell(t.id || ''),
+        formatCsvCell(t.tradingDate || ''),
+        formatCsvCell(timeIst),
+        formatCsvCell(t.symbol || 'INDEX'),
+        formatCsvCell(t.instrument || t.symbol || ''),
+        formatCsvCell(side),
+        formatCsvCell(direction),
+        formatCsvCell(t.qty || 1),
+        formatCsvCell(t.entry || 0),
+        formatCsvCell(t.exit || 0),
+        formatCsvCell(grossPnl),
+        formatCsvCell(charges),
+        formatCsvCell(netPnl),
+        formatCsvCell(t.risk || 0),
+        formatCsvCell(t.setup || ''),
+        formatCsvCell(t.notes || ''),
+        formatCsvCell(t.adherence || 'COMPLIANT'),
+        formatCsvCell(t.provenance || (t.source === 'auto' ? 'broker-imported' : 'manual')),
+        formatCsvCell(atDate.toISOString())
+      ].join(',');
+    });
+
+    var csvContent = headers.join(',') + '\n' + rows.join('\n');
+    return {
+      format: 'csv',
+      filename: 'trade-lock-journal-' + scope + '-' + (opts.date || opts.month || 'export') + '.csv',
+      content: csvContent,
+      text: csvContent,
+      count: tradesToExport.length,
+      recordCount: tradesToExport.length
+    };
+  }
+
   // ---------------------------------------------------------- licensing ----
 
-  var PRO_PLANS = ['pro_monthly', 'pro_yearly', 'pro_plus_ai', 'lifetime'];
+  var PLAN_CATALOG = {
+    free: { id: 'free', name: 'Free', amount: 0, pro: false },
+    pro_monthly: { id: 'pro_monthly', name: 'Pro — Monthly', amount: 19900, pro: true },
+    pro_yearly: { id: 'pro_yearly', name: 'Pro — Yearly', amount: 149900, pro: true },
+    pro_plus_ai_monthly: { id: 'pro_plus_ai_monthly', name: 'Pro+ AI Markets — Monthly', amount: 39900, pro: true },
+    pro_plus_ai_yearly: { id: 'pro_plus_ai_yearly', name: 'Pro+ AI Markets — Yearly', amount: 399900, pro: true },
+    founder_lifetime: { id: 'founder_lifetime', name: 'Founder Lifetime', amount: 299900, pro: true }
+  };
+
+  var PRO_PLANS = [
+    'pro_monthly',
+    'pro_yearly',
+    'pro_plus_ai',
+    'pro_plus_ai_monthly',
+    'pro_plus_ai_yearly',
+    'lifetime',
+    'founder_lifetime'
+  ];
+
+  function canonicalPlanId(id) {
+    if (!id || id === 'free') return 'free';
+    if (id === 'pro_plus_ai') return 'pro_plus_ai_monthly';
+    if (id === 'lifetime') return 'founder_lifetime';
+    return id;
+  }
 
   function isPro(license, now) {
-    if (!license || !license.key || license.active === false) return false;
-    if (PRO_PLANS.indexOf(license.plan) === -1) return false;
+    if (!license || !license.key || license.active === false || license.revoked === true) return false;
+    var canonicalId = canonicalPlanId(license.plan);
+    var planMeta = PLAN_CATALOG[canonicalId];
+    if (!planMeta || !planMeta.pro) return false;
     if (license.expiresAt && (now || Date.now()) > license.expiresAt) return false;
     return true;
   }
@@ -684,6 +1084,9 @@
     isHoliday: isHoliday,
     isClosedDay: isClosedDay,
     isTradingDay: isTradingDay,
+    isMarketOpenHours: isMarketOpenHours,
+    isPlanningSession: isPlanningSession,
+    marketSessionInfo: marketSessionInfo,
     nextMarketOpen: nextMarketOpen,
     sessionStart: sessionStart,
     newSession: newSession,
@@ -695,17 +1098,21 @@
     plannedRiskPerTrade: plannedRiskPerTrade,
     logTrade: logTrade,
     lockNow: lockNow,
-    releaseLock: releaseLock,
     undoLastTrade: undoLastTrade,
-    resetDay: resetDay,
-    resetDailyStats: resetDailyStats,
     releaseManualLock: releaseManualLock,
-    emergencyOverrideLock: emergencyOverrideLock,
     calendarStatus: calendarStatus,
     isPro: isPro,
     effectiveSettings: effectiveSettings,
     summarizeLog: summarizeLog,
+    formatCsvCell: formatCsvCell,
+    istMonthKey: istMonthKey,
+    calculateDaySummary: calculateDaySummary,
+    calculateMonthSummary: calculateMonthSummary,
+    archiveDayToJournal: archiveDayToJournal,
+    exportJournalData: exportJournalData,
     PRO_PLANS: PRO_PLANS,
+    PLAN_CATALOG: PLAN_CATALOG,
+    canonicalPlanId: canonicalPlanId,
     inr: inr,
     istLabel: istLabel,
     countdown: countdown,
@@ -713,6 +1120,16 @@
     round2: round2
   };
 
+  // Node.js test harness exports include administrative and testing utilities
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = Object.assign({}, api, {
+      releaseLock: releaseLock,
+      resetDay: resetDay,
+      resetDailyStats: resetDailyStats,
+      emergencyOverrideLock: emergencyOverrideLock
+    });
+  }
+
+  // Client browser global exposes ONLY safe operational API (zero reset/override bypasses)
   root.TLRules = api;
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

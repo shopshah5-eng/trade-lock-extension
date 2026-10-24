@@ -107,6 +107,23 @@ test('payment order creation and verification security abuse-cases', async (t) =
 
   const paymentId = 'pay_test_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
 
+  const keySecret = process.env.RAZORPAY_KEY_SECRET || 'secret';
+  const validSig = crypto.createHmac('sha256', keySecret).update(orderId + '|' + paymentId).digest('hex');
+
+  // 2b. Abuse case: Bad signature rejection when live key configured
+  if (process.env.RAZORPAY_KEY_SECRET) {
+    const badSigRes = await request({
+      host: '127.0.0.1', port, path: '/api/verify-payment', method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }, {
+      orderId,
+      paymentId,
+      signature: 'bad_forged_sig'
+    });
+    assert.strictEqual(badSigRes.status, 400);
+    assert.strictEqual(badSigRes.body.error, 'signature_mismatch');
+  }
+
   // 3. Abuse case: Email substitution attempt during verification
   const emailSubRes = await request({
     host: '127.0.0.1', port, path: '/api/verify-payment', method: 'POST',
@@ -114,7 +131,7 @@ test('payment order creation and verification security abuse-cases', async (t) =
   }, {
     orderId,
     paymentId,
-    signature: 'demo_sig',
+    signature: validSig,
     email: 'hacker.attacker@evil.com' // Attempting to divert license to different email
   });
   assert.strictEqual(emailSubRes.status, 400);
@@ -127,7 +144,7 @@ test('payment order creation and verification security abuse-cases', async (t) =
   }, {
     orderId,
     paymentId,
-    signature: 'demo_sig',
+    signature: validSig,
     plan: 'lifetime' // Attempting to upgrade monthly order to lifetime
   });
   assert.strictEqual(planSubRes.status, 400);
@@ -140,7 +157,7 @@ test('payment order creation and verification security abuse-cases', async (t) =
   }, {
     orderId,
     paymentId,
-    signature: 'demo_sig'
+    signature: validSig
   });
   assert.strictEqual(legitRes.status, 200);
   assert.strictEqual(legitRes.body.ok, true);
@@ -161,7 +178,7 @@ test('payment order creation and verification security abuse-cases', async (t) =
   }, {
     orderId,
     paymentId,
-    signature: 'demo_sig'
+    signature: validSig
   });
   assert.strictEqual(repeatRes.status, 200);
   assert.strictEqual(repeatRes.body.alreadyFulfilled, true);

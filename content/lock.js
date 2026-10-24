@@ -61,7 +61,11 @@
       if (res && res.tlMarket) marketSnap = res.tlMarket;
       if (res && res.tlLicense) license = res.tlLicense;
       if (res && res.tlSettings) settings = eff(Object.assign({}, R.DEFAULT_SETTINGS, res.tlSettings));
-      if (res && res.tlState) state = res.tlState;
+      if (res && res.tlState && res.tlState.lock) {
+        state = res.tlState;
+      } else if (!res || !res.tlState) {
+        try { chrome.runtime.sendMessage({ type: 'TL_CHECK_RELEASE' }); } catch (e) {}
+      }
       R.syncSession(state, settings, Date.now());
       loop();
       startDetector();
@@ -73,8 +77,10 @@
     if (changes.tlSettings) settings = eff(Object.assign({}, R.DEFAULT_SETTINGS, changes.tlSettings.newValue));
     if (changes.tlMarket) { marketSnap = changes.tlMarket.newValue; if (IS_TOP) renderHud(); }
     if (changes.tlLicense) { license = changes.tlLicense.newValue; chrome.storage.local.get('tlSettings', function (r2) { if (r2 && r2.tlSettings) settings = eff(Object.assign({}, R.DEFAULT_SETTINGS, r2.tlSettings)); loop(); }); }
-    // Only adopt another tab's state if we are not the one currently writing.
-    if (changes.tlState && Date.now() - lastWrite > 1500) state = changes.tlState.newValue;
+    // Only adopt another tab's state if valid and we are not the one currently writing.
+    if (changes.tlState && changes.tlState.newValue && changes.tlState.newValue.lock && Date.now() - lastWrite > 1500) {
+      state = changes.tlState.newValue;
+    }
     loop();
   });
 
@@ -83,181 +89,201 @@
   var overlayEl = null;
   var subframeEl = null;
 
-  // Safe mode by default: Chart Mode keeps charts active & emergency position exits clickable
-  var isChartMode = true;
+  function getLockTypeInfo(violation) {
+    if (state.lock && state.lock.manual) {
+      return {
+        type: 'MANUAL_SELF_LOCK',
+        badge: '🔒 MANUAL SELF-LOCK',
+        badgeColor: '#60a5fa',
+        badgeBg: 'rgba(59, 130, 246, 0.2)',
+        title: 'Self-Imposed Trading Lock',
+        desc: 'You deliberately locked yourself out to protect your discipline until the next market session.'
+      };
+    }
+    var reason = (state.lock && state.lock.reason) || (violation && violation.rule) || '';
+    if (reason === 'sessionCutoff') {
+      return {
+        type: 'SESSION_LOCK',
+        badge: '⏳ SESSION CUTOFF LOCK',
+        badgeColor: '#fbbf24',
+        badgeBg: 'rgba(245, 158, 11, 0.2)',
+        title: 'Trading Session Finished',
+        desc: 'Your configured session window has ended for the day.'
+      };
+    }
+    return {
+      type: 'AUTOMATIC_RISK_LOCK',
+      badge: '⛔ AUTOMATIC RISK LOCK',
+      badgeColor: '#f87171',
+      badgeBg: 'rgba(239, 68, 68, 0.2)',
+      title: 'Discipline Risk Limit Tripped',
+      desc: 'An automated risk rule was triggered. Screen is locked to prevent impulsive overtrading and revenge trading.'
+    };
+  }
+
+  function formatIstUnlockDateTime(ms) {
+    if (!ms) return 'Next market open (09:15:00 IST)';
+    try {
+      var d = new Date(ms);
+      return d.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        weekday: 'short',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }) + ' IST';
+    } catch (e) {
+      return (R.istLabel ? R.istLabel(ms) : '') + ' IST';
+    }
+  }
 
   function buildOverlay(violation) {
+    var existing = document.getElementById('tl-lock-root');
+    if (existing && existing.isConnected) {
+      overlayEl = existing;
+      updateOverlay(violation);
+      return;
+    }
     if (overlayEl) { try { overlayEl.remove(); } catch (e) {} }
 
-    var mode = (settings && settings.enforcementMode) || 'warning';
-    var label = D && D.getEnforcementLabel ? D.getEnforcementLabel(location.hostname, mode) : null;
-
-    var modeBadgeText = label ? label.badgeText : '⚠️ DISCIPLINE WARNING';
-    var modeBadgeBg = label ? label.badgeBg : 'rgba(245,158,11,0.2)';
-    var modeBadgeColor = label ? label.badgeColor : '#fbbf24';
-    var modeDesc = label ? label.desc : 'Page remains interactive. Discipline reminder active.';
+    var lockInfo = getLockTypeInfo(violation);
 
     var root = document.createElement('div');
     root.setAttribute('id', 'tl-lock-root');
-    root.setAttribute('aria-label', isChartMode ? 'Trade Lock Chart Mode' : 'Trading screen locked');
+    root.setAttribute('aria-label', 'Trade Lock — Full Screen Locked');
+    root.style.cssText = [
+      'position: fixed !important',
+      'inset: 0 !important',
+      'width: 100vw !important',
+      'height: 100vh !important',
+      'z-index: 2147483647 !important',
+      'background: #07090f !important',
+      'color: #e8ecf5 !important',
+      'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important',
+      'display: flex !important',
+      'align-items: center !important',
+      'justify-content: center !important',
+      'padding: 24px !important',
+      'box-sizing: border-box !important',
+      'user-select: none !important',
+      '-webkit-user-select: none !important',
+      'pointer-events: auto !important',
+      'overflow-y: auto !important',
+      'opacity: 1 !important'
+    ].join(';') + ';';
 
-    if (isChartMode) {
-      root.style.cssText = [
-        'position: fixed !important',
-        'top: 0 !important',
-        'left: 0 !important',
-        'right: 0 !important',
-        'height: 52px !important',
-        'z-index: 2147483647 !important',
-        'background: rgba(13, 17, 23, 0.96) !important',
-        'backdrop-filter: blur(12px) !important',
-        '-webkit-backdrop-filter: blur(12px) !important',
-        'border-bottom: 2px solid ' + (mode === 'warning' ? '#f59e0b' : '#ff4d4f') + ' !important',
-        'box-shadow: 0 4px 20px rgba(0,0,0,0.7) !important',
-        'display: flex !important',
-        'align-items: center !important',
-        'justify-content: space-between !important',
-        'padding: 0 20px !important',
-        'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important',
-        'color: #e6edf3 !important',
-        'font-size: 13px !important',
-        'user-select: none !important',
-        'box-sizing: border-box !important'
-      ].join(';') + ';';
-
-      root.innerHTML = [
-        '<div style="display:flex;align-items:center;gap:12px">',
-          '<span style="background:' + modeBadgeBg + ';color:' + modeBadgeColor + ';padding:4px 8px;border-radius:6px;font-weight:700;font-size:11px;letter-spacing:0.06em">' + modeBadgeText + '</span>',
-          '<span id="tl-overlay-title" style="color:#f0f6fc;font-weight:600">Trading limit hit</span>',
-          '<span style="color:#6e7681">|</span>',
-          '<span style="color:#c9d1d9;font-size:12px;font-weight:500">' + modeDesc + '</span>',
+    root.innerHTML = [
+      '<div style="width:min(660px, 100%); text-align:center; padding:36px 32px 28px; border-radius:24px; background:linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.02)); border:1px solid rgba(255,255,255,.14); box-shadow:0 40px 120px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.1); box-sizing:border-box;">',
+        '<div style="width:96px; height:96px; margin:0 auto 16px; position:relative; display:grid; place-items:center;">',
+          '<div style="position:absolute; inset:0; border-radius:50%; background:conic-gradient(from 0deg, #ff4d4f, #ff9a3d, #ff4d4f); filter:blur(18px); opacity:.75;"></div>',
+          '<div style="position:absolute; inset:6px; border-radius:50%; background:#0b0f18; border:1px solid rgba(255,255,255,.16); display:grid; place-items:center;">',
+            '<svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="#ff4d4f" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">',
+              '<rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="rgba(239,68,68,0.2)"></rect>',
+              '<path d="M7 11V7a5 5 0 0 1 10 0v4"></path>',
+              '<circle cx="12" cy="16" r="1.5" fill="#ff4d4f"></circle>',
+            '</svg>',
+          '</div>',
         '</div>',
-        '<div style="display:flex;align-items:center;gap:16px">',
-          '<span style="color:#8b949e;font-size:12px">Unlocks at 09:15 IST</span>',
-          '<span id="tl-overlay-timer" style="font-family:monospace;font-size:14px;font-weight:700;color:#58a6ff">--:--:--</span>',
-          '<button id="tl-btn-fullmode" style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600">View Card</button>',
-        '</div>'
-      ].join('');
-    } else {
-      root.style.cssText = [
-        'position: fixed !important',
-        'inset: 0 !important',
-        'width: 100vw !important',
-        'height: 100vh !important',
-        'z-index: 2147483647 !important',
-        'background: #07090f !important',
-        'color: #e8ecf5 !important',
-        'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important',
-        'display: flex !important',
-        'align-items: center !important',
-        'justify-content: center !important',
-        'padding: 24px !important',
-        'box-sizing: border-box !important',
-        'user-select: none !important',
-        '-webkit-user-select: none !important',
-        'pointer-events: auto !important',
-        'overflow: hidden !important'
-      ].join(';') + ';';
-
-      root.innerHTML = [
-        '<div style="width:min(640px, 100%); text-align:center; padding:36px 30px 24px; border-radius:24px; background:linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.02)); border:1px solid rgba(255,255,255,.12); box-shadow:0 40px 120px rgba(0,0,0,.85), inset 0 1px 0 rgba(255,255,255,.08); box-sizing:border-box;">',
-          '<div style="width:96px; height:96px; margin:0 auto 16px; position:relative; display:grid; place-items:center;">',
-            '<div style="position:absolute; inset:0; border-radius:50%; background:conic-gradient(from 0deg, #ff4d4f, #ff9a3d, #ff4d4f); filter:blur(16px); opacity:.65;"></div>',
-            '<div style="position:absolute; inset:6px; border-radius:50%; background:#0b0f18; border:1px solid rgba(255,255,255,.14); display:grid; place-items:center;">',
-              '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#ff5c5c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">',
-                '<rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="rgba(255,92,92,0.18)"></rect>',
-                '<path d="M7 11V7a5 5 0 0 1 10 0v4"></path>',
-                '<circle cx="12" cy="16" r="1.5" fill="#ff5c5c"></circle>',
-              '</svg>',
-            '</div>',
+        '<div id="tl-overlay-badge" style="display:inline-block; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:' + lockInfo.badgeColor + '; background:' + lockInfo.badgeBg + '; padding:4px 12px; border-radius:99px; font-weight:800; margin-bottom:12px;">' + lockInfo.badge + '</div>',
+        '<h1 id="tl-overlay-title" style="margin:0 0 8px; font-size:clamp(22px, 3.8vw, 30px); font-weight:800; color:#ffffff; letter-spacing:-.02em;">' + lockInfo.title + '</h1>',
+        '<p id="tl-overlay-detail" style="margin:0 auto 20px; max-width:500px; color:#a9b3c6; font-size:14px; line-height:1.55;">' + lockInfo.desc + '</p>',
+        '<div id="tl-overlay-timer" style="font-size:clamp(36px, 6vw, 50px); font-weight:800; letter-spacing:-.03em; margin:0 0 4px; font-variant-numeric:tabular-nums; background:linear-gradient(180deg, #ffffff, #c2cbe0); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">--:--:--</div>',
+        '<p id="tl-overlay-until" style="color:#94a3b8; font-size:13px; font-weight:500; margin:0 0 20px;">Unlocks at next market session</p>',
+        '<div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-bottom:20px;">',
+          '<div style="background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:12px 10px;">',
+            '<div style="font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#7f8aa1; margin-bottom:4px; font-weight:700;">Trades Today</div>',
+            '<div id="tl-overlay-trades" style="font-size:18px; font-weight:800; color:#ffffff;">0 / 5</div>',
+            '<div id="tl-overlay-trades-prov" style="font-size:10px; color:#94a3b8; margin-top:2px;">Broker-verified</div>',
           '</div>',
-          '<div style="font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:' + modeBadgeColor + '; font-weight:800; margin-bottom:8px;">' + modeBadgeText + '</div>',
-          '<h1 id="tl-overlay-title" style="margin:0 0 8px; font-size:clamp(22px, 3.8vw, 30px); font-weight:800; color:#ffffff; letter-spacing:-.02em;">You hit your limit</h1>',
-          '<p id="tl-overlay-detail" style="margin:0 auto 20px; max-width:480px; color:#a9b3c6; font-size:14px; line-height:1.5;">One of your trading discipline rules for today was reached.</p>',
-          '<div id="tl-overlay-timer" style="font-size:clamp(34px, 6vw, 48px); font-weight:800; letter-spacing:-.03em; margin:0 0 4px; font-variant-numeric:tabular-nums; background:linear-gradient(180deg, #ffffff, #c2cbe0); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">--:--:--</div>',
-          '<p id="tl-overlay-until" style="color:#8c97ad; font-size:12px; margin:0 0 20px;">unlocks at next market open (09:15 IST)</p>',
-          '<div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-bottom:18px;">',
-            '<div style="background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:10px 8px;">',
-              '<div style="font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#7f8aa1; margin-bottom:4px;">Trades Today</div>',
-              '<div id="tl-overlay-trades" style="font-size:16px; font-weight:700; color:#ffffff;">0 / 5</div>',
-            '</div>',
-            '<div style="background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:10px 8px;">',
-              '<div style="font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#7f8aa1; margin-bottom:4px;">Realised P&L</div>',
-              '<div id="tl-overlay-pnl" style="font-size:16px; font-weight:700; color:#ffffff;">₹0.00</div>',
-            '</div>',
-            '<div style="background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:10px 8px;">',
-              '<div style="font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#7f8aa1; margin-bottom:4px;">Risk Used</div>',
-              '<div id="tl-overlay-risk" style="font-size:16px; font-weight:700; color:#ffffff;">₹0.00</div>',
-            '</div>',
+          '<div style="background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:12px 10px;">',
+            '<div style="font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#7f8aa1; margin-bottom:4px; font-weight:700;">Realised P&L</div>',
+            '<div id="tl-overlay-pnl" style="font-size:18px; font-weight:800; color:#ffffff;">₹0.00</div>',
+            '<div id="tl-overlay-pnl-prov" style="font-size:10px; color:#94a3b8; margin-top:2px;">Broker-verified</div>',
           '</div>',
-          '<div style="display:flex; justify-content:center; gap:10px; margin-bottom:18px;">',
-            '<button id="tl-btn-chartmode" style="background:#238636; color:#ffffff; border:none; padding:10px 18px; border-radius:8px; font-weight:600; font-size:13px; cursor:pointer; display:flex; align-items:center; gap:6px;">📈 Switch to Top Banner</button>',
+          '<div style="background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:12px 10px;">',
+            '<div style="font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#7f8aa1; margin-bottom:4px; font-weight:700;">Risk Used</div>',
+            '<div id="tl-overlay-risk" style="font-size:18px; font-weight:800; color:#ffffff;">₹0.00</div>',
+            '<div id="tl-overlay-risk-prov" style="font-size:10px; color:#94a3b8; margin-top:2px;">Broker-verified</div>',
           '</div>',
-          '<div style="font-size:11.5px; color:#8c97ad; line-height:1.45; border-top:1px solid rgba(255,255,255,.08); padding-top:14px;">',
-            '<b>Enforcement Policy:</b> ' + modeDesc + '<br>',
-            '<span style="color:#6e7681">Browser enforcement applies inside Chrome on this device. External mobile trading apps are not restricted.</span>',
-          '</div>',
-        '</div>'
-      ].join('');
-    }
+        '</div>',
+        '<div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.22); border-radius:12px; padding:12px 14px; margin-bottom:18px; text-align:center;">',
+          '<div style="font-size:12px; font-weight:600; color:#fca5a5; line-height:1.5;">💡 <i>"Discipline is choosing between what you want now and what you want most. Protect your capital."</i></div>',
+        '</div>',
+        '<div style="font-size:11.5px; color:#8c97ad; line-height:1.5; border-top:1px solid rgba(255,255,255,.08); padding-top:14px;">',
+          '<b>Full-Screen Lock Active:</b> Trading terminal access is restricted across this browser session.<br>',
+          '<span style="color:#6e7681">Browser enforcement applies inside Chrome on this device. Mobile broker apps and other devices are not restricted. To manage emergency exits, refer to your broker’s documented procedures.</span>',
+        '</div>',
+      '</div>'
+    ].join('');
 
     var parent = document.documentElement || document.body;
     if (parent) parent.appendChild(root);
     overlayEl = root;
-
-    // Attach Chart Mode toggles
-    var btnChart = root.querySelector('#tl-btn-chartmode');
-    if (btnChart) {
-      btnChart.addEventListener('click', function(e) {
-        e.stopPropagation();
-        isChartMode = true;
-        buildOverlay(violation);
-      });
-    }
-    var btnFull = root.querySelector('#tl-btn-fullmode');
-    if (btnFull) {
-      btnFull.addEventListener('click', function(e) {
-        e.stopPropagation();
-        isChartMode = false;
-        buildOverlay(violation);
-      });
-    }
 
     updateOverlay(violation);
   }
 
   function updateOverlay(violation) {
     if (!overlayEl) return;
+    var lockInfo = getLockTypeInfo(violation);
     var copy = lockCopy(violation || (state.lock.manual ? null : R.evaluate(state, settings)));
+
+    var badgeEl = overlayEl.querySelector('#tl-overlay-badge');
     var titleEl = overlayEl.querySelector('#tl-overlay-title');
     var detailEl = overlayEl.querySelector('#tl-overlay-detail');
     var timerEl = overlayEl.querySelector('#tl-overlay-timer');
     var untilEl = overlayEl.querySelector('#tl-overlay-until');
     var tradesEl = overlayEl.querySelector('#tl-overlay-trades');
+    var tradesProvEl = overlayEl.querySelector('#tl-overlay-trades-prov');
     var pnlEl = overlayEl.querySelector('#tl-overlay-pnl');
+    var pnlProvEl = overlayEl.querySelector('#tl-overlay-pnl-prov');
     var riskEl = overlayEl.querySelector('#tl-overlay-risk');
+    var riskProvEl = overlayEl.querySelector('#tl-overlay-risk-prov');
 
-    if (titleEl) titleEl.textContent = state.lock.manual ? 'Self-imposed lock' : copy.title;
-    if (detailEl) detailEl.textContent = state.lock.manual ? 'You locked this screen yourself. It reopens at the next market open.' : copy.detail;
-    if (timerEl && state.lock.until) timerEl.textContent = R.countdown(state.lock.until, Date.now());
-    if (untilEl && state.lock.until) untilEl.textContent = 'unlocks ' + (R.istLabel(state.lock.until) || 'at the next market open');
+    if (badgeEl) {
+      badgeEl.textContent = lockInfo.badge;
+      badgeEl.style.color = lockInfo.badgeColor;
+      badgeEl.style.background = lockInfo.badgeBg;
+    }
+
+    if (titleEl) {
+      titleEl.textContent = state.lock.manual ? 'Self-Imposed Trading Lock' : (copy.title || lockInfo.title);
+    }
+    if (detailEl) {
+      detailEl.textContent = state.lock.manual
+        ? 'You locked this screen deliberately. It reopens at the next market session.'
+        : (copy.detail || lockInfo.desc);
+    }
+    if (timerEl && state.lock.until) {
+      timerEl.textContent = R.countdown(state.lock.until, Date.now());
+    }
+    if (untilEl && state.lock.until) {
+      untilEl.textContent = 'Unlocks on ' + formatIstUnlockDateTime(state.lock.until);
+    }
 
     var sess = state.session || {};
-    if (tradesEl) tradesEl.textContent = sess.trades + (settings.maxTradesPerDay ? ' / ' + settings.maxTradesPerDay : '');
+    var isBrokerVerified = (sess.autoTrades || 0) > 0 && sess.autoTrades === sess.trades;
+    var provLabel = isBrokerVerified ? 'Broker-verified' : (sess.autoTrades > 0 ? 'Broker & Manual' : 'Manual log');
+
+    if (tradesEl) tradesEl.textContent = (sess.trades || 0) + (settings.maxTradesPerDay ? ' / ' + settings.maxTradesPerDay : '');
+    if (tradesProvEl) tradesProvEl.textContent = provLabel;
+
     if (pnlEl) {
       pnlEl.textContent = R.inr(sess.pnl || 0);
       pnlEl.style.color = (sess.pnl > 0 ? '#37d39b' : (sess.pnl < 0 ? '#ff6b6b' : '#ffffff'));
     }
+    if (pnlProvEl) pnlProvEl.textContent = provLabel;
+
     if (riskEl) riskEl.textContent = R.inr(sess.riskUsed || 0);
+    if (riskProvEl) riskProvEl.textContent = provLabel;
   }
 
   function buildSubframeBlocker() {
     if (subframeEl && subframeEl.isConnected) return;
-    var href = '';
-    try { href = window.location.href || ''; } catch (e) {}
-    // Never block charting or analysis frames
-    if (/chart|tradingview|tv\.|graph/i.test(href) || isChartMode) return;
-
     var d = document.createElement('div');
     d.setAttribute('id', 'tl-lock-subframe');
     d.style.cssText = 'position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;background:#07090f!important;z-index:2147483647!important;pointer-events:auto!important;';
@@ -339,13 +365,13 @@
   ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'dblclick', 'contextmenu', 'wheel', 'touchstart', 'keydown', 'keypress'].forEach(function (type) {
     document.addEventListener(type, function (e) {
       var mode = (settings && settings.enforcementMode) || 'warning';
-      if (!state.lock.active || isChartMode || mode !== 'full_site') return;
+      if (!state.lock.active || mode !== 'full_site') return;
       e.stopImmediatePropagation();
       e.preventDefault();
     }, true);
     window.addEventListener(type, function (e) {
       var mode = (settings && settings.enforcementMode) || 'warning';
-      if (!state.lock.active || isChartMode || mode !== 'full_site') return;
+      if (!state.lock.active || mode !== 'full_site') return;
       e.stopImmediatePropagation();
       e.preventDefault();
     }, true);
@@ -408,9 +434,9 @@
           '<button id="tl-open" title="Open options">Rules</button>' +
           '<button class="lock" id="tl-locknow">Lock screen now</button>' +
         '</div>' +
-        '<div class="foot"><span id="tl-mode">manual</span><a href="#" id="tl-reset">reset day</a></div>' +
+        '<div class="foot"><span id="tl-mode">manual</span><span style="color:#6e7681;font-size:10px;">session active</span></div>' +
       '</div>';
-    body().appendChild(el);
+    (document.body || document.documentElement).appendChild(el);
     hud = el;
 
     var saved = null;
@@ -446,34 +472,19 @@
     el.querySelector('#tl-win').addEventListener('click', function () { quickLog(1); });
     el.querySelector('#tl-loss').addEventListener('click', function () { quickLog(-1); });
     el.querySelector('#tl-undo').addEventListener('click', function () {
-      R.undoLastTrade(state); saveState(); loop();
+      if (state.lock && state.lock.active && !state.lock.manual) {
+        alert('Discipline lock is active. Trade counts and losses cannot be reversed while locked.');
+        return;
+      }
+      var res = R.undoLastTrade(state);
+      if (res && res.rejected) {
+        alert(res.message || 'Verified broker executions cannot be erased.');
+        return;
+      }
+      saveState(); loop();
     });
     el.querySelector('#tl-open').addEventListener('click', function () {
       chrome.runtime.sendMessage({ type: 'TL_OPEN_OPTIONS' });
-    });
-    el.querySelector('#tl-reset').addEventListener('click', function (e) {
-      e.preventDefault();
-      var isRuleLock = state.lock && state.lock.active && !state.lock.manual;
-      if (isRuleLock) {
-        if (confirm('An automated risk rule lock is ACTIVE (' + (state.lock.reason || 'Trading Limit') + ').\n\nRule-triggered locks cannot be cleared by resetting daily statistics and remain active until market open (09:15 IST).\n\nDo you want to reset displayed daily statistics only?')) {
-          state = R.resetDailyStats(state, Date.now());
-          saveState(); loop();
-        }
-        return;
-      }
-      var isManualLock = state.lock && state.lock.active && state.lock.manual;
-      if (isManualLock) {
-        if (confirm('You have a voluntary focus lock active. Release focus lock and reset counters?')) {
-          R.releaseManualLock(state, Date.now());
-          state = R.resetDay(state, settings, Date.now());
-          saveState(); loop();
-        }
-        return;
-      }
-      if (confirm('Reset today’s Trade Lock statistics for a new trading session?')) {
-        state = R.resetDay(state, settings, Date.now());
-        saveState(); loop();
-      }
     });
     el.querySelector('#tl-locknow').addEventListener('click', function () {
       R.lockNow(state, settings, Date.now()); saveState(); loop();
@@ -610,6 +621,14 @@
 
   function loop() {
     var res = R.tick(state, settings, Date.now(), { openTrades: state.session.openTrades || 0 });
+    var wasLocked = state.lock && state.lock.active;
+    var nowLocked = res.state.lock && res.state.lock.active;
+    if (wasLocked && !nowLocked) {
+      // Content scripts must never authoritatively clear an active lock in storage.
+      // Delegate to background service worker to validate expiration and release authoritatively.
+      try { chrome.runtime.sendMessage({ type: 'TL_CHECK_RELEASE' }); } catch (e) {}
+      return;
+    }
     state = res.state;
     if (res.changed) saveState();
 
@@ -640,7 +659,9 @@
         if (res && res.tlMarket) marketSnap = res.tlMarket;
         if (res && res.tlLicense) license = res.tlLicense;
         if (res && res.tlSettings) settings = eff(Object.assign({}, R.DEFAULT_SETTINGS, res.tlSettings));
-        if (res && res.tlState) state = res.tlState;
+        if (res && res.tlState && res.tlState.lock && typeof res.tlState.lock.active === 'boolean') {
+          state = res.tlState;
+        }
         loop();
         if (state.lock && state.lock.active && IS_TOP) updateOverlay();
       });
@@ -676,39 +697,110 @@
       sendResponse({ ok: true, state: state });
       return;
     }
+    if (msg.type === 'TL_ENFORCE_LOCK') {
+      if (msg.state) state = msg.state;
+      loop();
+      sendResponse({ ok: true, state: state });
+      return;
+    }
     if (msg.type === 'TL_LOCK_NOW') {
       R.lockNow(state, settings, Date.now()); saveState(); loop();
       sendResponse({ ok: true, state: state });
       return;
     }
     if (msg.type === 'TL_RESET_STATS') {
-      state = R.resetDailyStats(state, Date.now()); saveState(); loop();
-      sendResponse({ ok: true, state: state });
+      sendResponse({ ok: false, error: 'RESET_BYPASS_DISABLED', message: 'Manual counter reset has been removed. Counters roll over automatically at 09:15 IST.' });
       return;
     }
     if (msg.type === 'TL_RELEASE_MANUAL') {
-      var rel = R.releaseManualLock(state, Date.now());
-      saveState(); loop();
-      sendResponse(rel);
+      if (!state.lock || !state.lock.active) {
+        sendResponse({ success: false, reason: 'NO_ACTIVE_LOCK' });
+        return;
+      }
+      if (!state.lock.manual) {
+        sendResponse({
+          success: false,
+          error: 'RULE_LOCK_PROTECTED',
+          message: 'Rule-triggered locks cannot be released manually. Screen remains locked until market open.'
+        });
+        return;
+      }
+      if (!msg.confirmed) {
+        sendResponse({
+          success: false,
+          error: 'CONFIRMATION_REQUIRED',
+          message: 'Manual release requires explicit user confirmation.'
+        });
+        return;
+      }
+      // Content scripts cannot authoritatively release locks directly.
+      // Manual focus locks must be released directly from the extension popup.
+      sendResponse({
+        success: false,
+        error: 'CONTENT_SCRIPT_RELEASE_DISALLOWED',
+        message: 'Content scripts cannot authorize lock release. Manual focus locks must be released directly from the extension popup.'
+      });
       return;
     }
     if (msg.type === 'TL_EMERGENCY_OVERRIDE') {
-      var em = R.emergencyOverrideLock(state, msg.confirmationCode, msg.reason, Date.now());
-      saveState(); loop();
-      sendResponse(em);
+      sendResponse({
+        ok: false,
+        success: false,
+        error: 'OVERRIDE_VIA_MESSAGE_DISALLOWED',
+        message: 'Content scripts cannot authorize emergency lock override. Only verified background administrative transitions are permitted.'
+      });
       return;
     }
     if (msg.type === 'TL_RELEASED') {
-      state.lock = { active: false, reason: null, since: null, until: null, manual: false };
-      state.status = 'NORMAL'; state.statusReason = null;
-      saveState(); loop();
-      sendResponse({ ok: true, state: state });
-      return;
+      var now = Date.now();
+      if (sender && sender.id && sender.id !== chrome.runtime.id) {
+        sendResponse({ ok: false, error: 'UNAUTHORIZED_SENDER' });
+        return;
+      }
+      chrome.storage.local.get(['tlState'], function (res) {
+        var stored = res && res.tlState;
+        // Fail-closed recovery: Never clear a local lock merely because tlState is missing or corrupt in storage.
+        if (!stored || !stored.lock || typeof stored.lock.active !== 'boolean') {
+          console.warn('[Trade Lock Security] Received TL_RELEASED but authoritative storage state is missing or invalid. Preserving active lock overlay and requesting authoritative state recovery.');
+          if (state && state.lock && state.lock.active) {
+            if (IS_TOP) buildOverlay(); else buildSubframeBlocker();
+          }
+          try { chrome.runtime.sendMessage({ type: 'TL_CHECK_RELEASE' }); } catch (e) {}
+          sendResponse({ ok: false, error: 'STORAGE_STATE_MISSING_OR_CORRUPT', recovering: true });
+          return;
+        }
+
+        // The background service worker is the sole authoritative owner of lock release.
+        // If background storage still has an active lock, reject the unverified notification.
+        if (stored.lock.active) {
+          var until = Number(stored.lock.until);
+          if (isNaN(until) || until <= 0 || (now < until && !stored.lock.emergencyOverridden)) {
+            console.warn('[Trade Lock Security] Blocked unverified lock release notification. Background lock remains active.');
+            sendResponse({ ok: false, error: 'LOCK_STILL_ACTIVE', until: stored.lock.until });
+            return;
+          }
+        }
+
+        // If local state was locked by an automated risk rule, reject premature release notifications
+        if (state && state.lock && state.lock.active && !state.lock.manual) {
+          var localUntil = Number(state.lock.until);
+          if (!isNaN(localUntil) && localUntil > now && !stored.lock.emergencyOverridden) {
+            console.warn('[Trade Lock Security] Rejecting release notification: local rule lock has not reached unlock timestamp.');
+            if (IS_TOP) buildOverlay(); else buildSubframeBlocker();
+            sendResponse({ ok: false, error: 'RULE_LOCK_UNEXPIRED', until: localUntil });
+            return;
+          }
+        }
+
+        // Background has authoritatively transitioned to unlocked state. Adopt state directly.
+        state = stored;
+        loop();
+        sendResponse({ ok: true, state: state });
+      });
+      return true;
     }
     if (msg.type === 'TL_RESET') {
-      state = R.resetDay(state, settings, Date.now(), { emergencyOverride: msg.emergencyOverride });
-      saveState(); loop();
-      sendResponse({ ok: true, state: state });
+      sendResponse({ ok: false, error: 'RESET_BYPASS_DISABLED', message: 'Manual reset-day bypass has been removed. Counters roll over automatically at market open.' });
       return;
     }
     if (msg.type === 'TL_SETTINGS') {

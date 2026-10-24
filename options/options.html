@@ -44,41 +44,54 @@
 <body>
 <div class="wrap">
 
-  <header class="top">
-    <div class="logo">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-        <rect x="9" y="11" width="6" height="5" rx="1"/>
-        <path d="M10 11V9a2 2 0 0 1 4 0v2"/>
-      </svg>
+  <!-- Responsive Sidebar Pane -->
+  <aside class="sidebar-pane">
+    <div style="display:flex;align-items:center;gap:11px;margin-bottom:18px;">
+      <div class="logo" style="width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(160deg,#ef4444,#b91c1c);box-shadow:0 3px 12px rgba(239,68,68,.35)">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <rect x="9" y="11" width="6" height="5" rx="1"/>
+          <path d="M10 11V9a2 2 0 0 1 4 0v2"/>
+        </svg>
+      </div>
+      <div>
+        <div style="font-size:16px;font-weight:800;letter-spacing:-.02em;color:#fff">Trade Lock</div>
+        <div style="font-size:11px;color:var(--muted)">Terminal Workspace</div>
+      </div>
     </div>
-    <div>
-      <h1>Trade Lock</h1>
-      <div class="sub">Trading discipline, risk rules &amp; market intelligence for Indian retail traders</div>
-    </div>
-    <div class="spacer"></div>
-    <div class="statusline">
-      <span id="lockPill" class="pill off">UNLOCKED</span>
-      <button id="headerSaveBtn" class="primary" style="padding: 6px 12px; font-size: 11.5px;">Save Rules</button>
-    </div>
-  </header>
 
-  <!-- Dashboard Navigation Tabs -->
-  <nav class="nav-tabs" id="mainTabs">
-    <button class="tab-btn active" data-tab="overview">📊 Overview</button>
-    <button class="tab-btn" data-tab="rules">🛡️ Rules &amp; Limits</button>
-    <button class="tab-btn" data-tab="charts">📈 Chart Analysis</button>
-    <button class="tab-btn" data-tab="options">⚡ Options Analytics</button>
-    <button class="tab-btn" data-tab="ai">🤖 AI Assistant</button>
-    <button class="tab-btn" data-tab="journal">📓 Trade Journal</button>
-    <button class="tab-btn" data-tab="sites">🌐 Supported Sites</button>
-    <button class="tab-btn" data-tab="license">💎 Plans &amp; License</button>
-  </nav>
+    <div class="nav-section-label">WORKSPACE</div>
+    <nav class="nav-tabs" id="mainTabs">
+      <button class="tab-btn active" data-tab="overview">📊 Overview</button>
+      <button class="tab-btn" data-tab="market">📈 Market &amp; OI</button>
+      <button class="tab-btn" data-tab="options">⚡ Options Analytics</button>
+      <button class="tab-btn" data-tab="journal">📓 Trade Journal</button>
+      <button class="tab-btn" data-tab="ai">🤖 AI Coach</button>
+      <div class="nav-section-label">RISK &amp; SETTINGS</div>
+      <button class="tab-btn" data-tab="rules">🛡️ Risk Rules</button>
+      <button class="tab-btn" data-tab="license">💎 Plans &amp; License</button>
+      <button class="tab-btn" data-tab="sites">🌐 Supported Sites</button>
+    </nav>
+  </aside>
+
+  <!-- Main Content Pane -->
+  <div class="main-pane">
+    <header class="top">
+      <div>
+        <h1>Trade Lock Terminal</h1>
+        <div class="sub">Trading discipline, risk rules &amp; market intelligence for Indian retail traders</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="statusline">
+        <span id="lockPill" class="pill off">UNLOCKED</span>
+        <button id="headerSaveBtn" class="primary" style="padding: 6px 12px; font-size: 11.5px;">Save Rules</button>
+      </div>
+    </header>
 
   <!-- ======================================================== TAB: OVERVIEW -->
   <div class="tab-content active" id="tab-overview">
     <div class="callout blue">
-      <b>How the lock operates:</b> When any configured rule trips, supported broker screens are restricted until the next market open (<span id="openTimeLabel">09:15 IST</span>), skipping weekends and holidays. Chart Mode preserves active chart analysis.
+      <b>How the lock operates:</b> When any configured rule trips, supported broker screens are covered with an opaque full-screen lock until the next market open (<span id="openTimeLabel">09:15 IST</span>), preventing impulsive overtrading.
     </div>
 
     <!-- Bento Telemetry Cards -->
@@ -114,14 +127,27 @@
       <hr class="hr">
       <div class="actions">
         <button id="lockNow" class="danger">Lock screen now</button>
-        <button id="resetDay">Reset daily stats</button>
-        <button id="emergencyOverrideBtn" class="ghost" style="color:#f87171" title="Emergency administrative override for rule-triggered locks">Emergency Override</button>
-        <button id="exportLogBtn">Export trade log (CSV) — Pro</button>
+        <button id="exportLogBtn">Export trade log (CSV)</button>
         <button id="reportBtn">Copy day report — Pro</button>
         <div class="spacer" style="flex:1"></div>
         <button id="exportBtn" class="ghost">Export settings</button>
         <button id="importBtn" class="ghost">Import</button>
         <input type="file" id="importFile" accept="application/json" style="display:none">
+      </div>
+    </div>
+
+    <!-- Compact Journal Summary Widget on Overview -->
+    <div class="card" style="margin-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+        <div>
+          <h2 style="margin:0">Today's Journal &amp; Trade Activity</h2>
+          <p class="desc" style="margin:2px 0 0">Real-time closed trade ledger. Full daily &amp; monthly history available in the Trade Journal.</p>
+        </div>
+        <button id="ovJumpToJournal" class="ghost" style="font-size:12px;font-weight:650;color:#60a5fa;cursor:pointer">Open Full Journal (CSV/JSON Exports) →</button>
+      </div>
+      <div id="ovJournalSummary">
+        <div style="font-size:12px;color:var(--muted);padding:8px 0" id="ovJournalEmpty">No trades recorded for today yet. Fills detected from connected brokers or logged manually appear here automatically.</div>
+        <div id="ovJournalTradesList" style="display:none;margin-top:6px"></div>
       </div>
     </div>
   </div>
@@ -274,12 +300,12 @@
       <label class="field" style="margin-bottom:14px">
         <span class="k">Enforcement Mode Policy</span>
         <select id="enforcementMode">
-          <option value="warning" selected>Mode A: Warning Overlay (Recommended Default — Banner alert only, broker page remains interactive)</option>
+          <option value="warning" selected>Mode A: Full-Screen Discipline Lock (Recommended Default — Opaque lock screen covers terminal; broker terminal protected until unlock)</option>
           <option value="order_restrict">Mode B: Verified New-Order Restriction (Intercepts order placement on verified brokers, keeps exits accessible)</option>
           <option value="full_site">Mode C: Full Trading-Site Restriction (Redirects broker tab to lock page — may prevent closing open positions)</option>
           <option value="chart_only">Mode D: Charting-Site Restriction (Restricts charting websites only)</option>
         </select>
-        <span class="h">Choose between visual behavioral discipline reminders and verified browser-level restriction.</span>
+        <span class="h">Choose between full-screen discipline lock overlay and verified browser-level restriction.</span>
       </label>
 
       <div id="fullSiteAckBox" style="display:none;margin-bottom:14px" class="callout danger">
@@ -315,64 +341,239 @@
     </div>
   </div>
 
-  <!-- ======================================================== TAB: CHARTS -->
-  <div class="tab-content" id="tab-charts">
+  <!-- ======================================================== TAB: MARKET & OI -->
+  <div class="tab-content" id="tab-market">
+    <div class="callout warn" style="margin-bottom:14px;border-left:4px solid #f59e0b;background:rgba(245,158,11,0.08);color:#fef3c7;">
+      ⚠️ <b>SIMULATED DEMO DATA — NOT LIVE MARKET FEED:</b>
+      No verified live options-chain broker feed is currently connected. All spot prices, open interest numbers, changes in OI, and technical pivots shown below are calculated by the deterministic model for layout and strategy demonstration.
+    </div>
+
     <div class="card">
-      <h2>Technical Chart Intelligence <span class="badge pro">Deterministic</span></h2>
-      <p class="desc">Mathematically computed support &amp; resistance pivots, demand/supply zones, fair value gaps, VWAP, EMA and RSI.</p>
-      <div class="grid3">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:8px">
+        <div>
+          <h2 style="margin:0">Market &amp; Open Interest (OI) Intelligence <span class="badge pro">Deterministic Model</span></h2>
+          <p class="desc" style="margin:2px 0 0">Open interest distribution, Call/Put walls, Put-Call Ratio (PCR), and multi-timeframe price structure for Indian indices (Simulated Demo Model).</p>
+        </div>
+        <span class="badge" id="marketTimestampBadge" style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);color:#93c5fd;font-size:11px">Source: Deterministic Model · <span id="marketUpdatedTimestamp">Demo Render Time: Just now</span></span>
+      </div>
+
+      <div class="grid4" style="margin-bottom:14px">
         <label class="field">
           <span class="k">Instrument</span>
           <select id="marketSymbol">
-            <option value="NIFTY">NIFTY 50</option>
-            <option value="BANKNIFTY">BANK NIFTY</option>
-            <option value="FINNIFTY">FIN NIFTY</option>
+            <option value="NIFTY" selected>NIFTY 50 (NSE)</option>
+            <option value="BANKNIFTY">BANK NIFTY (NSE)</option>
+            <option value="FINNIFTY">FIN NIFTY (NSE)</option>
+            <option value="MIDCPNIFTY">MIDCPNIFTY (NSE)</option>
+            <option value="SENSEX">BSE SENSEX (BSE)</option>
+            <option value="BANKEX">BSE BANKEX (BSE)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="k">Expiry</span>
+          <select id="marketExpiry">
+            <option value="current" selected>Current Weekly Expiry</option>
+            <option value="next">Next Weekly Expiry</option>
+            <option value="monthly">Monthly Expiry</option>
           </select>
         </label>
         <label class="field">
           <span class="k">Timeframe</span>
           <select id="marketTimeframe">
-            <option value="15m" selected>15 Minutes</option>
+            <option value="1m">1 Minute</option>
+            <option value="3m">3 Minutes</option>
             <option value="5m">5 Minutes</option>
+            <option value="10m">10 Minutes</option>
+            <option value="15m" selected>15 Minutes</option>
+            <option value="30m">30 Minutes</option>
+            <option value="45m">45 Minutes</option>
             <option value="1h">1 Hour</option>
-            <option value="1d">Daily</option>
+            <option value="2h">2 Hours</option>
+            <option value="4h">4 Hours</option>
+            <option value="1d">Daily (1D)</option>
+            <option value="1w">Weekly (1W)</option>
           </select>
         </label>
         <label class="field">
           <span class="k">Data Source</span>
           <select id="marketSource">
-            <option value="demo">Verified Sample Candles (Deterministic)</option>
-            <option value="live">Live Fyers Data (Requires server configuration)</option>
+            <option value="demo" selected>Deterministic Sample Candles (Simulated Demo)</option>
+            <option value="live" disabled>Live Exchange Feed (Unconnected — Requires Broker WebSocket)</option>
           </select>
         </label>
       </div>
-      <div class="actions" style="margin-top:14px">
-        <button id="marketBtn" class="primary">Compute Analysis</button>
+
+      <div class="actions" style="margin-bottom:16px">
+        <button id="marketBtn" class="primary">Compute &amp; Refresh Market &amp; Chart</button>
         <span class="kv" id="marketNote"></span>
       </div>
+
+      <!-- Interactive Candlestick & Volume Chart Card -->
+      <div class="card" id="marketChartCard" style="background:#0b1120;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:14px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-weight:750;font-size:14px;color:#fff;" id="chartHeaderSymbol">NIFTY 50</span>
+            <span class="badge" id="chartIntervalBadge" style="background:rgba(59,130,246,0.2);color:#93c5fd;font-size:11px">15m</span>
+            <span id="chartCandleCount" style="font-size:11px;color:var(--muted)">60 candles</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;color:#94a3b8">
+              <input type="checkbox" id="toggleEma" checked style="accent-color:#38bdf8"> EMA 9/20
+            </label>
+            <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;color:#94a3b8">
+              <input type="checkbox" id="toggleVwap" checked style="accent-color:#f59e0b"> VWAP
+            </label>
+            <button id="chartZoomInBtn" class="ghost" style="padding:2px 8px;font-size:12px" title="Zoom In">+</button>
+            <button id="chartZoomOutBtn" class="ghost" style="padding:2px 8px;font-size:12px" title="Zoom Out">−</button>
+            <button id="chartResetBtn" class="ghost" style="padding:2px 8px;font-size:11px" title="Reset Zoom">Reset</button>
+          </div>
+        </div>
+
+        <div id="chartOhlcBar" style="font-family:monospace;font-size:11px;color:#94a3b8;min-height:20px;margin-bottom:6px;display:flex;gap:12px;flex-wrap:wrap;">
+          <span>Hover over chart to inspect candle values</span>
+        </div>
+
+        <div style="position:relative;width:100%;height:320px;background:#060913;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,0.05)">
+          <canvas id="marketCandleCanvas" style="width:100%;height:100%;display:block;cursor:crosshair;"></canvas>
+          <div id="chartStateOverlay" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(6,9,19,0.85);font-size:13px;color:#94a3b8;"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10.5px;color:var(--muted)">
+          <span>Drag to Pan · Scroll to Zoom · Crosshair Enabled</span>
+          <span id="chartTimestampRange">Source: Deterministic Model</span>
+        </div>
+      </div>
+
+      <!-- Telemetry Cards -->
+      <div class="grid4" style="margin-bottom:16px">
+        <div class="stat-card">
+          <span class="stat-lbl">Spot Price</span>
+          <span class="stat-val" id="marketSpotVal">₹24,520.00</span>
+          <span class="stat-sub" id="marketExchangeSub">NSE Index</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">Put-Call Ratio (PCR)</span>
+          <span class="stat-val" id="marketPcrVal">1.08</span>
+          <span class="stat-sub" id="marketPcrBias">Mild Bullish Sentiment</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">Max Pain Strike</span>
+          <span class="stat-val" id="marketMaxPainVal">24,500</span>
+          <span class="stat-sub">Lowest option payout</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">ATM Straddle &amp; Theta</span>
+          <span class="stat-val" id="marketThetaVal">₹245 · ~18% / d</span>
+          <span class="stat-sub">Expected time decay</span>
+        </div>
+      </div>
+
+      <!-- India VIX & Implied Volatility Card -->
+      <div style="background:rgba(255,255,255,0.02);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+          <div>
+            <h3 style="margin:0;font-size:13px;font-weight:750">India VIX &amp; Volatility Regime</h3>
+            <p class="desc" style="margin:2px 0 0">Real-time market volatility benchmark and spike detection alert.</p>
+          </div>
+          <span id="vixRegimeBadge" class="badge" style="background:rgba(16,185,129,0.18);color:#34d399;border:1px solid rgba(16,185,129,0.3)">Regime: Normal (13.85)</span>
+        </div>
+        <div class="grid4">
+          <div class="stat-card">
+            <span class="stat-lbl">India VIX</span>
+            <span class="stat-val" id="vixVal">13.85</span>
+            <span class="stat-sub" id="vixChg" style="color:#10b981">+0.42 (+3.13%)</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-lbl">IV Rank / Percentile</span>
+            <span class="stat-val" id="vixRank">48% / 52%</span>
+            <span class="stat-sub">Historical 52-week range</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-lbl">Call IV vs Put IV</span>
+            <span class="stat-val" id="vixSkew">13.4% / 14.2%</span>
+            <span class="stat-sub">ATM Put Skew (+0.80%)</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-lbl">Spike Alert Status</span>
+            <span class="stat-val" id="vixAlertStatus" style="color:#34d399">Normal</span>
+            <span class="stat-sub">Threshold: &gt;15% change</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Visual Open Interest (OI) Distribution Chart Card -->
+      <div class="oi-chart-card">
+        <div class="oi-chart-head">
+          <div class="oi-chart-title">
+            <span>📊 Open Interest Distribution (Call Walls vs Put Walls)</span>
+          </div>
+          <div class="oi-legend">
+            <div class="oi-legend-item">
+              <span class="oi-legend-dot" style="background:#10b981"></span>
+              <span>Calls OI (Supply / Resistance)</span>
+            </div>
+            <div class="oi-legend-item">
+              <span class="oi-legend-dot" style="background:#fbbf24"></span>
+              <span>ATM Strike</span>
+            </div>
+            <div class="oi-legend-item">
+              <span class="oi-legend-dot" style="background:#ef4444"></span>
+              <span>Puts OI (Demand / Support)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="oi-bars-list" id="oiBarsContainer">
+          <!-- Filled dynamically by options.js -->
+        </div>
+      </div>
+
+      <!-- Technical Structure & S/R Pivots -->
       <div id="marketResult" style="margin-top:16px"></div>
     </div>
   </div>
+  <!-- Alias for backward compatibility -->
+  <div id="tab-charts" style="display:none"></div>
 
   <!-- ======================================================== TAB: OPTIONS -->
   <div class="tab-content" id="tab-options">
     <div class="card">
-      <h2>NSE Options Chain &amp; Analytics <span class="badge" style="background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);color:#fbbf24">Simulated Model Chain</span></h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+        <h2 style="margin:0">NSE Options Chain &amp; Analytics <span class="badge" style="background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);color:#fbbf24">Simulated Model Chain</span></h2>
+        <span class="badge" style="background:rgba(255,255,255,0.06);color:var(--muted)">Strike-by-Strike Analytics</span>
+      </div>
       <p class="desc">Open Interest (OI) distribution, Put-Call Ratio (PCR), and Max Pain computed via mathematical model. Data is simulated for strategy review and not a live exchange feed.</p>
-      <div class="grid3" style="margin-bottom:14px">
+      <div class="callout" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;margin-bottom:14px;font-size:12px">
+        ⚠️ <b>SIMULATED DEMO DATA — NOT LIVE MARKET FEED:</b> This chain is generated via deterministic mathematical models strictly for testing user experience and interface functionality. Live NSE tick data requires a configured broker API feed. Do NOT place real orders based on simulated strikes.
+      </div>
+
+      <div class="grid4" style="margin-bottom:14px">
         <label class="field">
           <span class="k">Underlying Symbol</span>
           <select id="optionsSymbol">
-            <option value="NIFTY">NIFTY 50</option>
-            <option value="BANKNIFTY">BANK NIFTY</option>
-            <option value="FINNIFTY">FIN NIFTY</option>
+            <option value="NIFTY" selected>NIFTY 50 (NSE)</option>
+            <option value="BANKNIFTY">BANK NIFTY (NSE)</option>
+            <option value="FINNIFTY">FIN NIFTY (NSE)</option>
+            <option value="MIDCPNIFTY">MIDCPNIFTY (NSE)</option>
+            <option value="SENSEX">BSE SENSEX (BSE)</option>
+            <option value="BANKEX">BSE BANKEX (BSE)</option>
           </select>
         </label>
         <label class="field">
           <span class="k">Expiry</span>
           <select id="optionsExpiry">
-            <option value="current">Current Weekly Expiry</option>
+            <option value="current" selected>Current Weekly Expiry</option>
             <option value="next">Next Weekly Expiry</option>
+            <option value="monthly">Monthly Expiry</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="k">Strike Range</span>
+          <select id="optMoneynessFilter">
+            <option value="near" selected>Near ATM (±5 strikes)</option>
+            <option value="wide">Wide (±10 strikes)</option>
+            <option value="all">All Available Strikes</option>
+            <option value="itm">In-The-Money (ITM)</option>
+            <option value="otm">Out-of-The-Money (OTM)</option>
           </select>
         </label>
         <div style="display:flex;align-items:flex-end">
@@ -380,27 +581,27 @@
         </div>
       </div>
 
-      <!-- Options Telemetry -->
+      <!-- Options Telemetry with Separate Call & Put Theta -->
       <div class="grid4" id="optionsMetricsGrid" style="margin-bottom:14px">
         <div class="stat-card">
           <span class="stat-lbl">Spot Price</span>
-          <span class="stat-val" id="optSpotPrice">24,520.00</span>
+          <span class="stat-val" id="optSpotPrice">₹24,520.00</span>
           <span class="stat-sub">Underlying Index</span>
         </div>
         <div class="stat-card">
-          <span class="stat-lbl">Put-Call Ratio (PCR)</span>
-          <span class="stat-val" id="optPcrVal">1.08</span>
-          <span class="stat-sub" id="optPcrBias">Neutral to Mild Bullish</span>
+          <span class="stat-lbl">Call Theta (ATM CE)</span>
+          <span class="stat-val" id="optCallThetaVal" style="color:#34d399">₹-18.40 / d</span>
+          <span class="stat-sub" id="optCallThetaSub">~13.2% decay / day</span>
         </div>
         <div class="stat-card">
-          <span class="stat-lbl">Max Pain Strike</span>
-          <span class="stat-val" id="optMaxPain">24,500</span>
-          <span class="stat-sub">Lowest option payout</span>
+          <span class="stat-lbl">Put Theta (ATM PE)</span>
+          <span class="stat-val" id="optPutThetaVal" style="color:#f87171">₹-16.10 / d</span>
+          <span class="stat-sub" id="optPutThetaSub">~11.8% decay / day</span>
         </div>
         <div class="stat-card">
-          <span class="stat-lbl">Theta Decay (DTE 2)</span>
-          <span class="stat-val" id="optThetaDecay">~18% / day</span>
-          <span class="stat-sub">ATM time value decay</span>
+          <span class="stat-lbl">Estimated Decay (1 Hour)</span>
+          <span class="stat-val" id="optHourlyDecay">₹-2.75 / lot</span>
+          <span class="stat-sub">Black-Scholes model estimate</span>
         </div>
       </div>
 
@@ -408,16 +609,22 @@
         <table class="options-chain" id="optionsChainTable">
           <thead>
             <tr>
-              <th colspan="3" style="color:#6ee7b7">CALLS (CE)</th>
-              <th>STRIKE</th>
-              <th colspan="3" style="color:#fca5a5">PUTS (PE)</th>
+              <th colspan="6" style="color:#6ee7b7;border-right:1px solid var(--line)">CALLS (CE)</th>
+              <th style="color:#fff">STRIKE</th>
+              <th colspan="6" style="color:#fca5a5;border-left:1px solid var(--line)">PUTS (PE)</th>
             </tr>
             <tr>
               <th>OI (Lots)</th>
               <th>OI Chg</th>
-              <th>LTP (₹)</th>
+              <th>Volume</th>
+              <th>IV %</th>
+              <th>Theta (₹)</th>
+              <th style="border-right:1px solid var(--line)">LTP (₹)</th>
               <th>Strike</th>
-              <th>LTP (₹)</th>
+              <th style="border-left:1px solid var(--line)">LTP (₹)</th>
+              <th>Theta (₹)</th>
+              <th>IV %</th>
+              <th>Volume</th>
               <th>OI Chg</th>
               <th>OI (Lots)</th>
             </tr>
@@ -466,12 +673,96 @@
   <!-- ======================================================== TAB: JOURNAL -->
   <div class="tab-content" id="tab-journal">
     <div class="card">
-      <h2>Trade Journal &amp; Session Review</h2>
-      <p class="desc">Log, review, and filter your trades. Computes realized P&amp;L, win rate, and behavioral adherence.</p>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:6px">
+        <div>
+          <h2 style="margin:0 0 4px">Monthly Trading Journal &amp; Day Logs</h2>
+          <p class="desc" style="margin:0">Persistent records structured by month and session day in Asia/Kolkata timezone. Monthly summaries roll over idempotently without deleting daily trade history.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <label style="font-size:12px;color:var(--muted);font-weight:700">Month:</label>
+          <select id="jMonthSelector" style="font-size:12.5px;padding:6px 12px;border-radius:8px;font-weight:700;background:#0d121c;border:1px solid var(--line);color:#fff">
+            <option value="CURRENT">Current Month</option>
+          </select>
+        </div>
+      </div>
 
-      <!-- New Trade Entry Form -->
-      <div style="background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px">
-        <h3 style="margin:0 0 10px;font-size:13px;font-weight:700">Add Trade Record</h3>
+      <!-- Monthly Summary Telemetry -->
+      <div class="grid4" style="margin-top:14px;margin-bottom:14px">
+        <div class="stat-card">
+          <span class="stat-lbl">Monthly Trades</span>
+          <span class="stat-val" id="jTotalTrades">0</span>
+          <span class="stat-sub" id="jWinLossRatio">0 Wins · 0 Losses</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">Win Rate</span>
+          <span class="stat-val" id="jWinRate">0%</span>
+          <span class="stat-sub" id="jProfitFactorSub">Profit Factor: —</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">Realised P&amp;L (Net)</span>
+          <span class="stat-val" id="jNetPnl">₹0.00</span>
+          <span class="stat-sub" id="jGrossPnlSub">Gross: ₹0.00 · Charges: ₹0.00</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">Best / Worst Session</span>
+          <span class="stat-val" id="jBestDay" style="font-size:15px;color:#34d399">—</span>
+          <span class="stat-sub" id="jWorstDay" style="color:#f87171">Worst: —</span>
+        </div>
+      </div>
+
+      <!-- Export Console -->
+      <div style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-size:11.5px;font-weight:750;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Export Scope:</span>
+            <select id="jExportScope" style="font-size:12px;padding:5px 8px;border-radius:6px">
+              <option value="month">Selected Month</option>
+              <option value="day">Today / Selected Date</option>
+              <option value="all">All Retained History</option>
+              <option value="custom">Custom Date Range</option>
+            </select>
+            <span id="jCustomRangeFields" style="display:none;align-items:center;gap:6px">
+              <input type="date" id="jExportStart" style="font-size:11.5px;padding:4px 6px">
+              <span style="color:var(--dim)">to</span>
+              <input type="date" id="jExportEnd" style="font-size:11.5px;padding:4px 6px">
+            </span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button id="jExportCsv" class="ghost" style="padding:5px 10px;font-size:11.5px">Export CSV (Formula-Safe)</button>
+            <button id="jExportJson" class="ghost" style="padding:5px 10px;font-size:11.5px">Export JSON</button>
+            <button id="jPrintReport" class="ghost" style="padding:5px 10px;font-size:11.5px">Print Report</button>
+          </div>
+        </div>
+        <div id="jExportConfirmation" style="display:none;font-size:11.5px;color:#6ee7b7;margin-top:8px"></div>
+      </div>
+
+      <!-- Search & Filters -->
+      <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
+        <input type="search" id="jSearch" placeholder="Search symbol, setup, notes…" style="max-width:240px;font-size:12px;padding:6px 10px">
+        <select id="jFilterOutcome" style="font-size:12px;padding:6px 8px">
+          <option value="ALL">All Outcomes</option>
+          <option value="WIN">Wins Only</option>
+          <option value="LOSS">Losses Only</option>
+          <option value="BE">Breakeven Only</option>
+        </select>
+        <select id="jFilterSide" style="font-size:12px;padding:6px 8px">
+          <option value="ALL">All Sides</option>
+          <option value="BUY">BUY (Long)</option>
+          <option value="SELL">SELL (Short)</option>
+        </select>
+        <select id="jFilterProv" style="font-size:12px;padding:6px 8px">
+          <option value="ALL">All Sources</option>
+          <option value="broker">Broker-verified</option>
+          <option value="manual">Manual log</option>
+        </select>
+        <div class="spacer"></div>
+        <button id="jToggleDays" class="ghost" style="font-size:11.5px">Collapse All Days</button>
+        <button id="jOpenAddForm" class="primary" style="font-size:11.5px">+ Add Trade</button>
+      </div>
+
+      <!-- Add Trade Record Form Drawer -->
+      <div id="jAddFormDrawer" style="display:none;background:rgba(0,0,0,.35);border:1px solid var(--line-strong);border-radius:12px;padding:14px;margin-bottom:16px">
+        <h3 style="margin:0 0 10px;font-size:13px;font-weight:700">Add Manual Trade Record</h3>
         <div class="grid4">
           <label class="field">
             <span class="k">Symbol</span>
@@ -499,6 +790,10 @@
             <input type="number" id="jQty" step="1" placeholder="75">
           </label>
           <label class="field">
+            <span class="k">Brokerage &amp; Charges (₹)</span>
+            <input type="number" id="jCharges" step="1" placeholder="40">
+          </label>
+          <label class="field">
             <span class="k">Setup Type</span>
             <select id="jSetup">
               <option value="Breakout">Breakout</option>
@@ -510,72 +805,19 @@
             </select>
           </label>
           <label class="field">
-            <span class="k">Notes</span>
+            <span class="k">Trade Notes</span>
             <input type="text" id="jNotes" placeholder="Reason for trade, discipline notes">
           </label>
-          <div style="display:flex;align-items:flex-end">
-            <button id="jAddBtn" class="primary" style="width:100%">Save Trade</button>
-          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px">
+          <button id="jCancelAddBtn" class="ghost" style="padding:6px 14px">Cancel</button>
+          <button id="jAddBtn" class="primary" style="padding:6px 18px">Save Trade</button>
         </div>
       </div>
 
-      <!-- Journal Summary Telemetry -->
-      <div class="grid4" style="margin-bottom:14px">
-        <div class="stat-card">
-          <span class="stat-lbl">Total Journal Trades</span>
-          <span class="stat-val" id="jTotalTrades">0</span>
-          <span class="stat-sub" id="jWinLossRatio">0 Wins · 0 Losses</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-lbl">Win Rate</span>
-          <span class="stat-val" id="jWinRate">0%</span>
-          <span class="stat-sub">Closed setups</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-lbl">Net Realised P&amp;L</span>
-          <span class="stat-val" id="jNetPnl">₹0.00</span>
-          <span class="stat-sub">Sum of logged trades</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-lbl">Profit Factor</span>
-          <span class="stat-val" id="jProfitFactor">—</span>
-          <span class="stat-sub">Gross win / Gross loss</span>
-        </div>
-      </div>
-
-      <!-- Filter Bar -->
-      <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
-        <input type="search" id="jSearch" placeholder="Search by symbol, setup, or notes…" style="max-width:300px">
-        <select id="jFilterOutcome" style="max-width:160px">
-          <option value="ALL">All Outcomes</option>
-          <option value="WIN">Wins Only</option>
-          <option value="LOSS">Losses Only</option>
-        </select>
-        <div class="spacer"></div>
-        <button id="jExportCsv" class="ghost">Export CSV</button>
-        <button id="jExportJson" class="ghost">Export JSON</button>
-        <button id="jClearAll" class="danger" style="font-size:11px">Clear Journal</button>
-      </div>
-
-      <!-- Journal Table -->
-      <div style="overflow-x:auto">
-        <table class="styled-table" id="journalTable">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Symbol</th>
-              <th>Side</th>
-              <th>Qty</th>
-              <th>Entry</th>
-              <th>Exit</th>
-              <th>P&amp;L (₹)</th>
-              <th>Setup</th>
-              <th>Notes</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody id="journalTbody"></tbody>
-        </table>
+      <!-- Grouped Daily Calendar / List View Container -->
+      <div id="jDaysContainer">
+        <div style="text-align:center;color:var(--dim);padding:32px">Loading journal records…</div>
       </div>
     </div>
   </div>
@@ -589,49 +831,53 @@
       <div class="brokers-grid">
         <div class="broker-card">
           <div><div class="b-info">Zerodha Kite</div><div class="b-host">kite.zerodha.com</div></div>
-          <span class="badge pro">Active</span>
+          <span class="badge pro" title="DOM-level order submission suppression and discipline overlay verified">Discipline Overlay &amp; Tested Restriction</span>
         </div>
         <div class="broker-card">
           <div><div class="b-info">Upstox</div><div class="b-host">upstox.com</div></div>
-          <span class="badge pro">Active</span>
+          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
         </div>
         <div class="broker-card">
           <div><div class="b-info">Angel One</div><div class="b-host">angelone.in</div></div>
-          <span class="badge pro">Active</span>
+          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
         </div>
         <div class="broker-card">
           <div><div class="b-info">Dhan</div><div class="b-host">dhan.co</div></div>
-          <span class="badge pro">Active</span>
+          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
         </div>
         <div class="broker-card">
           <div><div class="b-info">5paisa</div><div class="b-host">5paisa.com</div></div>
-          <span class="badge pro">Active</span>
+          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
         </div>
         <div class="broker-card">
           <div><div class="b-info">Fyers Web</div><div class="b-host">trade.fyers.in</div></div>
-          <span class="badge pro">Active</span>
+          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
         </div>
         <div class="broker-card">
           <div><div class="b-info">Groww</div><div class="b-host">groww.in</div></div>
-          <span class="badge pro">Active</span>
+          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
         </div>
         <div class="broker-card">
           <div><div class="b-info">Shoonya</div><div class="b-host">shoonya.com</div></div>
-          <span class="badge pro">Active</span>
+          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
         </div>
         <div class="broker-card">
           <div><div class="b-info">Kotak Neo</div><div class="b-host">kotakneo.com</div></div>
-          <span class="badge pro">Active</span>
+          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
+        </div>
+        <div class="broker-card">
+          <div><div class="b-info">Sahi Web</div><div class="b-host">web.sahi.com</div></div>
+          <span class="badge pro" style="background:rgba(59,130,246,0.18);color:#60a5fa" title="Order monitoring active; direct order-button blocking unavailable on Sahi">Monitoring Only</span>
         </div>
         <div class="broker-card">
           <div><div class="b-info">TradingView</div><div class="b-host">tradingview.com</div></div>
-          <span class="badge free">Chart Mode</span>
+          <span class="badge free" title="Chart restriction; order entry elsewhere unaffected">Charting Only</span>
         </div>
       </div>
 
       <div class="callout green" style="margin-top:16px">
-        🛡️ <b>Chart Mode &amp; Emergency Exits Policy:</b>
-        When the session lock triggers, TradingView and charting subframes are never blocked. This ensures you can always inspect market structure and technical levels. Furthermore, broker buttons for closing open positions (Exit, Close, Square Off) remain clickable so you can safely manage risk.
+        🛡️ <b>Discipline Lock &amp; Risk-Reduction Policy:</b>
+        When a discipline lock activates, an opaque full-screen lock covers the trading terminal to protect you from impulsive overtrading. Broker enforcement applies directly inside Chrome on this computer; mobile apps and other devices remain unconstrained. If you need to manage or close an open emergency position, follow your broker’s standard phone, web, or mobile exit procedures.
       </div>
 
       <label class="field" style="margin-top:14px">
@@ -645,82 +891,251 @@
   <!-- ======================================================== TAB: LICENSE -->
   <div class="tab-content" id="tab-license">
     <div class="card">
-      <h2>License &amp; Plan Activation</h2>
-      <p class="desc">Activate your Trade Lock license key to enable Pro risk limits, automatic order book detection, and AI market intelligence.</p>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+        <div>
+          <h2>Plans &amp; Subscription</h2>
+          <p class="desc">Upgrade Trade Lock to unlock advanced risk rules, automatic broker order detection, and AI market analytics.</p>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button id="licRestoreBtn" class="ghost" style="font-size:12px;padding:6px 12px">🔄 Sync / Restore Subscription</button>
+        </div>
+      </div>
 
-      <div class="callout blue" id="licStatus">Checking license…</div>
+      <!-- Current Subscription Status -->
+      <div class="callout blue" id="licStatus" style="margin-top:12px">Checking subscription status…</div>
 
-      <div class="grid2">
-        <label class="field">
-          <span class="k">License key</span>
-          <input type="text" id="licKey" placeholder="TL-XXXXX-XXXXX-XXXXX-XXXXX" autocomplete="off" spellcheck="false">
-        </label>
-        <label class="field">
-          <span class="k">License server URL</span>
-          <input type="text" id="licApi" placeholder="http://localhost:3000">
-          <span class="h">Defaults to the local/deployed Trade Lock backend server.</span>
+      <!-- License Key Activation Bar -->
+      <div style="background:rgba(0,0,0,0.25);border:1px solid var(--line-strong);border-radius:12px;padding:14px;margin:14px 0">
+        <h3 style="margin:0 0 8px;font-size:13px;font-weight:700">Activate or Update License Key</h3>
+        <div style="margin-bottom:6px">
+          <label class="field">
+            <span class="k">License key</span>
+            <input type="text" id="licKey" placeholder="TL-XXXXX-XXXXX-XXXXX-XXXXX" autocomplete="off" spellcheck="false">
+            <span class="h">Verified server-side with cryptographic signature and device-bound token.</span>
+          </label>
+        </div>
+        <div class="actions" style="margin-top:10px">
+          <button id="licActivate" class="primary" style="font-size:12px;padding:6px 16px">Activate Key</button>
+          <span class="kv" id="licNote" style="font-size:12px"></span>
+        </div>
+        <details style="margin-top:12px;font-size:11.5px;color:var(--muted)">
+          <summary style="cursor:pointer;color:#94a3b8;font-weight:600">⚙️ Advanced / Developer Server Override (Optional)</summary>
+          <div style="margin-top:8px;padding:10px;background:rgba(0,0,0,0.3);border:1px solid var(--line);border-radius:8px">
+            <label class="field" style="margin:0">
+              <span class="k">License Server API URL</span>
+              <input type="text" id="licApi" placeholder="https://trade-lock-app.netlify.app">
+              <span class="h">Default: Production HTTPS endpoint (https://trade-lock-app.netlify.app). Local dev: http://localhost:3000.</span>
+            </label>
+          </div>
+        </details>
+      </div>
+
+      <!-- Checkout Email Binding -->
+      <div style="background:rgba(255,255,255,0.03);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px">
+        <label class="field" style="margin:0">
+          <span class="k">Your Email Address (for license fulfillment, key delivery &amp; restoring subscriptions)</span>
+          <div style="display:flex;gap:10px;margin-top:4px">
+            <input type="email" id="checkoutEmail" placeholder="trader@domain.com" style="flex:1" autocomplete="email">
+            <button id="saveEmailBtn" class="ghost" style="font-size:12px;padding:6px 14px">Save Email</button>
+          </div>
+          <span class="h">Used strictly to verify and deliver your cryptographically signed license key.</span>
         </label>
       </div>
 
-      <div class="actions" style="margin-top:14px">
-        <button id="licActivate" class="primary">Activate Key</button>
-        <button id="licBuy" class="ghost">View Pricing…</button>
-        <span class="kv" id="licNote"></span>
+      <!-- Checkout Feedback Notification -->
+      <div id="checkoutNotice" style="display:none;padding:12px;border-radius:8px;margin-bottom:16px;font-size:12.5px"></div>
+
+      <!-- 3-Plan Catalog with Monthly / Yearly Toggle -->
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin:24px 0 10px;">
+        <div>
+          <h3 style="margin:0;font-size:15px;font-weight:750">Choose Your Plan</h3>
+          <p style="margin:3px 0 0;font-size:12px;color:var(--muted)">Transparent risk discipline pricing · Switch between Monthly and Yearly (Pro Monthly, Pro Yearly, Pro+ AI Monthly, Pro+ AI Yearly)</p>
+        </div>
+        <!-- Billing Cycle Toggle Switch -->
+        <div style="display:inline-flex;align-items:center;gap:10px;background:rgba(0,0,0,0.35);padding:5px 12px;border-radius:99px;border:1px solid var(--line)">
+          <span id="billingMonthlyLabel" style="font-size:12px;font-weight:700;color:#fff;cursor:pointer">Monthly</span>
+          <button id="billingCycleToggle" type="button" role="switch" aria-checked="false" aria-label="Toggle Monthly and Yearly billing" style="position:relative;width:44px;height:24px;background:rgba(255,255,255,0.15);border:1px solid var(--line);border-radius:99px;cursor:pointer;padding:0;transition:all .2s;outline:none">
+            <span id="billingCycleKnob" style="position:absolute;top:2px;left:3px;width:18px;height:18px;background:#3b82f6;border-radius:50%;transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></span>
+          </button>
+          <span id="billingYearlyLabel" style="font-size:12px;font-weight:500;color:var(--dim);cursor:pointer;display:inline-flex;align-items:center;gap:5px">
+            Yearly
+            <span class="badge pro" style="font-size:9.5px;padding:1px 6px;background:rgba(16,185,129,0.2);color:#34d399;border:1px solid rgba(16,185,129,0.35);border-radius:99px">Save up to 37%</span>
+          </span>
+        </div>
       </div>
 
-      <!-- Pricing Comparison Bento -->
-      <h3 style="margin:22px 0 6px;font-size:14px;font-weight:750">Available Plans</h3>
-      <div class="plans-grid">
-        <div class="plan-card">
+      <div class="plans-grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px;">
+        <!-- 1. Free -->
+        <div class="plan-card" id="cardFree">
           <div class="p-name">Free</div>
           <div class="p-price">₹0</div>
-          <div class="p-sub">Essential discipline</div>
+          <div class="p-sub">Essential trading discipline · Free forever</div>
           <ul>
-            <li>Trade-count limit</li>
+            <li>Trade-count limit rule</li>
             <li>Manual trade logging</li>
-            <li>Session lock overlay</li>
-            <li>Chart Mode preserved</li>
+            <li>Opaque full-screen discipline lock</li>
+            <li>Full monthly trade journal</li>
+            <li>CSV &amp; JSON data export (no paywall)</li>
+            <li>1 browser device</li>
           </ul>
+          <div style="margin-top:auto;padding-top:14px">
+            <button class="ghost plan-select-btn" data-plan="free" style="width:100%;font-size:12px" disabled>Current Basic Plan</button>
+          </div>
         </div>
-        <div class="plan-card featured">
-          <div class="p-name">Pro</div>
-          <div class="p-price">₹199 <span style="font-size:12px;font-weight:400">/ mo</span></div>
-          <div class="p-sub">Complete risk rules</div>
+
+        <!-- 2. Pro (Featured / Recommended) -->
+        <div class="plan-card featured" id="cardPro">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="p-name" id="proCardName">Pro Monthly</div>
+            <span class="badge pro" style="font-size:10px;padding:2px 6px">Recommended</span>
+          </div>
+          <div class="p-price" id="proCardPrice">₹199 <span style="font-size:12px;font-weight:400">/ mo</span></div>
+          <div class="p-sub" id="proCardSub">Complete risk rules suite · Billed monthly</div>
           <ul>
-            <li>Max loss &amp; streak rules</li>
-            <li>Auto-detect broker fills</li>
-            <li>Capital budget derived limits</li>
-            <li>CSV &amp; JSON trade export</li>
+            <li>All Free features included</li>
+            <li>Max daily loss limit &amp; protection</li>
+            <li>Max loss streak limit</li>
+            <li>Total capital &amp; risk budget</li>
+            <li>Auto-detect broker fills &amp; positions</li>
             <li>Up to 3 devices</li>
           </ul>
+          <div style="margin-top:auto;padding-top:14px">
+            <button class="primary plan-select-btn" data-plan="pro_monthly" id="proCardBtn" style="width:100%;font-size:12px;background:#3b82f6">Upgrade to Pro</button>
+          </div>
         </div>
-        <div class="plan-card">
-          <div class="p-name">Pro+ AI</div>
-          <div class="p-price">₹399 <span style="font-size:12px;font-weight:400">/ mo</span></div>
-          <div class="p-sub">Intelligence &amp; Options</div>
+
+        <!-- 3. Pro+ AI -->
+        <div class="plan-card" id="cardProAi">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="p-name" id="proAiCardName">Pro+ AI Monthly</div>
+            <span class="badge pro" id="proAiBadge" style="font-size:10px;padding:2px 6px;display:none">Save 16%</span>
+          </div>
+          <div class="p-price" id="proAiCardPrice">₹399 <span style="font-size:12px;font-weight:400">/ mo</span></div>
+          <div class="p-sub" id="proAiCardSub">Discipline + AI intelligence · Billed monthly</div>
           <ul>
-            <li>All Pro risk rules</li>
-            <li>AI Market Assistant</li>
+            <li>All Pro risk &amp; broker features</li>
+            <li>AI Market Assistant coaching</li>
             <li>S/R, FVGs, Demand &amp; Supply</li>
-            <li>NSE Options chain &amp; Greeks</li>
-            <li>Daily behavioral coach report</li>
+            <li>NSE Options chain &amp; Greeks (simulated demo)</li>
+            <li>Daily AI behavioral coach report</li>
+            <li>Up to 5 devices</li>
           </ul>
+          <div style="margin-top:auto;padding-top:14px">
+            <button class="primary plan-select-btn" data-plan="pro_plus_ai_monthly" id="proAiCardBtn" style="width:100%;font-size:12px">Get Pro+ AI</button>
+          </div>
         </div>
-        <div class="plan-card">
-          <div class="p-name">Pro Yearly</div>
-          <div class="p-price">₹1,499 <span style="font-size:12px;font-weight:400">/ yr</span></div>
-          <div class="p-sub">Best value (₹125/mo)</div>
-          <ul>
-            <li>Full Pro feature suite</li>
-            <li>12 months continuous access</li>
-            <li>Priority updates</li>
-          </ul>
-        </div>
+      </div>
+
+      <!-- Legacy Founder Lifetime Support Notice (Hidden from public sales cards) -->
+      <div style="margin-top:16px;padding:12px 16px;background:rgba(255,255,255,0.03);border:1px dashed var(--line);border-radius:10px;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--dim)">
+        <span>Already hold an existing <b>Founder Lifetime</b> or early-backer license? All lifetime entitlements remain permanently honored. Enter your license key above to restore.</span>
+        <span class="badge" style="font-size:10px;background:rgba(255,255,255,0.08);color:var(--muted)">Perpetual Backer</span>
+      </div>
+
+      <!-- Feature Comparison Matrix -->
+      <h3 style="margin:28px 0 12px;font-size:14.5px;font-weight:750">Plan Comparison Matrix</h3>
+      <div style="overflow-x:auto">
+        <table class="comparison-table">
+          <thead>
+            <tr>
+              <th style="width:30%">Capability</th>
+              <th style="width:20%">Free (₹0)</th>
+              <th style="width:25%">Pro (₹199/mo · ₹1,499/yr)</th>
+              <th style="width:25%">Pro+ AI (₹399/mo · ₹3,999/yr)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Core discipline trade-count lock</td>
+              <td><span class="feat-yes">✓ Included</span></td>
+              <td><span class="feat-yes">✓ Included</span></td>
+              <td><span class="feat-yes">✓ Included</span></td>
+            </tr>
+            <tr>
+              <td>Opaque full-screen lock overlay</td>
+              <td><span class="feat-yes">✓ Included</span></td>
+              <td><span class="feat-yes">✓ Included</span></td>
+              <td><span class="feat-yes">✓ Included</span></td>
+            </tr>
+            <tr>
+              <td>Advanced risk rules (Loss, Streak, Budget)</td>
+              <td><span class="feat-no">— Pro only</span></td>
+              <td><span class="feat-yes">✓ Full Suite</span></td>
+              <td><span class="feat-yes">✓ Full Suite</span></td>
+            </tr>
+            <tr>
+              <td>Automatic broker fill detection</td>
+              <td><span class="feat-no">— Pro only</span></td>
+              <td><span class="feat-yes">✓ Supported Brokers</span></td>
+              <td><span class="feat-yes">✓ Supported Brokers</span></td>
+            </tr>
+            <tr>
+              <td>Monthly trading journal &amp; daily breakdown</td>
+              <td><span class="feat-yes">✓ Included</span></td>
+              <td><span class="feat-yes">✓ Included</span></td>
+              <td><span class="feat-yes">✓ Included</span></td>
+            </tr>
+            <tr>
+              <td>CSV &amp; JSON exports (formula-safe)</td>
+              <td><span class="feat-yes">✓ Unlimited</span></td>
+              <td><span class="feat-yes">✓ Unlimited</span></td>
+              <td><span class="feat-yes">✓ Unlimited</span></td>
+            </tr>
+            <tr>
+              <td>Technical structure &amp; supply/demand zones</td>
+              <td><span class="feat-no">—</span></td>
+              <td><span class="feat-no">—</span></td>
+              <td><span class="feat-yes">✓ Real-time calculation</span></td>
+            </tr>
+            <tr>
+              <td>NSE Options Chain &amp; PCR / Max Pain</td>
+              <td><span class="feat-no">—</span></td>
+              <td><span class="feat-no">—</span></td>
+              <td><span class="feat-yes">✓ Included</span></td>
+            </tr>
+            <tr>
+              <td>AI Discipline Coach daily audit</td>
+              <td><span class="feat-no">—</span></td>
+              <td><span class="feat-no">—</span></td>
+              <td><span class="feat-yes">✓ Included</span></td>
+            </tr>
+            <tr>
+              <td>Supported Devices</td>
+              <td>1 device</td>
+              <td>Up to 3 devices</td>
+              <td>Up to 5 devices</td>
+            </tr>
+            <tr>
+              <td>Data Retention</td>
+              <td>Permanent local retention</td>
+              <td>Permanent local retention</td>
+              <td>Permanent local retention</td>
+            </tr>
+            <tr>
+              <td>Cancellation &amp; Refund</td>
+              <td>N/A</td>
+              <td>Cancel anytime; active until period end</td>
+              <td>Cancel anytime; active until period end</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Fair Enforcement & Security Notice -->
+      <div class="callout green" style="margin-top:20px">
+        🛡️ <b>Fair Enforcement &amp; Security Policy:</b>
+        <ul style="margin:6px 0 0;padding-left:18px;line-height:1.6">
+          <li><b>Safety is Never Held Hostage:</b> Core safety locks and self-imposed session lockouts function unconditionally on every plan, regardless of subscription status.</li>
+          <li><b>Your Journal History is Permanent:</b> Subscription expiry will <i>never</i> delete, truncate, or restrict your trade journal records or exports.</li>
+          <li><b>Zero Payment Secrets in Extension:</b> We never ask for or store debit/credit card credentials. Subscriptions and checkouts are securely authorized via backend Razorpay signature verification.</li>
+          <li><b>Manage &amp; Cancel:</b> Recurring subscriptions can be managed or cancelled anytime with zero penalty.</li>
+        </ul>
       </div>
     </div>
   </div>
 
-</div>
+  </div> <!-- /.main-pane -->
+</div> <!-- /.wrap -->
 
 <div class="saved" id="savedToast">Saved</div>
 
