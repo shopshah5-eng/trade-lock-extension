@@ -8,7 +8,7 @@
  * overlay injection, the auto-detect poll, the storage round-trip, the input
  * blocking and the tamper watchdog.
  *
- * Run: node test/e2e.test.js        (needs `npm i --no-save puppeteer`)
+ * Run: npm ci && CHROME_PATH=/path/to/chrome npm run test:e2e
  */
 'use strict';
 
@@ -16,29 +16,20 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-let puppeteer;
-try {
-  puppeteer = require('puppeteer');
-} catch (e) {
-  try {
-    puppeteer = require('puppeteer-core');
-  } catch (e2) {
-    console.log('Skipping e2e: puppeteer is not installed (run `npm i -D puppeteer` to run headless browser tests).');
-    process.exit(0);
-  }
-}
-
-const CHROME_CANDIDATES = [
-  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-];
-const chromeExecutable = process.env.PUPPETEER_EXECUTABLE_PATH || CHROME_CANDIDATES.find(p => fs.existsSync(p));
+const { loadPuppeteer, chromeExecutable } = require('./browser-env');
+const puppeteer = loadPuppeteer();
+const TLMarket = require('../lib/market');
+const mockData = require('../server/mockData');
+const ai = require('../server/ai');
 
 const SRC = path.resolve(__dirname, '..');
 const PORT = 8123;
 const URL_PAGE = 'http://127.0.0.1:' + PORT + '/demo/fake-broker.html';
 const SHOTS = path.join(SRC, 'screenshots');
+let browser;
+let server;
+let tmp;
+let userDir;
 
 let failures = 0;
 function check(label, ok, detail) {
@@ -53,13 +44,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function prepareExtension(dir) {
   fs.cpSync(SRC, dir, {
     recursive: true,
-    filter: (p) => !/[\\/](node_modules|screenshots|test|\.git)$/.test(p)
+    filter: (p) => !/[\\/](node_modules|screenshots|test|server|dist|\.git)$/.test(p)
   });
   // E2E exercises the trading lock itself, not paywall enforcement. In this
   // temporary copy, grant Pro tier so autoDetect and rules are active.
   const rp = path.join(dir, 'lib', 'rules.js');
   fs.writeFileSync(rp, fs.readFileSync(rp, 'utf8')
     .replace('function isPro(license, now) {', 'function isPro(license, now) { return true; // e2e test override\n')
+    .replace('function isProPlus(license, now) {', 'function isProPlus(license, now) { return true; // e2e test override\n')
+    .replace('https://trade-lock-app.netlify.app', 'http://127.0.0.1:' + PORT)
     .replace("'kite.zerodha.com',", "'127.0.0.1', 'localhost', 'kite.zerodha.com',"));
 
   const bp = path.join(dir, 'background.js');
@@ -69,6 +62,7 @@ function prepareExtension(dir) {
   const mp = path.join(dir, 'manifest.json');
   const m = JSON.parse(fs.readFileSync(mp, 'utf8'));
   m.content_scripts[0].matches.push('http://127.0.0.1/*', 'http://localhost/*');
+  m.host_permissions.push('http://127.0.0.1/*', 'http://localhost/*');
   m.web_accessible_resources[0].matches.push('http://127.0.0.1/*', 'http://localhost/*');
   fs.writeFileSync(mp, JSON.stringify(m, null, 2));
   return dir;
@@ -81,6 +75,14 @@ function serve(root) {
     if (p === '/favicon.ico') {
       res.writeHead(204);
       return res.end();
+    }
+    if (p === '/api/market/demo') {
+      const symbol = new URL(req.url, 'http://127.0.0.1').searchParams.get('symbol') || 'NIFTY';
+      const candles = mockData.demoCandles(symbol);
+      const analysis = TLMarket.analyze(candles, { symbol, timeframe: '5m',
+        optionChain: mockData.demoOptionChain(symbol, candles[candles.length - 1].c), daysToExpiry: 2 });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ demo: true, symbol, analysis, brief: { text: ai.localBrief(analysis), source: 'local' } }));
     }
     if (p === '/' || !p) p = 'demo/fake-broker.html';
     const cleanRel = p.replace(/^[/\\]+/, '');
@@ -99,11 +101,11 @@ function serve(root) {
 // ------------------------------------------------------------------ main ----
 
 (async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tl-ext-'));
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tl-ext-'));
   const extDir = prepareExtension(tmp);
   fs.mkdirSync(SHOTS, { recursive: true });
-  const server = await serve(SRC);
-  const userDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tl-chrome-user-'));
+  server = await serve(SRC);
+  userDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tl-chrome-user-'));
   const defaultDir = path.join(userDir, 'Default');
   fs.mkdirSync(defaultDir, { recursive: true });
   fs.writeFileSync(path.join(defaultDir, 'Preferences'), JSON.stringify({
@@ -111,7 +113,7 @@ function serve(root) {
   }));
   const normExtDir = extDir.replace(/\\/g, '/');
   const launchOpts = {
-    headless: false,
+    headless: process.env.HEADED === '1' ? false : 'new',
     ignoreDefaultArgs: ['--disable-extensions'],
     args: [
       '--no-sandbox',
@@ -124,8 +126,8 @@ function serve(root) {
       '--load-extension=' + normExtDir
     ]
   };
-  if (chromeExecutable) launchOpts.executablePath = chromeExecutable;
-  const browser = await puppeteer.launch(launchOpts);
+  launchOpts.executablePath = chromeExecutable(puppeteer);
+  browser = await puppeteer.launch(launchOpts);
 
   console.log('Initial targets:', browser.targets().map(t => ({ type: t.type(), url: t.url() })));
   let initialExtTarget = browser.targets().find((t) => t.url().startsWith('chrome-extension://'));
@@ -229,6 +231,13 @@ function serve(root) {
   check('lock reason is maxTradesPerDay', s.tlState.lock.reason === 'maxTradesPerDay', s.tlState.lock.reason);
   check('lock has a release time in the future', s.tlState.lock.until > Date.now(),
     new Date(s.tlState.lock.until).toISOString());
+  const ruleLockProtected = await sw.evaluate(() => new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: 'TL_LOCK_NOW' }, () => {
+      chrome.storage.local.get('tlState', (result) => resolve(result.tlState.lock));
+    });
+  }));
+  check('manual-lock message cannot convert an automatic rule lock',
+    ruleLockProtected.active && !ruleLockProtected.manual && ruleLockProtected.reason === 'maxTradesPerDay');
 
   // ------------------------------------------------- 4. overlay is up ----
   console.log('\n4. The lock overlay covers the screen');
@@ -329,8 +338,19 @@ function serve(root) {
   console.log('       screenshot -> screenshots/hud.png');
 
   await browser.close();
-  server.close();
+  browser = null;
+  await new Promise(resolve => server.close(resolve));
+  server = null;
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(userDir, { recursive: true, force: true });
 
   console.log('\n' + (failures === 0 ? 'E2E: ALL CHECKS PASSED' : 'E2E: ' + failures + ' CHECK(S) FAILED'));
-  process.exit(failures === 0 ? 0 : 1);
-})().catch((e) => { console.error('e2e crashed:', e); process.exit(1); });
+  process.exitCode = failures === 0 ? 0 : 1;
+})().catch(async (e) => {
+  console.error('e2e crashed:', e);
+  if (browser) await browser.close().catch(() => {});
+  if (server) await new Promise(resolve => server.close(resolve));
+  if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+  if (userDir) fs.rmSync(userDir, { recursive: true, force: true });
+  process.exitCode = 1;
+});

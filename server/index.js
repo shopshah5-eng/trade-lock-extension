@@ -18,7 +18,8 @@ require('./env').loadEnvFile(); // server/.env, if present
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { PLANS, getPlan } = require('./plans');
+const crypto = require('node:crypto');
+const { PLANS, getPlan, canonicalPlanId } = require('./plans');
 const TLMarket = fs.existsSync(path.join(__dirname, 'lib', 'market.js'))
   ? require('./lib/market')
   : require('../lib/market');
@@ -30,6 +31,7 @@ const FYERS_APP_ID = process.env.FYERS_APP_ID || '';
 const FYERS_SECRET = process.env.FYERS_SECRET || '';
 const FYERS_REDIRECT_URL = process.env.FYERS_REDIRECT_URL || '';
 const FYERS_ACCESS_TOKEN = process.env.FYERS_ACCESS_TOKEN || '';
+const FYERS_ADMIN_TOKEN = process.env.FYERS_ADMIN_TOKEN || '';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
@@ -42,10 +44,20 @@ const PORT = Number(process.env.PORT || 8787);
 const KEY_ID = process.env.RAZORPAY_KEY_ID || '';
 const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
 const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || '';
-const DEMO_MODE = process.env.TL_DEMO_MODE === '1'; // issues test keys w/o payment
-const MAX_DEVICES = 3;
+const DEMO_MODE = process.env.TL_DEMO_MODE === '1' && process.env.NODE_ENV !== 'production';
+const IS_SERVERLESS = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY || process.env.VERCEL);
+const PROVIDER_TIMEOUT_MS = Number(process.env.PROVIDER_TIMEOUT_MS || 15000);
 
 const razorpayConfigured = () => Boolean(KEY_ID && KEY_SECRET);
+const demoCheckoutEnabled = () => DEMO_MODE && !razorpayConfigured();
+const paymentPersistenceReady = () => demoCheckoutEnabled() || supabase.isConfigured() || !IS_SERVERLESS;
+
+async function providerFetch(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
+  try { return await fetch(url, { ...options, signal: controller.signal }); }
+  finally { clearTimeout(timer); }
+}
 
 // ------------------------------------------------------------ helpers ----
 
@@ -78,12 +90,18 @@ function json(res, code, obj, req) {
 
 const rateLimitMap = new Map();
 function isRateLimited(req, limit = 60, windowMs = 60000) {
-  const ip = (req.headers && (req.headers['x-forwarded-for'] || req.socket?.remoteAddress)) || '127.0.0.1';
+  const forwarded = req.headers && req.headers['x-forwarded-for'];
+  const ip = String(forwarded ? forwarded.split(',')[0].trim() : (req.socket?.remoteAddress || '127.0.0.1'));
+  const key = ip + ':' + limit + ':' + windowMs;
   const now = Date.now();
-  let entry = rateLimitMap.get(ip);
+  if (rateLimitMap.size > 10000) {
+    for (const [k, v] of rateLimitMap) if (now - v.start > windowMs) rateLimitMap.delete(k);
+    if (rateLimitMap.size > 10000) rateLimitMap.clear();
+  }
+  let entry = rateLimitMap.get(key);
   if (!entry || now - entry.start > windowMs) {
     entry = { count: 1, start: now };
-    rateLimitMap.set(ip, entry);
+    rateLimitMap.set(key, entry);
     return false;
   }
   entry.count++;
@@ -91,6 +109,10 @@ function isRateLimited(req, limit = 60, windowMs = 60000) {
 }
 
 function readBody(req) {
+  if (req.rawBody) {
+    if (Buffer.isBuffer(req.rawBody)) return Promise.resolve(req.rawBody);
+    if (typeof req.rawBody === 'string') return Promise.resolve(Buffer.from(req.rawBody, 'utf8'));
+  }
   if (req.body) {
     if (Buffer.isBuffer(req.body)) return Promise.resolve(req.body);
     if (typeof req.body === 'string') return Promise.resolve(Buffer.from(req.body, 'utf8'));
@@ -116,33 +138,147 @@ async function readJson(req) {
 // can re-show the key. The plain key is NEVER written to disk — only its hash.
 const issuedThisProcess = new Map();
 
-async function issueLicense(email, plan, paymentId, orderId) {
-  // One payment -> one key; re-verifying never mints a second one.
-  for (const lic of Object.values(store.licenses)) {
-    if (lic.paymentId && lic.paymentId === paymentId) {
-      return { lic, key: issuedThisProcess.get(paymentId) || null };
-    }
+function cacheLicense(lic) {
+  if (!lic) return null;
+  lic.devices = Array.isArray(lic.devices) ? lic.devices : [];
+  store.licenses[lic.hash] = lic;
+  return lic;
+}
+
+async function findExistingLicense(paymentId, orderId) {
+  if (supabase.isConfigured()) {
+    // Remote state is authoritative: a local cache must not resurrect a
+    // revoked/reissued license or skip a failed email-status synchronization.
+    let remote = orderId ? await supabase.fetchLicenseBy('order_id', orderId) : null;
+    if (!remote && paymentId) remote = await supabase.fetchLicenseBy('payment_id', paymentId);
+    return cacheLicense(remote);
   }
+  return Object.values(store.licenses).find(l =>
+    (orderId && l.orderId === orderId) || (paymentId && l.paymentId === paymentId)) || null;
+}
+
+async function persistOrder(orderId, order) {
+  store.orders[orderId] = order;
+  store.saveSync();
+  if (supabase.isConfigured()) {
+    const result = await supabase.syncOrder(orderId, order);
+    if (!result.ok) throw new Error('durable_order_persistence_failed: ' + (result.error || 'unknown error'));
+  }
+}
+
+async function issueLicense(email, planId, paymentId, orderId) {
+  const existing = await findExistingLicense(paymentId, orderId);
+  if (existing) {
+    const existingOrder = store.orders[orderId];
+    // Supabase fulfillment/order linkage is owned by the remote transaction.
+    // Never let a stale local order overwrite it through the generic upsert.
+    if (!supabase.isConfigured() && existingOrder &&
+        (existingOrder.status !== 'paid' || existingOrder.fulfillmentStatus !== 'FULFILLED')) {
+      Object.assign(existingOrder, { status: 'paid',
+        paymentId: existing.paymentId || existingOrder.paymentId || paymentId,
+        fulfillmentStatus: 'FULFILLED', fulfilledAt: Date.now() });
+      await persistOrder(orderId, existingOrder);
+    }
+    return { lic: existing, key: issuedThisProcess.get(paymentId) || null, existing: true };
+  }
+  const p = getPlan(planId);
+  if (!p || !p.amount) throw new Error('invalid_paid_plan');
+  const order = store.orders[orderId];
+  if (!order) throw new Error('unknown_order_during_fulfillment');
   const key = L.generateLicenseKey();
-  const p = getPlan(plan);
   const lic = {
     hash: L.hashKey(key), hint: L.keyHint(key), email: String(email || '').toLowerCase(),
-    plan, createdAt: Date.now(), expiresAt: L.expiryFor(p.durationDays),
+    plan: p.id, createdAt: Date.now(), expiresAt: L.expiryFor(p.durationDays),
     paymentId: paymentId || null, orderId: orderId || null,
     devices: [], revoked: false,
   };
-  store.licenses[lic.hash] = lic;
-  if (paymentId) issuedThisProcess.set(paymentId, key);
-  store.save();
+
   if (supabase.isConfigured()) {
-    await supabase.syncLicense(lic).catch(() => {});
+    const tx = await supabase.fulfillOrder(orderId, order, lic);
+    if (!tx.ok) throw new Error('durable_fulfillment_failed: ' + (tx.error || 'unknown error'));
+    if (tx.hash !== lic.hash) {
+      const concurrentlyIssued = await supabase.fetchLicense(tx.hash);
+      if (!concurrentlyIssued) throw new Error('fulfillment_hash_mismatch');
+      cacheLicense(concurrentlyIssued);
+      Object.assign(order, { status: 'paid',
+        paymentId: concurrentlyIssued.paymentId || order.paymentId || paymentId,
+        fulfillmentStatus: 'FULFILLED', fulfilledAt: Date.now() });
+      store.saveSync();
+      return { lic: concurrentlyIssued, key: issuedThisProcess.get(paymentId) || null, existing: true };
+    }
   }
-  return { lic, key };
+
+  cacheLicense(lic);
+  Object.assign(order, {
+    status: 'paid', paymentId, paidAt: order.paidAt || Date.now(),
+    fulfillmentStatus: 'FULFILLED', fulfilledAt: Date.now(),
+  });
+  store.saveSync();
+  issuedThisProcess.set(paymentId, key);
+  return { lic, key, existing: false };
+}
+
+async function sendIssuedLicenseEmail(issued, email, plan) {
+  if (!issued.key || !email) return { ok: false, skipped: true, reason: 'no_new_key' };
+  const result = await emailService.sendLicenseEmail({
+    to: email, licenseKey: issued.key, plan,
+    expiresAt: issued.lic.expiresAt, fetchImpl: providerFetch,
+  });
+  if (result.ok) {
+    const previousSentAt = issued.lic.emailSentAt || null;
+    issued.lic.emailSentAt = Date.now();
+    if (supabase.isConfigured()) {
+      const synced = await supabase.syncLicense(issued.lic);
+      if (!synced.ok) {
+        issued.lic.emailSentAt = previousSentAt;
+        store.saveSync();
+        console.error('[email] Provider accepted the key, but email status persistence failed.');
+        return { ...result, persistenceError: synced.error || 'email_status_sync_failed' };
+      }
+    }
+    store.saveSync();
+  }
+  return result;
+}
+
+async function requireProPlus(req) {
+  const auth = String(req.headers.authorization || '');
+  const key = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!key) return null;
+  const hash = L.hashKey(key);
+  const lic = supabase.isConfigured() ? await supabase.fetchLicense(hash) : store.licenses[hash];
+  if (!lic || !L.licenseStatus(lic).active) return null;
+  const plan = getPlan(lic.plan);
+  return plan && plan.proPlus ? lic : null;
+}
+
+function adminAuthorized(req) {
+  const supplied = String(req.headers['x-admin-token'] ||
+    (String(req.headers.authorization || '').startsWith('Bearer ') ? req.headers.authorization.slice(7).trim() : ''));
+  if (!FYERS_ADMIN_TOKEN || !supplied || supplied.length !== FYERS_ADMIN_TOKEN.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(FYERS_ADMIN_TOKEN));
+}
+
+function createFyersState() {
+  const payload = Date.now() + '.' + crypto.randomBytes(16).toString('hex');
+  const sig = crypto.createHmac('sha256', FYERS_SECRET).update(payload).digest('hex');
+  return Buffer.from(payload + '.' + sig).toString('base64url');
+}
+
+function validFyersState(state) {
+  try {
+    const decoded = Buffer.from(String(state || ''), 'base64url').toString('utf8');
+    const parts = decoded.split('.');
+    if (parts.length !== 3 || Date.now() - Number(parts[0]) > 10 * 60 * 1000 || Number(parts[0]) > Date.now() + 30000) return false;
+    const expected = crypto.createHmac('sha256', FYERS_SECRET).update(parts[0] + '.' + parts[1]).digest('hex');
+    if (expected.length !== parts[2].length) return false;
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(parts[2]));
+  } catch (e) { return false; }
 }
 
 async function razorpayCreateOrder(plan, email) {
   const auth = Buffer.from(KEY_ID + ':' + KEY_SECRET).toString('base64');
-  const r = await fetch('https://api.razorpay.com/v1/orders', {
+  const r = await providerFetch('https://api.razorpay.com/v1/orders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Basic ' + auth },
     body: JSON.stringify({
@@ -175,10 +311,10 @@ const server = http.createServer(async (req, res) => {
       return res.end(html);
     }
     if (req.method === 'GET' && url.pathname === '/api/plans') {
-      return json(res, 200, { plans: Object.values(PLANS) }, req);
+      return json(res, 200, { plans: Object.values(PLANS).filter(p => p.id !== 'free') }, req);
     }
     if (req.method === 'GET' && url.pathname === '/api/config') {
-      return json(res, 200, { keyId: KEY_ID, demoMode: DEMO_MODE, configured: razorpayConfigured(),
+      return json(res, 200, { keyId: KEY_ID, demoMode: demoCheckoutEnabled(), configured: razorpayConfigured(),
         fyersConfigured: Boolean(FYERS_APP_ID && FYERS_ACCESS_TOKEN),
         openRouterConfigured: Boolean(OPENROUTER_API_KEY),
         geminiConfigured: Boolean(GEMINI_API_KEY),
@@ -186,151 +322,111 @@ const server = http.createServer(async (req, res) => {
         supabaseConfigured: supabase.isConfigured() }, req);
     }
     if (req.method === 'GET' && url.pathname === '/health') {
-      return json(res, 200, { ok: true, configured: razorpayConfigured(), demoMode: DEMO_MODE }, req);
+      return json(res, 200, { ok: true, configured: razorpayConfigured(), demoMode: demoCheckoutEnabled(), paymentPersistenceReady: paymentPersistenceReady() }, req);
     }
 
     if (req.method === 'POST' && url.pathname === '/api/create-order') {
       if (isRateLimited(req, 20, 60000)) return json(res, 429, { error: 'rate_limited', detail: 'Too many requests' }, req);
       const { plan: planId, email } = await readJson(req);
       const plan = getPlan(planId);
-      if (!plan) return json(res, 400, { error: 'unknown_plan' }, req);
+      if (!plan || !plan.amount) return json(res, 400, { error: 'unknown_plan' }, req);
+      if (!paymentPersistenceReady()) return json(res, 503, { error: 'payment_persistence_not_configured', detail: 'Configure Supabase before accepting serverless payments' }, req);
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || '')) return json(res, 400, { error: 'valid_email_required' }, req);
 
       const normalizedEmail = String(email).toLowerCase().trim();
 
-      if (DEMO_MODE && !razorpayConfigured()) {
+      if (demoCheckoutEnabled()) {
         const orderId = 'order_DEMO_' + Date.now().toString(36);
         store.orders[orderId] = {
           email: normalizedEmail,
-          plan: planId,
+          plan: plan.id,
           amount: plan.amount,
           currency: plan.currency,
           status: 'demo',
           createdAt: Date.now()
         };
-        store.save();
-        return json(res, 200, { demo: true, orderId, amount: plan.amount, currency: plan.currency, plan: planId }, req);
+        await persistOrder(orderId, store.orders[orderId]);
+        return json(res, 200, { demo: true, orderId, amount: plan.amount, currency: plan.currency, plan: plan.id }, req);
       }
       if (!razorpayConfigured()) return json(res, 503, { error: 'payments_not_configured' }, req);
 
       const order = await razorpayCreateOrder(plan, normalizedEmail);
       store.orders[order.id] = {
         email: normalizedEmail,
-        plan: planId,
+        plan: plan.id,
         amount: order.amount,
         currency: order.currency,
         status: 'created',
         createdAt: Date.now()
       };
-      store.save();
-      if (supabase.isConfigured()) {
-        await supabase.syncOrder(order.id, store.orders[order.id]).catch(() => {});
-      }
-      return json(res, 200, { orderId: order.id, amount: order.amount, currency: order.currency, plan: planId }, req);
+      await persistOrder(order.id, store.orders[order.id]);
+      return json(res, 200, { orderId: order.id, amount: order.amount, currency: order.currency, plan: plan.id }, req);
     }
 
     if (req.method === 'POST' && url.pathname === '/api/verify-payment') {
       if (isRateLimited(req, 20, 60000)) return json(res, 429, { error: 'rate_limited', detail: 'Too many requests' }, req);
+      if (!paymentPersistenceReady()) return json(res, 503, { error: 'payment_persistence_not_configured' }, req);
       const { orderId, paymentId, signature, email, plan: planId } = await readJson(req);
-      if (!orderId || !paymentId) {
+      if (!orderId || !paymentId || String(orderId).length > 128 || String(paymentId).length > 128) {
         return json(res, 400, { error: 'invalid_request', detail: 'orderId and paymentId are required' }, req);
       }
 
-      let order = store.orders[orderId];
-      if (!order && supabase.isConfigured()) {
-        const remoteOrder = await supabase.fetchOrder(orderId);
-        if (remoteOrder) {
-          order = { email: remoteOrder.email, plan: remoteOrder.plan, amount: remoteOrder.amount, currency: remoteOrder.currency, status: remoteOrder.status, paymentId: remoteOrder.payment_id };
-          store.orders[orderId] = order;
-        }
-      }
+      let order = supabase.isConfigured() ? await supabase.fetchOrder(orderId) : store.orders[orderId];
+      if (order && supabase.isConfigured()) store.orders[orderId] = order;
       if (!order) return json(res, 400, { error: 'unknown_order' }, req);
-
-      // Customer identity binding: Caller email cannot override the original order email
       if (email && String(email).toLowerCase().trim() !== String(order.email).toLowerCase().trim()) {
         return json(res, 400, { error: 'email_mismatch', detail: 'Supplied email does not match order record' }, req);
       }
-      // Plan binding: Caller cannot substitute an unauthorized plan
-      if (planId && planId !== order.plan) {
+      if (planId && canonicalPlanId(planId) !== canonicalPlanId(order.plan)) {
         return json(res, 400, { error: 'plan_mismatch', detail: 'Supplied plan does not match order record' }, req);
       }
-
-      // Concurrency lock to prevent concurrent double-fulfillment race conditions
       if (inFlightOrders.has(orderId)) {
-        return json(res, 409, { error: 'fulfillment_in_progress', detail: 'Order verification is already in progress' }, req);
+        return json(res, 409, { error: 'fulfillment_in_progress', retryAfterMs: 1000 }, req);
       }
       inFlightOrders.add(orderId);
 
       try {
-        if (DEMO_MODE && !razorpayConfigured()) {
-          if (!String(orderId).startsWith('order_DEMO_')) return json(res, 400, { error: 'bad_demo_order' }, req);
-        } else {
-          if (!signature || !L.verifyPaymentSignature(orderId, paymentId, signature, KEY_SECRET)) {
-            return json(res, 400, { error: 'signature_mismatch' }, req);
+        if (demoCheckoutEnabled()) {
+          if (!String(orderId).startsWith('order_DEMO_') ||
+            (order.status !== 'demo' && !(order.status === 'paid' && order.fulfillmentStatus === 'FULFILLED'))) {
+            return json(res, 400, { error: 'bad_demo_order' }, req);
           }
+        } else if (!signature || !L.verifyPaymentSignature(orderId, paymentId, signature, KEY_SECRET)) {
+          return json(res, 400, { error: 'signature_mismatch' }, req);
+        }
+        if (order.paymentId && order.paymentId !== paymentId) {
+          return json(res, 409, { error: 'order_payment_mismatch', licenseKey: null,
+            detail: 'This order is already linked to a different payment. Contact support for assistance.' }, req);
         }
 
-        // Idempotency: If order was already paid and fulfilled, return existing license without generating duplicate key
-        if (order.status === 'paid' && order.fulfillmentStatus === 'FULFILLED') {
-          const existingLic = Object.values(store.licenses).find(l => l.orderId === orderId || (l.paymentId && l.paymentId === (order.paymentId || paymentId)));
-          if (existingLic) {
-            return json(res, 200, {
-              ok: true,
-              licenseKey: issuedThisProcess.get(existingLic.paymentId) || null,
-              hint: existingLic.hint,
-              plan: existingLic.plan,
-              expiresAt: existingLic.expiresAt,
-              alreadyFulfilled: true,
-              note: 'Order already fulfilled. Key delivered via confirmation email.'
-            }, req);
-          }
-        }
-
-        // Durable fulfillment state: payment confirmed, initiating license issuance
-        order.status = 'PAID_PENDING_FULFILLMENT';
-        order.paymentId = paymentId || null;
-        order.paidAt = Date.now();
-        store.save();
-
-        // Strictly bind license issuance and email to original order.email
         const customerEmail = order.email;
-        const plan = order.plan;
-        let issued;
-        try {
-          issued = await issueLicense(customerEmail, plan, paymentId || ('demo_' + orderId), orderId);
-          order.status = 'paid';
-          order.fulfillmentStatus = 'FULFILLED';
-          order.fulfilledAt = Date.now();
-          store.save();
-        } catch (fulfillmentErr) {
-          order.fulfillmentStatus = 'FULFILLMENT_FAILED';
-          store.save();
-          throw fulfillmentErr;
+        const canonicalPlan = canonicalPlanId(order.plan);
+        const alreadyFulfilled = order.status === 'paid' && order.fulfillmentStatus === 'FULFILLED';
+        let issued = await issueLicense(customerEmail, canonicalPlan, paymentId, orderId);
+        const issuedStatus = L.licenseStatus(issued.lic);
+        if (!issuedStatus.active) {
+          return json(res, 409, { error: 'license_' + (issuedStatus.reason || 'inactive'),
+            alreadyFulfilled: true, licenseKey: null, emailSent: Boolean(issued.lic.emailSentAt) }, req);
         }
+        let emailResult = { ok: false, skipped: true };
 
-        if (supabase.isConfigured()) {
-          await supabase.syncOrder(orderId, order).catch(() => {});
-        }
-
-        if (issued.key && customerEmail) {
-          emailService.sendLicenseEmail({
-            to: customerEmail,
-            licenseKey: issued.key,
-            plan,
-            expiresAt: issued.lic.expiresAt,
-          }).then(res => {
-            if (res.ok) console.log('[email] Sent license key to', customerEmail, '(id:', res.id, ')');
-            else console.warn('[email] Could not send to', customerEmail, res.error);
-          }).catch(err => {
-            console.error('[email] Delivery exception:', err && err.message ? err.message : err);
-          });
+        // A warm-process retry can re-show its cached key. A cold retry cannot,
+        // but emailSentAt tells us whether delivery had already completed.
+        if (issued.key && !issued.lic.emailSentAt) {
+          emailResult = await sendIssuedLicenseEmail(issued, customerEmail, canonicalPlan);
+        } else {
+          emailResult = { ok: Boolean(issued.lic.emailSentAt), skipped: true };
         }
 
         return json(res, 200, {
           ok: true, licenseKey: issued.key, hint: issued.lic.hint,
-          plan, expiresAt: issued.lic.expiresAt,
-          emailSent: Boolean(issued.key && customerEmail),
-          note: issued.key ? 'Save this key now — it is shown once.' : 'Key already issued for this payment; use the copy from your purchase.',
+          plan: issued.lic.plan, expiresAt: issued.lic.expiresAt,
+          emailSent: Boolean(emailResult.ok),
+          emailError: issued.key && !emailResult.ok ? 'email_delivery_failed' : null,
+          alreadyFulfilled: Boolean(alreadyFulfilled || issued.existing),
+          note: issued.key
+            ? (emailResult.ok ? 'Save this key now; a copy was accepted by the email provider.' : 'Save this key now. Email delivery was not confirmed.')
+            : 'This order already has a license. Use your purchase email or contact support for recovery.',
         }, req);
       } finally {
         inFlightOrders.delete(orderId);
@@ -338,78 +434,74 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && url.pathname === '/api/webhook') {
+      if (!paymentPersistenceReady()) return json(res, 503, { error: 'payment_persistence_not_configured' });
       const raw = await readBody(req);
       const sig = req.headers['x-razorpay-signature'];
       if (!WEBHOOK_SECRET) return json(res, 503, { error: 'webhook_not_configured' });
       if (!L.verifyWebhookSignature(raw, sig, WEBHOOK_SECRET)) return json(res, 400, { error: 'bad_signature' });
-      let evt = {};
-      try { evt = JSON.parse(raw.toString('utf8')); } catch (e) { /* ignore */ }
+      let evt;
+      try { evt = JSON.parse(raw.toString('utf8')); }
+      catch (e) { return json(res, 400, { error: 'invalid_json' }); }
 
-      const eventId = evt.id || (evt.payload && evt.payload.payment && evt.payload.payment.entity && evt.payload.payment.entity.id);
-      if (eventId && store.processedWebhooks && store.processedWebhooks[eventId]) {
+      const paymentEntity = evt.payload && evt.payload.payment && evt.payload.payment.entity;
+      const refundEntity = evt.payload && evt.payload.refund && evt.payload.refund.entity;
+      const eventId = evt.id || (paymentEntity && paymentEntity.id) || (refundEntity && refundEntity.id);
+      if (!eventId) return json(res, 400, { error: 'missing_event_id' });
+      if (supabase.isConfigured()) {
+        if (await supabase.hasWebhook(eventId)) {
+          store.processedWebhooks[eventId] = { receivedAt: Date.now(), event: evt.event || null };
+          return json(res, 200, { duplicate: true, received: true });
+        }
+      } else if (store.processedWebhooks[eventId]) {
         return json(res, 200, { duplicate: true, received: true });
       }
-      if (eventId) {
-        store.processedWebhooks[eventId] = {
-          receivedAt: Date.now(),
-          event: evt.event || null
-        };
-        const keys = Object.keys(store.processedWebhooks);
-        if (keys.length > 2000) {
-          delete store.processedWebhooks[keys[0]];
-        }
-        store.saveSync();
-      }
 
-      const entity = evt.payload && evt.payload.payment && evt.payload.payment.entity;
-      if (evt.event === 'payment.captured' && entity && store.orders[entity.order_id]) {
-        const order = store.orders[entity.order_id];
-        if (order.status !== 'paid' || order.fulfillmentStatus !== 'FULFILLED') {
-          order.status = 'PAID_PENDING_FULFILLMENT';
-          order.paymentId = entity.id;
-          order.paidAt = Date.now();
-          store.save();
-
-          try {
-            const customerEmail = order.email;
-            const issued = await issueLicense(customerEmail, order.plan, entity.id, entity.order_id);
-            order.status = 'paid';
-            order.fulfillmentStatus = 'FULFILLED';
-            order.fulfilledAt = Date.now();
-            store.save();
-
-            if (issued.key && customerEmail) {
-              emailService.sendLicenseEmail({
-                to: customerEmail,
-                licenseKey: issued.key,
-                plan: order.plan,
-                expiresAt: issued.lic.expiresAt,
-              }).then(res => {
-                if (res.ok) console.log('[email-webhook] Sent license key to', customerEmail, '(id:', res.id, ')');
-              }).catch(err => {
-                console.error('[email-webhook] Exception:', err && err.message ? err.message : err);
-              });
-            }
-          } catch (fulfillErr) {
-            console.error('[webhook] License fulfillment failed:', fulfillErr);
-            order.fulfillmentStatus = 'FULFILLMENT_FAILED';
-            store.save();
+      const entity = paymentEntity || refundEntity;
+      if (evt.event === 'payment.captured' && entity) {
+        let order = supabase.isConfigured() ? await supabase.fetchOrder(entity.order_id) : store.orders[entity.order_id];
+        if (order && supabase.isConfigured()) store.orders[entity.order_id] = order;
+        if (!order) return json(res, 404, { error: 'unknown_order', retryable: true });
+        if (inFlightOrders.has(entity.order_id)) return json(res, 409, { error: 'fulfillment_in_progress', retryable: true });
+        inFlightOrders.add(entity.order_id);
+        try {
+          let issued = await issueLicense(order.email, canonicalPlanId(order.plan), entity.id, entity.order_id);
+          if (!issued.lic.revoked && !issued.lic.emailSentAt) {
+            if (!RESEND_API_KEY) throw new Error('license_email_not_configured');
+            if (!issued.key) throw new Error('license_email_recovery_required');
+            const emailResult = await sendIssuedLicenseEmail(issued, order.email, canonicalPlanId(order.plan));
+            if (!emailResult.ok || emailResult.persistenceError) throw new Error('license_email_delivery_failed');
           }
+        } finally {
+          inFlightOrders.delete(entity.order_id);
         }
       }
+
       if ((evt.event === 'refund.processed' || evt.event === 'payment.refunded') && entity) {
         const paymentId = entity.payment_id || entity.id;
-        const lic = Object.values(store.licenses).find(l => l.paymentId === paymentId);
-        if (lic) {
+        let licenses = Object.values(store.licenses).filter(l =>
+          l.paymentId === paymentId || l.originalPaymentId === paymentId);
+        if (supabase.isConfigured()) licenses = await supabase.fetchLicensesByPayment(paymentId);
+        if (!licenses.length && paymentId) return json(res, 404, { error: 'license_not_found', retryable: true });
+        for (const remoteLic of licenses) {
+          const lic = cacheLicense(remoteLic);
           lic.revoked = true;
           lic.revokedReason = 'refund';
           lic.revokedAt = Date.now();
-          store.save();
           if (supabase.isConfigured()) {
-            supabase.syncLicense(lic).catch(() => {});
+            const synced = await supabase.syncLicense(lic);
+            if (!synced.ok) throw new Error('refund_persistence_failed');
           }
-          console.log('[webhook] Revoked license due to refund for payment:', paymentId);
+          store.saveSync();
         }
+      }
+
+      store.processedWebhooks[eventId] = { receivedAt: Date.now(), event: evt.event || null };
+      const keys = Object.keys(store.processedWebhooks);
+      if (keys.length > 2000) delete store.processedWebhooks[keys[0]];
+      store.saveSync();
+      if (supabase.isConfigured()) {
+        const marked = await supabase.markWebhookProcessed(eventId, evt.event || null);
+        if (!marked.ok) throw new Error('webhook_receipt_persistence_failed');
       }
       return json(res, 200, { received: true });
     }
@@ -417,29 +509,57 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/validate') {
       if (isRateLimited(req, 60, 60000)) return json(res, 429, { error: 'rate_limited' }, req);
       const { key, deviceId } = await readJson(req);
+      if (deviceId && (typeof deviceId !== 'string' || deviceId.length > 128)) {
+        return json(res, 400, { error: 'invalid_device_id' }, req);
+      }
       const hash = L.hashKey(key || '');
       let lic = store.licenses[hash];
-      if (!lic && supabase.isConfigured()) {
-        lic = await supabase.fetchLicense(hash);
-        if (lic) store.licenses[hash] = lic;
+      if (supabase.isConfigured()) {
+        // Supabase is authoritative when configured, including revocations.
+        lic = cacheLicense(await supabase.fetchLicense(hash));
       }
-      const st = L.licenseStatus(lic);
-      if (lic && st.active && deviceId) {
-        if (!lic.devices.includes(deviceId)) {
-          if (lic.devices.length >= MAX_DEVICES) {
-            return json(res, 200, { active: false, reason: 'device_limit', maxDevices: MAX_DEVICES }, req);
+      if (lic) lic.devices = Array.isArray(lic.devices) ? lic.devices : [];
+      const plan = lic ? getPlan(lic.plan) : null;
+      const st = lic && !plan ? { active: false, reason: 'invalid_plan' } : L.licenseStatus(lic);
+      const maxDevices = plan && plan.maxDevices ? plan.maxDevices : 3;
+      let devicesUsed = lic ? lic.devices.length : 0;
+
+      if (lic && st.active && deviceId && !lic.devices.includes(deviceId)) {
+        if (supabase.isConfigured()) {
+          const registration = await supabase.registerDevice(hash, deviceId, maxDevices);
+          if (!registration.ok) return json(res, 503, { active: false, reason: 'device_registry_unavailable' }, req);
+          devicesUsed = registration.devicesUsed;
+          if (!registration.allowed) {
+            return json(res, 200, { active: false,
+              reason: registration.reason === 'inactive' ? 'inactive_license' : 'device_limit',
+              maxDevices, devicesUsed }, req);
           }
           lic.devices.push(deviceId);
-          store.save();
-          supabase.updateLicenseDevices(hash, lic.devices).catch(() => {});
+          store.saveSync();
+        } else {
+          if (lic.devices.length >= maxDevices) {
+            return json(res, 200, { active: false, reason: 'device_limit', maxDevices, devicesUsed }, req);
+          }
+          lic.devices.push(deviceId);
+          devicesUsed = lic.devices.length;
+          store.saveSync();
         }
+      } else if (lic && st.active && deviceId && supabase.isConfigured()) {
+        const registration = await supabase.registerDevice(hash, deviceId, maxDevices);
+        if (!registration.ok) return json(res, 503, { active: false, reason: 'device_registry_unavailable' }, req);
+        devicesUsed = registration.devicesUsed;
+        if (!registration.allowed) return json(res, 200, { active: false,
+          reason: registration.reason === 'inactive' ? 'inactive_license' : 'device_limit', maxDevices, devicesUsed }, req);
       }
+
       return json(res, 200, {
         active: st.active, reason: st.reason,
         plan: lic ? lic.plan : null,
         expiresAt: lic ? lic.expiresAt : null,
         hint: lic ? lic.hint : null,
-        devicesUsed: lic ? lic.devices.length : 0, maxDevices: MAX_DEVICES,
+        proPlus: Boolean(plan && plan.proPlus),
+        billingModel: plan ? plan.billingModel : null,
+        devicesUsed, maxDevices,
       }, req);
     }
 
@@ -447,40 +567,29 @@ const server = http.createServer(async (req, res) => {
       if (isRateLimited(req, 10, 60000)) return json(res, 429, { error: 'rate_limited', detail: 'Too many requests' }, req);
       const { email } = await readJson(req);
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || '')) {
-        return json(res, 400, { error: 'valid_email_required', detail: 'Valid email is required to restore subscription' }, req);
+        return json(res, 400, { error: 'valid_email_required', detail: 'Valid email is required to request recovery' }, req);
       }
-      const normalizedEmail = String(email).toLowerCase().trim();
-      let matched = Object.values(store.licenses).filter(l => l.email === normalizedEmail && !l.revoked);
-      if (matched.length === 0 && supabase.isConfigured()) {
-        // Query remote supabase if configured
-      }
-      if (matched.length === 0) {
-        return json(res, 404, { error: 'no_subscription_found', message: 'No active subscription found for ' + normalizedEmail }, req);
-      }
-      const now = Date.now();
-      const activeLic = matched.find(l => !l.expiresAt || l.expiresAt > now) || matched[0];
+      // Email-only lookup must not reveal subscription metadata or reissue keys.
+      // Support can verify ownership and use the admin reissue flow instead.
       return json(res, 200, {
-        ok: true,
-        found: true,
-        plan: activeLic.plan,
-        hint: activeLic.hint,
-        expiresAt: activeLic.expiresAt,
-        licenseKey: null,
-        note: 'Subscription active. For security, your license key was delivered to your registered email.'
+        ok: true, recovery: 'support_required', licenseKey: null,
+        note: 'If a purchase exists for this email, contact support from that address for ownership verification and license reissue. No subscription metadata is disclosed by this endpoint.',
       }, req);
     }
 
 
     // ------------------------------------------------ market intelligence ----
     if (req.method === 'GET' && url.pathname === '/api/market/demo') {
+      if (isRateLimited(req, 30, 60000)) return json(res, 429, { error: 'rate_limited' }, req);
       const symbol = (url.searchParams.get('symbol') || 'NIFTY').toUpperCase();
       const candles = mockData.demoCandles(symbol);
       const analysis = TLMarket.analyze(candles, { symbol, timeframe: '5m', optionChain: mockData.demoOptionChain(symbol, candles[candles.length - 1].c), daysToExpiry: 2 });
-      const brief = await ai.summarize({ apiKey: OPENROUTER_API_KEY, geminiApiKey: GEMINI_API_KEY, analysis });
+      const brief = await ai.summarize({ apiKey: OPENROUTER_API_KEY, geminiApiKey: GEMINI_API_KEY, analysis, allowRemote: false }, providerFetch);
       return json(res, 200, { demo: true, symbol, candles: candles.length, analysis, brief }, req);
     }
 
     if (req.method === 'POST' && url.pathname === '/api/market/analyze') {
+      if (!await requireProPlus(req)) return json(res, 403, { error: 'pro_plus_required' }, req);
       if (isRateLimited(req, 30, 60000)) return json(res, 429, { error: 'rate_limited', detail: 'Analysis rate limit reached' }, req);
       const body = await readJson(req);
       if (!Array.isArray(body.candles) || body.candles.length === 0) {
@@ -495,31 +604,36 @@ const server = http.createServer(async (req, res) => {
         symbol: symbol, timeframe: timeframe,
         optionChain: body.optionChain || null, prevDay: body.prevDay || null
       });
-      const brief = await ai.summarize({ apiKey: OPENROUTER_API_KEY, geminiApiKey: GEMINI_API_KEY, analysis, coach: body.coach || null });
+      const brief = await ai.summarize({ apiKey: OPENROUTER_API_KEY, geminiApiKey: GEMINI_API_KEY, analysis, coach: body.coach || null }, providerFetch);
       return json(res, 200, { analysis, brief }, req);
     }
 
     if (req.method === 'GET' && url.pathname === '/api/fyers/auth-url') {
       if (isRateLimited(req, 20, 60000)) return json(res, 429, { error: 'rate_limited' }, req);
-      if (!FYERS_APP_ID || !FYERS_REDIRECT_URL) return json(res, 503, { error: 'fyers_not_configured' }, req);
-      return json(res, 200, { url: fyers.buildAuthUrl(FYERS_APP_ID, FYERS_REDIRECT_URL) }, req);
+      if (!FYERS_APP_ID || !FYERS_SECRET || !FYERS_REDIRECT_URL || !FYERS_ADMIN_TOKEN) return json(res, 503, { error: 'fyers_admin_not_configured' }, req);
+      if (!adminAuthorized(req)) return json(res, 403, { error: 'admin_authorization_required' }, req);
+      return json(res, 200, { url: fyers.buildAuthUrl(FYERS_APP_ID, FYERS_REDIRECT_URL, createFyersState()) }, req);
     }
 
     if (req.method === 'GET' && url.pathname === '/api/fyers/callback-page') {
       const authCode = url.searchParams.get('auth_code');
+      if (!FYERS_ADMIN_TOKEN || !validFyersState(url.searchParams.get('state'))) {
+        res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        return res.end('<h2>Invalid or expired OAuth state.</h2>');
+      }
       if (!authCode) {
         res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end('<h2 style="font-family:sans-serif;color:#f85149">No auth_code received from Fyers.</h2>');
       }
       try {
-        const token = await fyers.exchangeAuthCode({ appId: FYERS_APP_ID, secret: FYERS_SECRET, authCode });
+        const token = await fyers.exchangeAuthCode({ appId: FYERS_APP_ID, secret: FYERS_SECRET, authCode }, providerFetch);
         const tokenStr = String(token.access_token || '');
         const masked = tokenStr ? (tokenStr.slice(0, 8) + '...' + tokenStr.slice(-6)) : 'N/A';
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
         return res.end(`
           <!DOCTYPE html>
           <html>
-          <head><meta charset="utf-8"><title>Fyers Token Generated</title></head>
+          <head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Fyers Token Generated</title></head>
           <body style="font-family:system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;padding:40px;max-width:650px;margin:auto;line-height:1.6">
             <h2 style="color:#37d39b;margin-bottom:8px">✓ Fyers Authentication Succeeded</h2>
             <p style="color:#8b949e;margin-top:0">Authorization code was exchanged. Copy your token below into your server environment as <code>FYERS_ACCESS_TOKEN</code>:</p>
@@ -535,28 +649,30 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && url.pathname === '/api/fyers/exchange') {
+      if (!adminAuthorized(req)) return json(res, 403, { error: 'admin_authorization_required' }, req);
       if (isRateLimited(req, 10, 60000)) return json(res, 429, { error: 'rate_limited' }, req);
       const { authCode } = await readJson(req);
       if (!FYERS_APP_ID || !FYERS_SECRET) return json(res, 503, { error: 'fyers_not_configured' }, req);
-      const token = await fyers.exchangeAuthCode({ appId: FYERS_APP_ID, secret: FYERS_SECRET, authCode });
+      const token = await fyers.exchangeAuthCode({ appId: FYERS_APP_ID, secret: FYERS_SECRET, authCode }, providerFetch);
       return json(res, 200, { ok: true, accessToken: token.access_token,
         note: 'Store this as FYERS_ACCESS_TOKEN on the server. Treat it like a password.' }, req);
     }
 
     if (req.method === 'GET' && url.pathname === '/api/market/live') {
+      if (!await requireProPlus(req)) return json(res, 403, { error: 'pro_plus_required' }, req);
       if (isRateLimited(req, 40, 60000)) return json(res, 429, { error: 'rate_limited' }, req);
       if (!FYERS_APP_ID || !FYERS_ACCESS_TOKEN) return json(res, 503, { error: 'fyers_not_configured',
         hint: 'Set FYERS_APP_ID and FYERS_ACCESS_TOKEN, or use /api/market/demo' }, req);
       const symbol = url.searchParams.get('symbol') || 'NSE:NIFTY50-INDEX';
       const resolution = url.searchParams.get('resolution') || '15';
-      const client = fyers.createClient({ appId: FYERS_APP_ID, accessToken: FYERS_ACCESS_TOKEN });
+      const client = fyers.createClient({ appId: FYERS_APP_ID, accessToken: FYERS_ACCESS_TOKEN }, providerFetch);
       const to = Math.floor(Date.now() / 1000);
       const hist = await client.history({ symbol, resolution, rangeFrom: String(to - 10 * 86400), rangeTo: String(to) });
       const candles = fyers.normalizeHistory(hist);
       let chain = null;
       try { chain = fyers.normalizeOptionChain(await client.optionChain({ symbol, strikeCount: 12 })); } catch (e) { chain = null; }
       const analysis = TLMarket.analyze(candles, { symbol, timeframe: resolution + 'm', optionChain: chain });
-      const brief = await ai.summarize({ apiKey: OPENROUTER_API_KEY, geminiApiKey: GEMINI_API_KEY, analysis });
+      const brief = await ai.summarize({ apiKey: OPENROUTER_API_KEY, geminiApiKey: GEMINI_API_KEY, analysis }, providerFetch);
       return json(res, 200, { symbol, candles: candles.length, analysis, brief }, req);
     }
 

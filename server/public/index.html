@@ -56,7 +56,7 @@
 
   <div class="plans" id="plans"></div>
 
-  <p class="free">Just want to try it? The <b>Free</b> plan (manual lock + trade-count rule, 1 broker) is built into the extension — no payment, no key.</p>
+  <p class="free">Just want to try it? The <b>Free</b> plan (manual lock + trade-count rule) is built into the extension — no payment, no key.</p>
 
   <div id="result">
     <div style="font-weight:700;font-size:16px;color:#37d39b;margin-bottom:6px">🎉 Payment confirmed! Your license is ready:</div>
@@ -76,17 +76,23 @@
   </div>
   <div id="err"></div>
 
-  <footer>Secure payments by Razorpay · UPI, cards &amp; netbanking · Prices include all taxes · Cancel anytime — your key stays valid till the period ends.</footer>
+  <footer>Payments processed by Razorpay · Prepaid access with no auto-renewal · Save the license key and expiry shown after purchase.</footer>
 </div>
 
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>
 let CONFIG = { keyId: '', demoMode: false };
 const inr = (p) => '₹' + (p / 100).toLocaleString('en-IN');
-const per = { pro_monthly: '/month', pro_yearly: '/year', lifetime: 'one-time' };
+const per = { pro_monthly: '/30 days', pro_yearly: '/365 days', pro_plus_ai_monthly: '/30 days', pro_plus_ai_yearly: '/365 days', founder_lifetime: 'one-time' };
+const query = new URLSearchParams(location.search);
 
 function showErr(msg) { const e = document.getElementById('err'); e.textContent = msg; e.style.display = 'block'; }
 function showKey(key, emailSent) {
+  if (!key) {
+    document.getElementById('result').style.display = 'none';
+    showErr('This order was already fulfilled. Use your purchase email or contact support for license recovery.');
+    return;
+  }
   document.getElementById('key').textContent = key;
   if (emailSent === false) {
     document.getElementById('emailNotice').style.display = 'none';
@@ -127,36 +133,54 @@ function fallbackCopy(text, cb) {
   document.body.removeChild(ta);
 }
 
+async function verifyWithRetry(payload, attempt = 0) {
+  const response = await fetch('/api/verify-payment', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+  });
+  const data = await response.json();
+  if (response.status === 409 && attempt < 8) {
+    await new Promise(resolve => setTimeout(resolve, Number(data.retryAfterMs) || 1000));
+    return verifyWithRetry(payload, attempt + 1);
+  }
+  if (!response.ok) throw new Error(data.error || 'verify_failed');
+  return data;
+}
+
 async function buy(planId, btn) {
-  const email = document.getElementById('email-' + planId).value.trim();
+  const emailInput = document.getElementById('email-' + planId);
+  const email = (query.get('email') || (emailInput && emailInput.value) || '').trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('Please enter a valid email — your purchase is linked to it.'); return; }
   btn.disabled = true; btn.textContent = 'Creating order…';
   try {
-    const r = await fetch('/api/create-order', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: planId, email }) });
-    const order = await r.json();
-    if (!r.ok) throw new Error(order.error || 'order_failed');
+    let order;
+    if (query.get('orderId') && query.get('plan') === planId) {
+      // The extension already created this order; never create a second one.
+      order = { orderId: query.get('orderId'), demo: CONFIG.demoMode, amount: btn.dataset.amount, currency: 'INR' };
+    } else {
+      const r = await fetch('/api/create-order', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: planId, email }) });
+      order = await r.json();
+      if (!r.ok) throw new Error(order.error || 'order_failed');
+    }
 
-    if (order.demo) { // demo mode: skip Razorpay, issue a test key
-      const v = await fetch('/api/verify-payment', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: order.orderId, email }) });
-      const vd = await v.json();
-      if (!v.ok) throw new Error(vd.error || 'verify_failed');
+    if (order.demo) {
+      const vd = await verifyWithRetry({ orderId: order.orderId, paymentId: 'demo_' + order.orderId, signature: 'demo', email });
       showKey(vd.licenseKey, vd.emailSent); btn.textContent = 'Done ✓'; return;
     }
 
     const rzp = new Razorpay({
       key: CONFIG.keyId, order_id: order.orderId, amount: order.amount, currency: order.currency,
-      name: 'Trade Lock', description: planId, prefill: { email },
-      theme: { color: '#e5484d' },
+      name: 'Trade Lock', description: planId, prefill: { email }, theme: { color: '#e5484d' },
       handler: async (resp) => {
         btn.textContent = 'Verifying payment…';
-        const v = await fetch('/api/verify-payment', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderId: resp.razorpay_order_id, paymentId: resp.razorpay_payment_id,
-                                 signature: resp.razorpay_signature, email }) });
-        const vd = await v.json();
-        if (!v.ok) { showErr('Payment received but verification failed (' + (vd.error || '') + '). Contact support with payment id ' + resp.razorpay_payment_id); btn.disabled = false; return; }
-        showKey(vd.licenseKey, vd.emailSent); btn.textContent = 'Done ✓';
+        try {
+          const vd = await verifyWithRetry({ orderId: resp.razorpay_order_id, paymentId: resp.razorpay_payment_id,
+            signature: resp.razorpay_signature, email });
+          showKey(vd.licenseKey, vd.emailSent); btn.textContent = 'Done ✓';
+        } catch (error) {
+          showErr('Payment verification is incomplete (' + error.message + '). Retry checkout with the same order or contact support with payment id ' + resp.razorpay_payment_id);
+          btn.disabled = false; btn.textContent = 'Retry verification';
+        }
       },
       modal: { ondismiss: () => { btn.disabled = false; btn.textContent = 'Buy'; } }
     });
@@ -179,18 +203,17 @@ async function init() {
       <div class="per">${p.tagline}</div>
       <ul>
         <li>All lock rules (loss, target, streak, risk)</li>
-        <li>Auto-detect trades from the order book</li>
-        <li>All brokers: Kite, Upstox, Angel One, Dhan, 5paisa</li>
-        <li>Hard-block mode + tamper protection</li>
-        <li>Pro journal analytics + CSV trade-log export</li>
-        <li>AI discipline coach — revenge-trade & tilt alerts, 0–100 score, day report</li>
-        <li>Use on up to 3 devices</li>
+        <li>Broker-table fill detection on supported domains</li>
+        <li>Full-screen lock + tamper protection</li>
+        <li>Pro journal analytics + CSV/JSON export</li>
+        ${p.proPlus ? '<li>Pro+ market analytics and deterministic discipline coach</li>' : '<li>Market analytics and AI coach require Pro+</li>'}
+        <li>Use on up to ${p.maxDevices} devices</li>
       </ul>
       <input type="email" id="email-${p.id}" placeholder="Your email" autocomplete="email">
-      <button onclick="buy('${p.id}', this)">Buy ${p.name.split('—')[1] ? p.name.split('—')[1].trim() : ''}</button>
+      <button data-amount="${p.amount}" onclick="buy('${p.id}', this)">Buy ${p.name.split('—')[1] ? p.name.split('—')[1].trim() : ''}</button>
     </div>`).join('');
 }
-init();
+init().catch(e => showErr('Could not load checkout configuration: ' + e.message));
 </script>
 </body>
 </html>

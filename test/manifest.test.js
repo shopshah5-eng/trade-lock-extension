@@ -64,40 +64,7 @@ const warUncovered = m.web_accessible_resources
 check('web_accessible_resources matches the content-script sites',
   warUncovered.length === 0, warUncovered.length ? 'extra: ' + warUncovered.join(', ') : 'in sync');
 
-console.log('\nDNR ruleset shape (as built by background.js)');
-const hosts = ['kite.zerodha.com', 'upstox.com', 'web.angelone.in', 'trade.5paisa.com'];
-const rules = [
-  {
-    id: 91001, priority: 100,
-    action: { type: 'redirect', redirect: { extensionPath: '/content/lock.html' } },
-    condition: { initiatorDomains: hosts, urlFilter: '||', resourceTypes: ['main_frame'] }
-  },
-  {
-    id: 91002, priority: 99,
-    action: { type: 'block' },
-    condition: {
-      initiatorDomains: hosts, urlFilter: '||',
-      resourceTypes: ['sub_frame', 'xmlhttprequest', 'script', 'stylesheet',
-                      'image', 'font', 'media', 'other', 'websocket']
-    }
-  }
-];
-const VALID_TYPES = new Set(['block', 'redirect', 'allow', 'upgradeScheme', 'modifyHeaders', 'allowAllRequests']);
-const VALID_RT = new Set(['main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font',
-  'object', 'xmlhttprequest', 'ping', 'csp_report', 'media', 'websocket', 'webtransport',
-  'webbundle', 'other']);
-const ids = new Set();
-rules.forEach((r) => {
-  check('rule ' + r.id + ' has a unique numeric id', !ids.has(r.id) && Number.isInteger(r.id));
-  ids.add(r.id);
-  check('rule ' + r.id + ' action type is valid', VALID_TYPES.has(r.action.type), r.action.type);
-  check('rule ' + r.id + ' resourceTypes are all valid',
-    r.condition.resourceTypes.every((t) => VALID_RT.has(t)),
-    r.condition.resourceTypes.filter((t) => !VALID_RT.has(t)).join(',') || 'all valid');
-  check('rule ' + r.id + ' initiatorDomains are bare hostnames',
-    r.condition.initiatorDomains.every((h) => /^[a-z0-9.\-]+$/.test(h) && !h.startsWith('*')));
-  check('rule ' + r.id + ' has a urlFilter', typeof r.condition.urlFilter === 'string');
-});
+console.log('\nDNR redirect target (runtime rules are exercised in background_security.test.js)');
 check('redirect target exists on disk', fs.existsSync(path.join(ROOT, 'content/lock.html')));
 check('redirect target is web_accessible',
   m.web_accessible_resources.some((w) => w.resources.includes('content/lock.html')));

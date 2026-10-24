@@ -154,6 +154,9 @@
 
     var root = document.createElement('div');
     root.setAttribute('id', 'tl-lock-root');
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-modal', 'true');
+    root.setAttribute('tabindex', '-1');
     root.setAttribute('aria-label', 'Trade Lock — Full Screen Locked');
     root.style.cssText = [
       'position: fixed !important',
@@ -197,25 +200,25 @@
           '<div style="background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:12px 10px;">',
             '<div style="font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#7f8aa1; margin-bottom:4px; font-weight:700;">Trades Today</div>',
             '<div id="tl-overlay-trades" style="font-size:18px; font-weight:800; color:#ffffff;">0 / 5</div>',
-            '<div id="tl-overlay-trades-prov" style="font-size:10px; color:#94a3b8; margin-top:2px;">Broker-verified</div>',
+            '<div id="tl-overlay-trades-prov" style="font-size:10px; color:#94a3b8; margin-top:2px;">Broker table / manual</div>',
           '</div>',
           '<div style="background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:12px 10px;">',
             '<div style="font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#7f8aa1; margin-bottom:4px; font-weight:700;">Realised P&L</div>',
             '<div id="tl-overlay-pnl" style="font-size:18px; font-weight:800; color:#ffffff;">₹0.00</div>',
-            '<div id="tl-overlay-pnl-prov" style="font-size:10px; color:#94a3b8; margin-top:2px;">Broker-verified</div>',
+            '<div id="tl-overlay-pnl-prov" style="font-size:10px; color:#94a3b8; margin-top:2px;">Broker table / manual</div>',
           '</div>',
           '<div style="background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:12px 10px;">',
             '<div style="font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#7f8aa1; margin-bottom:4px; font-weight:700;">Risk Used</div>',
             '<div id="tl-overlay-risk" style="font-size:18px; font-weight:800; color:#ffffff;">₹0.00</div>',
-            '<div id="tl-overlay-risk-prov" style="font-size:10px; color:#94a3b8; margin-top:2px;">Broker-verified</div>',
+            '<div id="tl-overlay-risk-prov" style="font-size:10px; color:#94a3b8; margin-top:2px;">Broker table / manual</div>',
           '</div>',
         '</div>',
         '<div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.22); border-radius:12px; padding:12px 14px; margin-bottom:18px; text-align:center;">',
           '<div style="font-size:12px; font-weight:600; color:#fca5a5; line-height:1.5;">💡 <i>"Discipline is choosing between what you want now and what you want most. Protect your capital."</i></div>',
         '</div>',
         '<div style="font-size:11.5px; color:#8c97ad; line-height:1.5; border-top:1px solid rgba(255,255,255,.08); padding-top:14px;">',
-          '<b>Full-Screen Lock Active:</b> Trading terminal access is restricted across this browser session.<br>',
-          '<span style="color:#6e7681">Browser enforcement applies inside Chrome on this device. Mobile broker apps and other devices are not restricted. To manage emergency exits, refer to your broker’s documented procedures.</span>',
+          '<b>Full-Screen Lock Active:</b> This page is covered by Trade Lock.<br>',
+          '<span style="color:#6e7681">Browser enforcement applies only to covered Chrome tabs on this device. Mobile broker apps and other devices are not restricted. To manage emergency exits, refer to your broker’s documented procedures.</span>',
         '</div>',
       '</div>'
     ].join('');
@@ -223,6 +226,7 @@
     var parent = document.documentElement || document.body;
     if (parent) parent.appendChild(root);
     overlayEl = root;
+    try { root.focus({ preventScroll: true }); } catch (e) {}
 
     updateOverlay(violation);
   }
@@ -266,8 +270,8 @@
     }
 
     var sess = state.session || {};
-    var isBrokerVerified = (sess.autoTrades || 0) > 0 && sess.autoTrades === sess.trades;
-    var provLabel = isBrokerVerified ? 'Broker-verified' : (sess.autoTrades > 0 ? 'Broker & Manual' : 'Manual log');
+    var brokerTableOnly = (sess.autoTrades || 0) > 0 && sess.autoTrades === sess.trades;
+    var provLabel = brokerTableOnly ? 'Broker table' : (sess.autoTrades > 0 ? 'Broker table + manual' : 'Manual log');
 
     if (tradesEl) tradesEl.textContent = (sess.trades || 0) + (settings.maxTradesPerDay ? ' / ' + settings.maxTradesPerDay : '');
     if (tradesProvEl) tradesProvEl.textContent = provLabel;
@@ -307,7 +311,7 @@
   document.addEventListener('click', function (e) {
     if (!state.lock.active) return;
     var mode = (settings && settings.enforcementMode) || 'warning';
-    // Mode A (Warning): Page remains interactive. Never intercepts order actions.
+    // Mode A uses the opaque overlay; this listener does not add order interception.
     if (mode === 'warning') return;
 
     // Mode B: Verified New-Order Restriction
@@ -361,17 +365,21 @@
     else document.addEventListener('DOMContentLoaded', watch);
   }
 
-  // Swallow interactions with the page underneath only during Mode C (Full Trading-Site Restriction)
+  // Mode C swallows all input; Modes A/B also block keyboard access while their overlay is present.
   ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'dblclick', 'contextmenu', 'wheel', 'touchstart', 'keydown', 'keypress'].forEach(function (type) {
     document.addEventListener(type, function (e) {
       var mode = (settings && settings.enforcementMode) || 'warning';
-      if (!state.lock.active || mode !== 'full_site') return;
+      var keyboardUnderOverlay = /^key/.test(type) && overlayEl && overlayEl.isConnected &&
+        (mode === 'warning' || mode === 'order_restrict');
+      if (!state.lock.active || (mode !== 'full_site' && !keyboardUnderOverlay)) return;
       e.stopImmediatePropagation();
       e.preventDefault();
     }, true);
     window.addEventListener(type, function (e) {
       var mode = (settings && settings.enforcementMode) || 'warning';
-      if (!state.lock.active || mode !== 'full_site') return;
+      var keyboardUnderOverlay = /^key/.test(type) && overlayEl && overlayEl.isConnected &&
+        (mode === 'warning' || mode === 'order_restrict');
+      if (!state.lock.active || (mode !== 'full_site' && !keyboardUnderOverlay)) return;
       e.stopImmediatePropagation();
       e.preventDefault();
     }, true);
@@ -478,7 +486,7 @@
       }
       var res = R.undoLastTrade(state);
       if (res && res.rejected) {
-        alert(res.message || 'Verified broker executions cannot be erased.');
+        alert(res.message || 'Broker-imported fills cannot be erased with manual Undo.');
         return;
       }
       saveState(); loop();
@@ -521,7 +529,7 @@
         mEl.style.background = 'rgba(76,141,255,.10)';
         mEl.style.borderColor = 'rgba(76,141,255,.35)';
         mEl.style.color = '#b9d2ff';
-        mEl.textContent = '\u{1F4CA} ' + (marketSnap.symbol || '') + ' ' + marketSnap.analysis.price +
+        mEl.textContent = '\u{1F4CA} ' + (marketSnap.source === 'demo' ? 'DEMO · ' : '') + (marketSnap.symbol || '') + ' ' + marketSnap.analysis.price +
           ' · ' + marketSnap.analysis.trend + ' · VWAP ' + marketSnap.analysis.vwap;
       } else {
         mEl.style.display = 'none';
@@ -536,8 +544,19 @@
     hud.querySelector('#tl-bar2').style.width = Math.round(R.progress(Math.abs(sess.pnl), s.maxDailyLoss) * 100) + '%';
     hud.querySelector('#tl-mode').textContent = state.pendingLock
       ? '\u26a0 limit reached \u2014 locks when your open trade closes'
-      : (s.autoDetect ? 'auto-detect on' : 'manual only') + ' \u00b7 ' + state.session.date +
-        ((state.session.openTrades || 0) > 0 ? ' \u00b7 ' + state.session.openTrades + ' open' : '');
+      : (state.lock && state.lock.active && s.enforcementMode === 'order_restrict' &&
+          D.isVerifiedOrderRestrictionBroker(location.hostname))
+        ? 'order restriction active · page exits remain available'
+        : (s.autoDetect ? 'auto-detect on' : 'manual only') + ' \u00b7 ' + state.session.date +
+          ((state.session.openTrades || 0) > 0 ? ' \u00b7 ' + state.session.openTrades + ' open' : '');
+    var lockButton = hud.querySelector('#tl-locknow');
+    if (lockButton) {
+      var lockActive = !!(state.lock && state.lock.active);
+      lockButton.disabled = lockActive;
+      lockButton.title = lockActive
+        ? (state.lock.manual ? 'Manual focus lock is already active' : 'Automatic rule lock is protected')
+        : 'Lock this page until the next market open';
+    }
   }
 
   // ---------------------------------------------------------- detector ----
@@ -572,28 +591,17 @@
         if (o.pnl) lastPnl = o.pnl;
         R.logTrade(state, settings, {
           symbol: o.symbol, side: o.side, qty: o.qty, pnl: o.pnl,
-          risk: settings.countAutoRisk === false ? 0 : o.risk, source: 'auto'
+          entry: o.price, risk: settings.countAutoRisk === false ? 0 : o.risk, source: 'auto'
         }, Date.now());
-        state.session.autoTrades = (state.session.autoTrades || 0) + 1;
       });
     }
 
     // How many trades are still running? Positions rows with qty != 0, or a
     // net open quantity across today's fills. The lock waits for these.
-    var hasPositions = !!(found.positions && found.positions.length);
-    var hasOrders = !!(found.orders && found.orders.length);
-    var positionsOpen = (found.positions || []).filter(function (p) { return Number(p.qty) !== 0; }).length;
-    var netOpen = D.netOpenSymbols ? D.netOpenSymbols(found.orders || []) : 0;
-    if (hasPositions) {
-      if (positionsOpen !== (state.session.openTrades || 0)) {
-        state.session.openTrades = positionsOpen;
-        changed = true;
-      }
-    } else if (hasOrders) {
-      if (netOpen !== (state.session.openTrades || 0)) {
-        state.session.openTrades = netOpen;
-        changed = true;
-      }
+    var detectedOpen = D.resolveOpenTrades ? D.resolveOpenTrades(found) : null;
+    if (detectedOpen !== null && detectedOpen !== (state.session.openTrades || 0)) {
+      state.session.openTrades = detectedOpen;
+      changed = true;
     }
 
     // Open exposure: highest notional currently on the positions table.
@@ -632,8 +640,16 @@
     state = res.state;
     if (res.changed) saveState();
 
-    if (state.lock && state.lock.active && state.lock.until > Date.now()) {
-      if (IS_TOP) {
+    var chartOnlyExcluded = settings.enforcementMode === 'chart_only' &&
+      !(D.isChartingPage && D.isChartingPage(location.hostname, location.pathname));
+    if (state.lock && state.lock.active && state.lock.until > Date.now() && !chartOnlyExcluded) {
+      var verifiedOrderMode = settings.enforcementMode === 'order_restrict' &&
+        D.isVerifiedOrderRestrictionBroker(location.hostname) && IS_TOP;
+      if (verifiedOrderMode) {
+        removeOverlay();
+        buildHud();
+        renderHud();
+      } else if (IS_TOP) {
         buildOverlay(res.violation);
       } else {
         buildSubframeBlocker();
@@ -682,7 +698,7 @@
       state = res.state;
       var v = res.violation || (state.lock.manual ? null : R.evaluate(state, settings));
       sendResponse({
-        ok: true, state: state, settings: settings,
+        ok: true, state: state, settings: settings, license: license,
         violation: v, copy: lockCopy(v),
         untilLabel: state.lock.until ? R.istLabel(state.lock.until) : ''
       });
@@ -763,7 +779,7 @@
         if (!stored || !stored.lock || typeof stored.lock.active !== 'boolean') {
           console.warn('[Trade Lock Security] Received TL_RELEASED but authoritative storage state is missing or invalid. Preserving active lock overlay and requesting authoritative state recovery.');
           if (state && state.lock && state.lock.active) {
-            if (IS_TOP) buildOverlay(); else buildSubframeBlocker();
+            loop();
           }
           try { chrome.runtime.sendMessage({ type: 'TL_CHECK_RELEASE' }); } catch (e) {}
           sendResponse({ ok: false, error: 'STORAGE_STATE_MISSING_OR_CORRUPT', recovering: true });
@@ -786,7 +802,7 @@
           var localUntil = Number(state.lock.until);
           if (!isNaN(localUntil) && localUntil > now && !stored.lock.emergencyOverridden) {
             console.warn('[Trade Lock Security] Rejecting release notification: local rule lock has not reached unlock timestamp.');
-            if (IS_TOP) buildOverlay(); else buildSubframeBlocker();
+            loop();
             sendResponse({ ok: false, error: 'RULE_LOCK_UNEXPIRED', until: localUntil });
             return;
           }

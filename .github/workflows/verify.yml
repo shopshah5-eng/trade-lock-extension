@@ -1,0 +1,55 @@
+name: Verify Trade Lock
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-and-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trade-lock-extension
+          path: dist/*.zip
+          if-no-files-found: error
+
+  chrome-e2e:
+    needs: unit-and-package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Chrome for Testing
+        run: npx @puppeteer/browsers install chrome@stable --path "$RUNNER_TEMP/tl-browser"
+      - name: Locate Chrome
+        run: echo "CHROME_PATH=$(find "$RUNNER_TEMP/tl-browser" -type f -path '*/chrome-linux64/chrome' -print -quit)" >> "$GITHUB_ENV"
+      - name: Check Chrome installation
+        run: test -n "$CHROME_PATH" && test -x "$CHROME_PATH" && "$CHROME_PATH" --version
+      - run: npm run test:e2e
+      - run: npm run test:paid-e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chrome-e2e-screenshots
+          path: screenshots/*.png
+          if-no-files-found: warn

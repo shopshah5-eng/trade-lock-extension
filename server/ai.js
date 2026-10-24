@@ -41,13 +41,13 @@ function buildMessages(a, coach) {
   ];
 }
 
-async function summarize({ apiKey, geminiApiKey, model, geminiModel, analysis, coach }, fetchImpl) {
+async function summarize({ apiKey, geminiApiKey, model, geminiModel, analysis, coach, allowRemote = true }, fetchImpl) {
   const fallback = () => localBrief(analysis, coach);
   const f = fetchImpl || fetch;
 
   // 1. Try Google Gemini API if key is present
   const gKey = geminiApiKey || process.env.GEMINI_API_KEY;
-  if (gKey) {
+  if (allowRemote && gKey) {
     try {
       const gModel = geminiModel || DEFAULT_GEMINI_MODEL;
       const sysInstruction = 'You are a trading-discipline assistant for an Indian retail trader. ' +
@@ -79,7 +79,7 @@ async function summarize({ apiKey, geminiApiKey, model, geminiModel, analysis, c
 
   // 2. Try OpenRouter if key is present
   const oKey = apiKey || process.env.OPENROUTER_API_KEY;
-  if (oKey) {
+  if (allowRemote && oKey) {
     try {
       const r = await f('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',

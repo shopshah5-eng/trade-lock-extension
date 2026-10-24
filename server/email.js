@@ -5,14 +5,24 @@
  */
 
 const RESEND_API_URL = 'https://api.resend.com/emails';
+const { getPlan } = require('./plans');
+
+function maxDevicesForPlan(planId) {
+  const plan = getPlan(planId);
+  return plan && plan.maxDevices ? plan.maxDevices : 3;
+}
+
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
 
 function formatPlanName(planId) {
   const names = {
-    pro_monthly: 'Pro — Monthly (₹199/mo)',
-    pro_yearly: 'Pro — Yearly (₹1,499/yr)',
-    pro_plus_ai: 'Pro+ AI Markets — Monthly (₹399/mo)',
-    pro_plus_ai_monthly: 'Pro+ AI Markets — Monthly (₹399/mo)',
-    pro_plus_ai_yearly: 'Pro+ AI Markets — Yearly (₹3,999/yr)',
+    pro_monthly: 'Pro — 30-day prepaid (₹199)',
+    pro_yearly: 'Pro — 365-day prepaid (₹1,499)',
+    pro_plus_ai: 'Pro+ AI Markets — 30-day prepaid (₹399)',
+    pro_plus_ai_monthly: 'Pro+ AI Markets — 30-day prepaid (₹399)',
+    pro_plus_ai_yearly: 'Pro+ AI Markets — 365-day prepaid (₹3,999)',
     lifetime: 'Founder Lifetime (₹2,999 one-time)',
     founder_lifetime: 'Founder Lifetime (₹2,999 one-time)',
     free: 'Free'
@@ -22,6 +32,7 @@ function formatPlanName(planId) {
 
 function buildHtmlTemplate({ licenseKey, plan, email, expiresAt }) {
   const planLabel = formatPlanName(plan);
+  const maxDevices = maxDevicesForPlan(plan);
   const expiryText = expiresAt
     ? 'Valid until ' + new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
     : 'Perpetual Lifetime Access (Never Expires)';
@@ -53,7 +64,7 @@ function buildHtmlTemplate({ licenseKey, plan, email, expiresAt }) {
                   </td>
                   <td align="right">
                     <span style="background:rgba(55,211,155,0.12);color:#37d39b;border:1px solid rgba(55,211,155,0.3);font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;text-transform:uppercase;letter-spacing:0.05em;">
-                      ${planLabel.split('—')[0].trim()}
+                      ${escapeHtml(planLabel.split('—')[0].trim())}
                     </span>
                   </td>
                 </tr>
@@ -65,10 +76,10 @@ function buildHtmlTemplate({ licenseKey, plan, email, expiresAt }) {
           <tr>
             <td style="padding:32px 32px 24px;">
               <h1 style="margin:0 0 10px;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">
-                Welcome to Trade Lock Pro! 🎉
+                Welcome to Trade Lock ${planLabel.indexOf('Pro+') === 0 ? 'Pro+' : 'Pro'}! 🎉
               </h1>
               <p style="margin:0 0 24px;font-size:14px;color:#94a3b8;line-height:1.6;">
-                Thank you for your purchase. Your payment was verified successfully. Here is your official license key to activate your subscription on up to 3 devices:
+                Thank you for your purchase. Your payment was verified successfully. Here is your official license key to activate your prepaid access on up to ${maxDevices} devices:
               </p>
 
               <!-- License Key Display Box -->
@@ -77,10 +88,10 @@ function buildHtmlTemplate({ licenseKey, plan, email, expiresAt }) {
                   Your License Key
                 </div>
                 <div style="font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,Courier,monospace;font-size:20px;font-weight:800;color:#37d39b;letter-spacing:0.05em;word-break:break-all;user-select:all;">
-                  ${licenseKey}
+                  ${escapeHtml(licenseKey)}
                 </div>
                 <div style="font-size:12px;color:#64748b;margin-top:10px;">
-                  Plan: <span style="color:#cbd5e1;font-weight:600;">${planLabel}</span> · <span style="color:#37d39b;">${expiryText}</span>
+                  Plan: <span style="color:#cbd5e1;font-weight:600;">${escapeHtml(planLabel)}</span> · <span style="color:#37d39b;">${expiryText}</span>
                 </div>
               </div>
 
@@ -104,7 +115,7 @@ function buildHtmlTemplate({ licenseKey, plan, email, expiresAt }) {
                 <tr>
                   <td style="padding:8px 0;vertical-align:top;width:24px;color:#37d39b;font-weight:700;font-size:14px;">3.</td>
                   <td style="padding:8px 0;font-size:13.5px;color:#cbd5e1;line-height:1.5;">
-                    Paste your key <code style="background:#161e31;padding:2px 6px;border-radius:4px;color:#37d39b;font-family:monospace;">${licenseKey}</code> and click <b>Activate key</b>.
+                    Paste your key <code style="background:#161e31;padding:2px 6px;border-radius:4px;color:#37d39b;font-family:monospace;">${escapeHtml(licenseKey)}</code> and click <b>Activate key</b>.
                   </td>
                 </tr>
               </table>
@@ -112,7 +123,7 @@ function buildHtmlTemplate({ licenseKey, plan, email, expiresAt }) {
               <!-- Highlights Callout -->
               <div style="background-color:rgba(76,141,255,0.08);border:1px solid rgba(76,141,255,0.25);border-radius:10px;padding:14px 16px;margin:0 0 24px;">
                 <p style="margin:0;font-size:12.5px;color:#93c5fd;line-height:1.5;">
-                  💡 <b>Remember:</b> The lock only triggers <i>after</i> you exit your trade. If a limit is hit mid-trade, the system enters pending mode so you can safely square off without being frozen.
+                  💡 <b>Remember:</b> Automatic rule locks wait when a usable broker positions/orders table reports open trades. Manual locks are immediate. Broker detection is best-effort; keep your broker’s own exit method available.
                 </p>
               </div>
 
@@ -127,7 +138,7 @@ function buildHtmlTemplate({ licenseKey, plan, email, expiresAt }) {
             <td style="padding:20px 32px;background-color:#07090f;border-top:1px solid #1a2234;text-align:center;">
               <p style="margin:0;font-size:11.5px;color:#475569;">
                 Trade Lock · Daily Discipline & Risk Protection for Indian Traders<br>
-                Purchased by ${email || 'Customer'} · Valid on up to 3 devices
+                Purchased by ${escapeHtml(email || 'Customer')} · Valid on up to ${maxDevices} devices
               </p>
             </td>
           </tr>
@@ -143,6 +154,7 @@ function buildHtmlTemplate({ licenseKey, plan, email, expiresAt }) {
 
 function buildPlainText({ licenseKey, plan, expiresAt }) {
   const planLabel = formatPlanName(plan);
+  const maxDevices = maxDevicesForPlan(plan);
   const expiryText = expiresAt
     ? 'Valid until ' + new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
     : 'Perpetual Lifetime Access (Never Expires)';
@@ -153,6 +165,7 @@ function buildPlainText({ licenseKey, plan, expiresAt }) {
     '',
     `Plan: ${planLabel}`,
     `Validity: ${expiryText}`,
+    `Devices: up to ${maxDevices}`,
     '',
     `YOUR LICENSE KEY:`,
     licenseKey,
@@ -165,7 +178,7 @@ function buildPlainText({ licenseKey, plan, expiresAt }) {
     '5. Click "Activate key".',
     '',
     'NOTE:',
-    'Trade Lock only locks after you square off your position, ensuring you are never locked out during an open trade.',
+    'Automatic rule locks defer when a usable broker positions/orders table reports open trades. Manual locks are immediate. Detection is best-effort; keep your broker’s own exit method available.',
     '',
     'Need support? Reply to this email.',
     'Trade Lock — Indian Markets Discipline & Risk Management'

@@ -4,9 +4,9 @@ const assert = require('node:assert');
 const emailService = require('../email');
 
 test('formatPlanName formats known and fallback plans', () => {
-  assert.strictEqual(emailService.formatPlanName('pro_monthly'), 'Pro — Monthly (₹199/mo)');
-  assert.strictEqual(emailService.formatPlanName('pro_yearly'), 'Pro — Yearly (₹1,499/yr)');
-  assert.strictEqual(emailService.formatPlanName('pro_plus_ai'), 'Pro+ AI Markets — Monthly (₹399/mo)');
+  assert.strictEqual(emailService.formatPlanName('pro_monthly'), 'Pro — 30-day prepaid (₹199)');
+  assert.strictEqual(emailService.formatPlanName('pro_yearly'), 'Pro — 365-day prepaid (₹1,499)');
+  assert.strictEqual(emailService.formatPlanName('pro_plus_ai'), 'Pro+ AI Markets — 30-day prepaid (₹399)');
   assert.strictEqual(emailService.formatPlanName('lifetime'), 'Founder Lifetime (₹2,999 one-time)');
   assert.strictEqual(emailService.formatPlanName('custom_test'), 'custom_test');
   assert.strictEqual(emailService.formatPlanName(null), 'Pro');
@@ -36,7 +36,7 @@ test('buildPlainText contains key and step-by-step instructions', () => {
 
   assert.ok(text.includes('TL-MONTH-11111-22222-33333'));
   assert.ok(text.includes('HOW TO ACTIVATE IN CHROME'));
-  assert.ok(text.includes('Pro — Monthly'));
+  assert.ok(text.includes('Pro — 30-day prepaid'));
 });
 
 test('sendLicenseEmail skips safely when apiKey is empty', async () => {
@@ -118,4 +118,24 @@ test('sendLicenseEmail handles upstream Resend API error cleanly without throwin
   assert.strictEqual(res.ok, false);
   assert.strictEqual(res.status, 422);
   assert.ok(res.error.includes('domain is not verified') || res.error.includes('validation_error'));
+});
+
+
+test('email templates use plan-specific device limits', () => {
+  const pro = emailService.buildHtmlTemplate({ licenseKey: 'TL-TEST', plan: 'pro_monthly', email: 'pro@example.com', expiresAt: null });
+  const plus = emailService.buildHtmlTemplate({ licenseKey: 'TL-TEST', plan: 'pro_plus_ai_monthly', email: 'plus@example.com', expiresAt: null });
+  assert.ok(pro.includes('up to 3 devices'));
+  assert.ok(plus.includes('up to 5 devices'));
+  assert.ok(plus.includes('30-day prepaid'));
+});
+
+
+test('email templates do not promise universal open-position deferral and escape HTML keys', () => {
+  const html = emailService.buildHtmlTemplate({ licenseKey: 'TL-<TEST>&KEY', plan: 'pro_monthly', email: 'pro@example.com', expiresAt: null });
+  const text = emailService.buildPlainText({ licenseKey: 'TL-TEST', plan: 'pro_monthly', expiresAt: null });
+  assert.ok(html.includes('TL-&lt;TEST&gt;&amp;KEY'));
+  assert.ok(html.includes('Manual locks are immediate'));
+  assert.ok(html.includes('Detection is best-effort') || html.includes('detection is best-effort'));
+  assert.ok(text.includes('Manual locks are immediate'));
+  assert.strictEqual(text.includes('ensuring you are never locked out'), false);
 });

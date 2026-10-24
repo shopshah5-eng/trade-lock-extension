@@ -35,7 +35,10 @@ test('Lock Screen: content/lock.js contains opaque full-screen overlay and remov
   assert.ok(lockJs.includes('tl-overlay-title'), 'Lock screen must have title element');
   assert.ok(lockJs.includes('tl-overlay-timer'), 'Lock screen must have live countdown element');
   assert.ok(lockJs.includes('Asia/Kolkata'), 'Lock screen must format unlock time in Asia/Kolkata timezone');
-  assert.ok(lockJs.includes('Broker-verified') && lockJs.includes('Manual log'), 'Lock screen must clearly label manual vs broker provenance');
+  assert.ok(lockJs.includes('Broker table') && lockJs.includes('Manual log'), 'Lock screen must label DOM imports without claiming broker verification');
+  assert.strictEqual(lockJs.includes('Broker-verified'), false, 'Generic DOM imports must not be labelled broker-verified');
+  assert.ok(lockJs.includes('chartOnlyExcluded') && lockJs.includes('isChartingPage'), 'Chart-only mode must not overlay order-entry terminals');
+  assert.ok(lockJs.includes('lockButton.disabled = lockActive'), 'HUD lock button must re-enable after a confirmed manual release');
 });
 
 // --------------------------------------- 2. Reset-Day Bypass Elimination ----
@@ -277,10 +280,11 @@ test('Paid Plans Catalog: Client and server plan catalogs match proposed pricing
 
   // Verify options/options.html contains Upgrade / Plans entry points
   const optionsHtml = fs.readFileSync(path.join(rootDir, 'options/options.html'), 'utf8');
-  assert.ok(optionsHtml.includes('Pro Monthly'), 'Options must present Pro Monthly');
-  assert.ok(optionsHtml.includes('Pro Yearly'), 'Options must present Pro Yearly');
-  assert.ok(optionsHtml.includes('Pro+ AI Monthly'), 'Options must present Pro+ AI Monthly');
-  assert.ok(optionsHtml.includes('Pro+ AI Yearly'), 'Options must present Pro+ AI Yearly');
+  assert.ok(optionsHtml.includes('Pro 30-Day'), 'Options must present 30-day prepaid Pro');
+  assert.ok(optionsHtml.includes('365 days'), 'Options must present 365-day prepaid access');
+  assert.ok(optionsHtml.includes('Pro+ AI 30-Day'), 'Options must present 30-day prepaid Pro+');
+  assert.ok(optionsHtml.includes('no auto-renewal'), 'Options must disclose prepaid non-renewing access');
+  assert.strictEqual(optionsHtml.includes('Recurring subscriptions can be managed or cancelled'), false);
   assert.ok(optionsHtml.includes('Founder Lifetime'), 'Options must present Founder Lifetime');
   assert.ok(optionsHtml.includes('Plan Comparison Matrix'), 'Options must include full plan comparison table');
 });
@@ -616,3 +620,37 @@ test('Build 11 RC: exportLogBtn label does not claim Pro and emergencyOverride i
 
 
 
+
+test('Journal Accessibility: delete controls have names and broker side text is escaped', () => {
+  const optionsJs = fs.readFileSync(path.join(rootDir, 'options', 'options.js'), 'utf8');
+  assert.ok(optionsJs.includes('aria-label="Delete '), 'Icon-only journal deletion needs an accessible name');
+  assert.ok(optionsJs.includes('title="Delete trade"'));
+  assert.ok(optionsJs.includes("escapeHtml(t.side || 'BUY')"), 'Broker-provided side labels must not become HTML');
+  const optionsHtml = fs.readFileSync(path.join(rootDir, 'options', 'options.html'), 'utf8');
+  assert.ok(optionsHtml.includes('id="marketCandleCanvas" tabindex="0"'));
+  assert.ok(optionsHtml.includes('aria-label="Zoom in"') && optionsHtml.includes('aria-label="Zoom out"'));
+  assert.ok(optionsJs.includes("canvas.addEventListener('keydown'"), 'Chart pan/zoom must be keyboard operable');
+});
+
+
+test('Popup Entitlements: license-derived Pro/Pro+ values initialize before badge and quick actions', () => {
+  const popupJs = fs.readFileSync(path.join(rootDir, 'popup', 'popup.js'), 'utf8');
+  const renderAt = popupJs.indexOf('function render()');
+  const proAt = popupJs.indexOf('var pro = R.isPro(view.license', renderAt);
+  const plusAt = popupJs.indexOf('var proPlus = R.isProPlus', renderAt);
+  const badgeAt = popupJs.indexOf('if (els.planBadge)', renderAt);
+  assert.ok(proAt > renderAt && plusAt > proAt && badgeAt > plusAt, 'Entitlements must be assigned before they are rendered');
+  assert.ok(popupJs.includes('if (!pro) {'), 'Free badge must come from license state, not a missing freeTier default');
+});
+
+
+test('Popup Mode B copy follows real adapter verification and fallback status', () => {
+  const html = fs.readFileSync(path.join(rootDir, 'popup/popup.html'), 'utf8');
+  const js = fs.readFileSync(path.join(rootDir, 'popup/popup.js'), 'utf8');
+  assert.ok(html.includes('../lib/detector.js'), 'popup must load the shared adapter registry');
+  assert.ok(js.includes('detector.isVerifiedOrderRestrictionBroker(view.hostname)'));
+  assert.ok(js.includes('detector.getEnforcementLabel(view.hostname, mode)'));
+  assert.ok(js.includes('Full-Screen Lock Fallback Active'));
+  assert.strictEqual(js.includes("els.bannerTitle.textContent = 'Order Restriction Active';"), false,
+    'unconditional verified-order status must not return');
+});

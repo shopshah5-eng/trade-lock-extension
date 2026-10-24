@@ -1,7 +1,7 @@
 'use strict';
 /*
  * Standalone Extension Packaging Script
- * Produces a clean, production-ready Chrome Extension ZIP in dist/
+ * Produces a clean release-candidate Chrome Extension ZIP in dist/
  * Enforces standard forward-slash zip paths and excludes all server code,
  * tests, node_modules, secrets, and deployment metadata.
  */
@@ -192,4 +192,4 @@ if (!fs.existsSync(manifestPath)) {
 }
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 console.log(`[package] Verified Manifest V3: "${manifest.name}" v${manifest.version}`);
-console.log('[package] Release verification: PASS (Zero secrets, zero server files, clean forward-slash paths)');
+console.log('[package] Artifact checks: PASS (allowlist, excluded paths, manifest, forward-slash ZIP paths)');

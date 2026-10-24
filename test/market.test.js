@@ -142,3 +142,33 @@ test('thetaSummary: expiry day adds acceleration warning', () => {
   assert.match(M.thetaSummary(rows, 100, 0).verdict, /Expiry is near/);
   assert.strictEqual(M.thetaSummary([], 100, 1), null);
 });
+
+
+test('RSI uses Wilder smoothing after the initial average', () => {
+  const closes = [44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42,
+    45.84, 46.08, 45.89, 46.03, 45.61, 46.28, 46.28, 46.00, 46.03, 46.41, 46.22, 46.55];
+  const candles = closes.map((c, i) => ({ t: i, o: c, h: c, l: c, c, v: 1 }));
+  assert.strictEqual(M.rsi(candles.slice(0, 15), 14), 70.46);
+  assert.strictEqual(M.rsi(candles, 14), 68.86);
+  assert.strictEqual(M.rsi(candles.map(c => ({ ...c, c: 50 })), 14), 50);
+});
+
+test('chartWindow applies pan offset and clamps it to available history', () => {
+  const candles = Array.from({ length: 60 }, (_, i) => ({ t: i, c: i }));
+  const latest = M.chartWindow(candles, 2, 0);
+  assert.strictEqual(latest.startIndex, 30);
+  assert.strictEqual(latest.candles.at(-1).c, 59);
+  const panned = M.chartWindow(candles, 2, 10);
+  assert.strictEqual(panned.startIndex, 20);
+  assert.strictEqual(panned.candles.at(-1).c, 49);
+  const clamped = M.chartWindow(candles, 2, 9999);
+  assert.strictEqual(clamped.startIndex, 0);
+  assert.strictEqual(clamped.candles.length, 30);
+});
+
+test('weekly demo generation returns 60 aggregated candles without minute-scale work', () => {
+  const started = Date.now();
+  const candles = M.generateCandles('NIFTY', '1W', 60);
+  assert.strictEqual(candles.length, 60);
+  assert.ok(Date.now() - started < 1000, 'weekly generation should not simulate 604,800 one-minute rows');
+});

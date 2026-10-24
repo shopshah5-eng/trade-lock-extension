@@ -60,6 +60,23 @@ test('plans are priced in paise for India', () => {
 // ------------------------------------------------ server integration tests ----
 
 const http = require('node:http');
+const os = require('node:os');
+const path = require('node:path');
+const fs = require('node:fs');
+const testDataFile = path.join(os.tmpdir(), `trade-lock-license-${process.pid}-${Date.now()}.json`);
+process.env.TL_DEMO_MODE = '1';
+process.env.NODE_ENV = 'test';
+process.env.TL_DATA_FILE = testDataFile;
+process.env.RAZORPAY_KEY_ID = '';
+process.env.RAZORPAY_KEY_SECRET = '';
+process.env.RESEND_API_KEY = '';
+process.env.SUPABASE_URL = '';
+process.env.SUPABASE_SERVICE_KEY = '';
+process.env.SUPABASE_KEY = '';
+process.on('exit', () => {
+  fs.rmSync(testDataFile, { force: true });
+  fs.rmSync(testDataFile + '.tmp', { force: true });
+});
 const server = require('../index');
 const store = require('../store');
 

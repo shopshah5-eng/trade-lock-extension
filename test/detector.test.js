@@ -243,10 +243,11 @@ withDom('scan() ignores tables too large to be an order book', () => {
   assert.strictEqual(D.scan(document, {}).orders.length, 0);
 });
 
-test('isVerifiedOrderRestrictionBroker verifies supported broker adapters', () => {
-  assert.strictEqual(D.isVerifiedOrderRestrictionBroker('kite.zerodha.com'), true);
-  assert.strictEqual(D.isVerifiedOrderRestrictionBroker('web.dhan.co'), true);
-  assert.strictEqual(D.isVerifiedOrderRestrictionBroker('subdomain.kite.zerodha.com'), true);
+test('isVerifiedOrderRestrictionBroker only trusts fully restriction-tested adapters', () => {
+  assert.strictEqual(D.isVerifiedOrderRestrictionBroker('fake-broker.local'), true);
+  assert.strictEqual(D.isVerifiedOrderRestrictionBroker('subdomain.fake-broker.local'), true);
+  assert.strictEqual(D.isVerifiedOrderRestrictionBroker('kite.zerodha.com'), false);
+  assert.strictEqual(D.isVerifiedOrderRestrictionBroker('web.dhan.co'), false);
 
   assert.strictEqual(D.isVerifiedOrderRestrictionBroker('unverified-broker.com'), false);
   assert.strictEqual(D.isVerifiedOrderRestrictionBroker('arbitrary-trading.in'), false);
@@ -300,8 +301,9 @@ test('getBrokerAdapterProfile returns granular verification status and truthful 
 
 test('getEnforcementLabel provides truthful Mode A-D labels', () => {
   const modeA = D.getEnforcementLabel('kite.zerodha.com', 'warning');
-  assert.match(modeA.badgeText, /DISCIPLINE WARNING/);
-  assert.match(modeA.desc, /Orders are not blocked/);
+  assert.match(modeA.badgeText, /FULL-SCREEN DISCIPLINE LOCK/);
+  assert.match(modeA.desc, /blocks mouse and keyboard/);
+  assert.match(modeA.desc, /does not intercept orders at the broker/);
 
   const modeBTested = D.getEnforcementLabel('fake-broker.local', 'order_restrict');
   assert.match(modeBTested.badgeText, /RESTRICTION VERIFIED/);
@@ -312,4 +314,55 @@ test('getEnforcementLabel provides truthful Mode A-D labels', () => {
   const modeC = D.getEnforcementLabel('kite.zerodha.com', 'full_site');
   assert.match(modeC.badgeText, /FULL TRADING-SITE RESTRICTION/);
   assert.match(modeC.desc, /Access to open positions may be blocked/);
+});
+
+
+test('resolveOpenTrades distinguishes an authoritative empty positions table from an absent table', () => {
+  if (!linkedom) return;
+  const empty = linkedom.parseHTML('<table><thead><tr><th>Symbol</th><th>Net qty</th></tr></thead><tbody></tbody></table>').document;
+  const foundEmpty = D.scan(empty, {});
+  assert.strictEqual(foundEmpty.positionsTablePresent, true);
+  assert.strictEqual(D.resolveOpenTrades(foundEmpty), 0);
+
+  const noTable = linkedom.parseHTML('<div>No positions widget is present on this route</div>').document;
+  assert.strictEqual(D.resolveOpenTrades(D.scan(noTable, {})), null);
+});
+
+test('resolveOpenTrades ignores zero-quantity rows and counts nonzero positions', () => {
+  if (!linkedom) return;
+  const dom = linkedom.parseHTML('<table><thead><tr><th>Symbol</th><th>Net qty</th></tr></thead><tbody>' +
+    '<tr><td>NIFTY</td><td>0</td></tr><tr><td>BANKNIFTY</td><td>-15</td></tr></tbody></table>').document;
+  const found = D.scan(dom, {});
+  assert.strictEqual(found.positions.length, 2);
+  assert.strictEqual(D.resolveOpenTrades(found), 1);
+});
+
+
+test('chart-only policy recognizes chart hosts and paths, not order terminals', () => {
+  assert.strictEqual(D.isChartingPage('kitecharts.com', '/'), true);
+  assert.strictEqual(D.isChartingPage('charts.kitecharts.com', '/'), true);
+  assert.strictEqual(D.isChartingPage('kite.zerodha.com', '/chart/123'), true);
+  assert.strictEqual(D.isChartingPage('kite.zerodha.com', '/orders'), false);
+  assert.strictEqual(D.isChartingPage('web.dhan.co', '/dashboard'), false);
+});
+
+test('enforcement copy matches full-screen behavior and honest Mode B fallback', () => {
+  const modeA = D.getEnforcementLabel('kite.zerodha.com', 'warning');
+  assert.match(modeA.desc, /blocks mouse and keyboard/);
+  assert.doesNotMatch(modeA.desc, /remains interactive|orders are not blocked/i);
+  const fallback = D.getEnforcementLabel('kite.zerodha.com', 'order_restrict');
+  assert.match(fallback.desc, /Full-screen lock fallback/);
+  assert.doesNotMatch(fallback.desc, /Warning Mode|Warning overlay/);
+});
+
+
+test('OPEN/CLOSED status text cannot hide nonzero Net qty position evidence', () => {
+  const found = D.detectFromTables([{
+    headers: ['Symbol', 'Net qty', 'Status'],
+    rows: [['NIFTY', '15', 'OPEN'], ['BANKNIFTY', '0', 'CLOSED']],
+  }]);
+  assert.strictEqual(found.orders.length, 0);
+  assert.strictEqual(found.pending.length, 0);
+  assert.strictEqual(found.positions.length, 2);
+  assert.strictEqual(D.resolveOpenTrades(found), 1);
 });

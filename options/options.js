@@ -10,7 +10,7 @@
              'maxRiskPerTrade', 'maxDailyRisk', 'minLockMinutes', 'detectIntervalMs', 'riskPerUnit',
              'totalCapital', 'dailyRiskPercent', 'perTradeRiskPercent'];
   var BOOL = ['skipWeekends', 'skipHolidays', 'autoDetect', 'countAutoTrades',
-              'countAutoRisk', 'reloadOnTamper', 'blockSiteWhenLocked', 'fullSiteAcknowledged'];
+              'countAutoRisk', 'reloadOnTamper', 'fullSiteAcknowledged'];
 
   var dirty = false;
   var currentState = null;
@@ -270,14 +270,15 @@
     settings = settings || currentSettings || {};
     lic = lic || currentLicense;
     var pro = R.isPro(lic, Date.now());
-    return { enforced: true, pro: pro, free: !pro };
+    var proPlus = R.isProPlus ? R.isProPlus(lic, Date.now()) : pro;
+    return { enforced: true, pro: pro, proPlus: proPlus, free: !pro };
   }
 
   function applyPlanGating(settings, lic) {
     var plan = planState(settings, lic);
     var proIds = ['autoDetect', 'countAutoTrades', 'countAutoRisk',
       'maxDailyLoss', 'profitTarget', 'maxConsecutiveLosses',
-      'maxRiskPerTrade', 'maxDailyRisk', 'riskPerUnit', 'blockSiteWhenLocked'];
+      'maxRiskPerTrade', 'maxDailyRisk', 'riskPerUnit'];
     proIds.forEach(function (id) {
       var node = el(id);
       if (!node) return;
@@ -287,6 +288,15 @@
     });
     // Note: Free users have full access to export their own trade logs to CSV & JSON without a paywall
     if (el('reportBtn')) el('reportBtn').disabled = plan.free;
+    document.querySelectorAll('[data-tab="market"], [data-tab="options"], [data-tab="ai"]').forEach(function (tab) {
+      tab.disabled = !plan.proPlus;
+      tab.title = plan.proPlus ? '' : 'Pro+ AI or Founder Lifetime required';
+      tab.setAttribute('aria-label', tab.textContent.trim() + (plan.proPlus ? '' : ' (Pro+ required)'));
+    });
+    ['marketEnabled', 'marketSource', 'chatInput', 'chatSendBtn'].forEach(function (id) {
+      if (el(id)) el(id).disabled = !plan.proPlus;
+    });
+    document.querySelectorAll('.prompt-chip').forEach(function (chip) { chip.disabled = !plan.proPlus; });
     return plan;
   }
 
@@ -322,26 +332,26 @@
     var box = el('licStatus');
     if (!box) return;
     var pro = R.isPro(lic, Date.now());
-    var planId = (lic && lic.plan) || 'free';
+    var planId = R.canonicalPlanId ? R.canonicalPlanId((lic && lic.plan) || 'free') : ((lic && lic.plan) || 'free');
     if (lic && lic.key && el('licKey')) el('licKey').value = lic.key;
 
     if (pro) {
       var planNames = {
-        pro_monthly: 'Pro Monthly (₹199/mo)',
-        pro_yearly: 'Pro Yearly (₹1,499/yr)',
-        pro_plus_ai_monthly: 'Pro+ AI Monthly (₹399/mo)',
-        pro_plus_ai_yearly: 'Pro+ AI Yearly (₹3,999/yr)',
+        pro_monthly: 'Pro 30-day Prepaid (₹199)',
+        pro_yearly: 'Pro 365-day Prepaid (₹1,499)',
+        pro_plus_ai_monthly: 'Pro+ AI 30-day Prepaid (₹399)',
+        pro_plus_ai_yearly: 'Pro+ AI 365-day Prepaid (₹3,999)',
         founder_lifetime: 'Founder Lifetime (₹2,999)'
       };
       var pName = planNames[planId] || (lic.plan || 'Pro Active');
       var expStr = lic.expiresAt ? ('valid until <b>' + R.istLabel(lic.expiresAt) + '</b>') : '<b>Lifetime Access</b>';
       box.className = 'callout green';
-      box.innerHTML = '<b>Active Subscription:</b> You are on the <b>' + pName + '</b> plan (' + expStr + '). ' +
-        'All advanced discipline rules, automatic broker order detection, and multi-device entitlements are active.';
+      box.innerHTML = '<b>Active Prepaid Plan:</b> You are on the <b>' + pName + '</b> plan (' + expStr + '). ' +
+        'Advanced discipline rules, generic broker-table detection, and plan device entitlements are active.';
     } else {
       box.className = 'callout blue';
       box.innerHTML = '<b>Free Tier Active.</b> Trade-count lock, manual trade logging, and full monthly trade journal are enabled. ' +
-        'Upgrade to a Pro or Pro+ AI plan below to unlock automated broker detection, loss limits, streak limits, and AI coaching.' +
+        'Upgrade to Pro for table detection and advanced rules, or Pro+ for market features and the discipline coach.' +
         (lic && lic.reason ? ' <span style="color:var(--dim)">(Status note: ' + escapeHtml(lic.reason) + ')</span>' : '');
     }
 
@@ -377,9 +387,9 @@
     var proPrice = el('proCardPrice');
     var proSub = el('proCardSub');
     var proBtn = el('proCardBtn');
-    if (proName) proName.textContent = isYearly ? 'Pro Yearly' : 'Pro Monthly';
-    if (proPrice) proPrice.innerHTML = isYearly ? '₹1,499 <span style="font-size:12px;font-weight:400">/ yr</span>' : '₹199 <span style="font-size:12px;font-weight:400">/ mo</span>';
-    if (proSub) proSub.textContent = isYearly ? '₹125/month billed annually (Save 37%)' : 'Complete risk rules suite · Billed monthly';
+    if (proName) proName.textContent = isYearly ? 'Pro 365-Day' : 'Pro 30-Day';
+    if (proPrice) proPrice.innerHTML = isYearly ? '₹1,499 <span style="font-size:12px;font-weight:400">/ 365 days</span>' : '₹199 <span style="font-size:12px;font-weight:400">/ 30 days</span>';
+    if (proSub) proSub.textContent = isYearly ? '365-day prepaid access · equivalent ₹125/month (Save 37%)' : 'Complete risk rules suite · 30-day prepaid access';
     if (proBtn) proBtn.setAttribute('data-plan', isYearly ? 'pro_yearly' : 'pro_monthly');
 
     // Update Pro+ AI Card
@@ -388,28 +398,34 @@
     var proAiSub = el('proAiCardSub');
     var proAiBadge = el('proAiBadge');
     var proAiBtn = el('proAiCardBtn');
-    if (proAiName) proAiName.textContent = isYearly ? 'Pro+ AI Yearly' : 'Pro+ AI Monthly';
-    if (proAiPrice) proAiPrice.innerHTML = isYearly ? '₹3,999 <span style="font-size:12px;font-weight:400">/ yr</span>' : '₹399 <span style="font-size:12px;font-weight:400">/ mo</span>';
-    if (proAiSub) proAiSub.textContent = isYearly ? '₹333/month billed annually (Save 16%)' : 'Discipline + AI intelligence · Billed monthly';
+    if (proAiName) proAiName.textContent = isYearly ? 'Pro+ AI 365-Day' : 'Pro+ AI 30-Day';
+    if (proAiPrice) proAiPrice.innerHTML = isYearly ? '₹3,999 <span style="font-size:12px;font-weight:400">/ 365 days</span>' : '₹399 <span style="font-size:12px;font-weight:400">/ 30 days</span>';
+    if (proAiSub) proAiSub.textContent = isYearly ? '365-day prepaid access · equivalent ₹333/month (Save 16%)' : 'Discipline + market intelligence · 30-day prepaid access';
     if (proAiBadge) proAiBadge.style.display = isYearly ? 'inline-block' : 'none';
     if (proAiBtn) proAiBtn.setAttribute('data-plan', isYearly ? 'pro_plus_ai_yearly' : 'pro_plus_ai_monthly');
 
     // Update plan buttons in comparison cards
-    var planId = (lic && lic.plan) || 'free';
+    var planId = R.canonicalPlanId ? R.canonicalPlanId((lic && lic.plan) || 'free') : ((lic && lic.plan) || 'free');
     var pro = R.isPro(lic, Date.now());
     document.querySelectorAll('.plan-select-btn').forEach(function (btn) {
       var p = btn.getAttribute('data-plan');
-      if (p === planId || (p === 'free' && !pro)) {
+      if (p === 'free') {
+        btn.disabled = true;
+        btn.textContent = pro ? 'Free (included)' : 'Current Plan';
+        btn.style.opacity = '0.65';
+        return;
+      }
+      if (p === planId) {
         btn.disabled = true;
         btn.textContent = 'Current Plan';
         btn.style.opacity = '0.65';
       } else {
         btn.disabled = false;
         btn.style.opacity = '1';
-        if (p === 'pro_monthly') btn.textContent = pro ? 'Switch to Pro Monthly' : 'Upgrade to Pro';
-        else if (p === 'pro_yearly') btn.textContent = pro ? 'Switch to Pro Yearly' : 'Get Pro Yearly (Save 37%)';
+        if (p === 'pro_monthly') btn.textContent = pro ? 'Switch to Pro 30-Day' : 'Upgrade to Pro';
+        else if (p === 'pro_yearly') btn.textContent = pro ? 'Switch to Pro 365-Day' : 'Get Pro 365-Day (Save 37%)';
         else if (p === 'pro_plus_ai_monthly') btn.textContent = 'Get Pro+ AI';
-        else if (p === 'pro_plus_ai_yearly') btn.textContent = 'Get Pro+ AI Yearly (Save 16%)';
+        else if (p === 'pro_plus_ai_yearly') btn.textContent = 'Get Pro+ AI 365-Day (Save 16%)';
         else if (p === 'founder_lifetime') btn.textContent = 'Get Founder Access';
       }
     });
@@ -476,7 +492,7 @@
           notice.style.background = 'rgba(245,158,11,0.12)';
           notice.style.border = '1px solid rgba(245,158,11,0.3)';
           notice.style.color = '#fcd34d';
-          notice.innerHTML = '⚠️ <b>Payment Gateway Offline / Not Configured:</b> The Trade Lock backend server is running in development mode without live Razorpay credentials. No charges were made. In live production, this connects to Razorpay billing. To activate Pro immediately in development, generate or paste a license key into the box above.';
+          notice.innerHTML = '⚠️ <b>Payment Gateway Offline / Not Configured:</b> The Trade Lock backend server is running in development mode without live Razorpay credentials. No charges were made. In live production, this connects to Razorpay billing. For development, use an explicitly enabled demo checkout or paste a valid test license key above.';
         } else if (data.orderId) {
           notice.style.background = 'rgba(16,185,129,0.12)';
           notice.style.border = '1px solid rgba(16,185,129,0.3)';
@@ -528,13 +544,13 @@
       var api = (el('licApi').value.trim() || R.DEFAULT_SETTINGS.licenseApiBase).replace(/\/+$/, '');
 
       if (key) {
-        if (el('licNote')) el('licNote').textContent = 'syncing subscription…';
+        if (el('licNote')) el('licNote').textContent = 'syncing license…';
         globalThis.TLLicense.activate(api, key).then(function (lic) {
           if (el('licNote')) {
-            el('licNote').textContent = lic.active ? 'Subscription synchronized ✓' : ('Sync status: ' + (lic.reason || 'not active'));
+            el('licNote').textContent = lic.active ? 'License synchronized ✓' : ('Sync status: ' + (lic.reason || 'not active'));
           }
           loadAll();
-          toast('Subscription synchronized');
+          toast('License synchronized');
         }).catch(function (err) {
           if (el('licNote')) el('licNote').textContent = 'Sync failed: ' + err.message;
         });
@@ -543,12 +559,12 @@
 
       var email = el('checkoutEmail') ? el('checkoutEmail').value.trim() : '';
       if (!email) {
-        alert('Please enter your purchase email or license key to restore your subscription.');
+        alert('Please enter your purchase email for recovery guidance or a license key to validate.');
         if (el('checkoutEmail')) el('checkoutEmail').focus();
         return;
       }
 
-      if (el('licNote')) el('licNote').textContent = 'looking up subscription for ' + email + '…';
+      if (el('licNote')) el('licNote').textContent = 'requesting recovery guidance for ' + email + '…';
       fetch(api + '/api/restore-subscription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -556,20 +572,11 @@
       })
       .then(function (res) { return res.json(); })
       .then(function (data) {
-        if (data.ok && data.found) {
-          if (data.licenseKey) {
-            if (el('licKey')) el('licKey').value = data.licenseKey;
-            globalThis.TLLicense.activate(api, data.licenseKey).then(function () {
-              loadAll();
-              toast('Subscription restored and activated ✓');
-            });
-          } else {
-            if (el('licNote')) el('licNote').textContent = '✓ ' + (data.note || 'Active subscription found! Check your email for license key.');
-            toast('Subscription found');
-          }
+        if (data.ok && data.recovery === 'support_required') {
+          if (el('licNote')) el('licNote').textContent = data.note;
+          alert('For account safety, email-only recovery does not reveal or replace a license. Contact support from your purchase email for ownership verification and reissue.');
         } else {
-          if (el('licNote')) el('licNote').textContent = 'No subscription found for ' + email;
-          alert(data.message || 'No active subscription found for that email.');
+          if (el('licNote')) el('licNote').textContent = data.note || 'Recovery could not be completed.';
         }
       })
       .catch(function (err) {
@@ -611,9 +618,9 @@
     var box = el('aiCoach');
     if (!box || !globalThis.TLInsights) return;
     var plan = planState(settings, lic);
-    if (plan.free) {
-      box.innerHTML = '<div class="callout" style="margin:0">🤖 <b>AI Coach locked (Pro).</b> ' +
-        'Pro watches how you trade — revenge entries after losses, risk size creeping up, burst overtrading — ' +
+    if (!plan.proPlus) {
+      box.innerHTML = '<div class="callout" style="margin:0">🤖 <b>Discipline Coach locked (Pro+).</b> ' +
+        'Pro+ watches how you trade — revenge entries after losses, risk size creeping up, burst overtrading — ' +
         'scores your discipline 0–100 and writes your end-of-day report.</div>';
       return;
     }
@@ -623,7 +630,7 @@
       return '<div style="padding:3px 0">' + icon + ' ' + sg.text + '</div>';
     }).join('');
     var sug = a.suggestions.map(function (sg) { return '<div style="padding:3px 0">→ ' + sg + '</div>'; }).join('');
-    box.innerHTML = '<h3 style="margin:12px 0 6px;font-size:13px">AI Coach <span style="color:var(--ok)">(Pro)</span> — ' +
+    box.innerHTML = '<h3 style="margin:12px 0 6px;font-size:13px">Discipline Coach (local rules) <span style="color:var(--ok)">(Pro+)</span> — ' +
       'discipline score <b>' + a.score + '/100</b> · ' + a.grade + '</h3>' +
       '<div style="font-size:12.5px;color:var(--muted)">' + sig + sug + '</div>';
   }
@@ -641,7 +648,7 @@
         el('checkoutEmail').value = res.tlUserEmail;
       }
       currentLicense = res.tlLicense || null;
-      var s = Object.assign({}, R.DEFAULT_SETTINGS, res.tlSettings || {});
+      var s = R.effectiveSettings(res.tlSettings, currentLicense, Date.now());
       currentSettings = s;
       if (!dirty) fill(s);
       renderLicense(currentLicense, s);
@@ -757,7 +764,8 @@
     symbol: 'NIFTY',
     timeframe: '15m',
     isDragging: false,
-    dragStartX: 0
+    dragStartX: 0,
+    dragStartPan: 0
   };
 
   function getInstrumentConfig(sym) {
@@ -830,13 +838,14 @@
     var volPlotHeight = totalHeight * 0.20;
     var volPlotTop = pricePlotHeight + (totalHeight * 0.04);
 
-    // Calculate visible candles according to zoom
-    var baseVisible = Math.max(20, Math.min(candles.length, Math.round(candles.length / chartState.zoom)));
+    // Calculate visible candles according to zoom and pan offset.
+    var windowed = M.chartWindow(candles, chartState.zoom, chartState.panOffset);
+    chartState.panOffset = windowed.panOffset;
+    var baseVisible = windowed.visibleCount;
     var candleSpacing = plotWidth / baseVisible;
     var candleWidth = Math.max(2, candleSpacing * 0.72);
-
-    var startIdx = Math.max(0, candles.length - baseVisible);
-    var visibleCandles = candles.slice(startIdx);
+    var startIdx = windowed.startIndex;
+    var visibleCandles = windowed.candles;
 
     // Find min and max price & volume
     var minPrice = Infinity;
@@ -1029,7 +1038,46 @@
     if (!canvas || canvas._inited) return;
     canvas._inited = true;
 
+    canvas.addEventListener('mousedown', function (e) {
+      chartState.isDragging = true;
+      chartState.dragStartX = e.clientX;
+      chartState.dragStartPan = chartState.panOffset || 0;
+      canvas.style.cursor = 'grabbing';
+    });
+    window.addEventListener('mouseup', function () {
+      if (!chartState.isDragging) return;
+      chartState.isDragging = false;
+      canvas.style.cursor = 'grab';
+    });
+    canvas.addEventListener('keydown', function (e) {
+      var key = e.key;
+      if (['ArrowLeft', 'ArrowRight', '+', '=', '-', '_', 'Home'].indexOf(key) === -1) return;
+      e.preventDefault();
+      if (key === 'Home') {
+        chartState.zoom = 1;
+        chartState.panOffset = 0;
+      } else if (key === '+' || key === '=') {
+        chartState.zoom = Math.min(3, (chartState.zoom || 1) * 1.25);
+      } else if (key === '-' || key === '_') {
+        chartState.zoom = Math.max(0.5, (chartState.zoom || 1) / 1.25);
+      } else {
+        var visible = Math.max(20, Math.min(chartState.candles.length,
+          Math.round(chartState.candles.length / (chartState.zoom || 1))));
+        var step = Math.max(1, Math.round(visible * 0.1));
+        chartState.panOffset = (chartState.panOffset || 0) + (key === 'ArrowLeft' ? step : -step);
+      }
+      drawMarketCandleChart();
+    });
     canvas.addEventListener('mousemove', function (e) {
+      if (chartState.isDragging) {
+        var dragVisible = Math.max(20, Math.min(chartState.candles.length,
+          Math.round(chartState.candles.length / (chartState.zoom || 1))));
+        var dragSpacing = (canvas.getBoundingClientRect().width - 55) / Math.max(1, dragVisible);
+        chartState.panOffset = Math.max(0, Math.min(chartState.candles.length - dragVisible,
+          chartState.dragStartPan + (e.clientX - chartState.dragStartX) / Math.max(1, dragSpacing)));
+        drawMarketCandleChart();
+        return;
+      }
       var rect = canvas.getBoundingClientRect();
       var x = e.clientX - rect.left;
       var plotWidth = rect.width - 55;
@@ -1044,6 +1092,7 @@
     });
 
     canvas.addEventListener('mouseleave', function () {
+      chartState.isDragging = false;
       chartState.hoveredIdx = -1;
       drawMarketCandleChart();
       var ohlcEl = el('chartOhlcBar');
@@ -1259,6 +1308,7 @@
     var cfg = getInstrumentConfig(symbol);
     var candles = generateSampleCandles(cfg.basePrice, 60, tf, symbol);
     chartState.candles = candles;
+    chartState.panOffset = 0;
     chartState.symbol = symbol;
     chartState.timeframe = tf;
 
@@ -1273,7 +1323,7 @@
       return;
     }
 
-    var analysis = M.analyze(candles, [], { symbol: symbol, timeframe: tf });
+    var analysis = M.analyze(candles, { symbol: symbol, timeframe: tf });
     chartState.analysis = analysis;
     drawMarketCandleChart();
 
@@ -1535,7 +1585,7 @@
         if (isDemoReq) {
           var chartSpot = chartSym === 'BANKNIFTY' ? 51200 : chartSym === 'FINNIFTY' ? 23400 : 24520;
           var chartCandles = (typeof generateSampleCandles === 'function') ? generateSampleCandles(chartSpot, 60) : [];
-          var analysis = (M && M.analyze) ? M.analyze(chartCandles, [], { symbol: chartSym, timeframe: '5m' }) : null;
+          var analysis = (M && M.analyze) ? M.analyze(chartCandles, { symbol: chartSym, timeframe: '5m' }) : null;
           var r1 = (analysis && analysis.nearestResistance && analysis.nearestResistance[0]) ? analysis.nearestResistance[0].price : (chartSpot + 120);
           var s1 = (analysis && analysis.nearestSupport && analysis.nearestSupport[0]) ? analysis.nearestSupport[0].price : (chartSpot - 120);
           var trend = (analysis && analysis.trend) ? analysis.trend : 'neutral consolidation';
@@ -1734,14 +1784,14 @@
           var tPnlCls = net > 0 ? 'pos' : (net < 0 ? 'neg' : '');
           var isBroker = (t.provenance || '').indexOf('broker') !== -1;
           var provBadge = isBroker
-            ? '<span class="badge pro" style="font-size:10px;padding:2px 5px">Broker-Verified</span>'
+            ? '<span class="badge pro" style="font-size:10px;padding:2px 5px">Broker table</span>'
             : '<span class="badge" style="font-size:10px;padding:2px 5px;background:rgba(255,255,255,0.06);color:var(--dim)">Manual</span>';
 
           bodyHtml +=
             '<tr>' +
               '<td style="white-space:nowrap;color:var(--dim)">' + tTime + '</td>' +
               '<td style="font-weight:700">' + escapeHtml(t.symbol || 'MANUAL') + '</td>' +
-              '<td><span class="badge ' + (t.side === 'BUY' ? 'pro' : 'danger') + '" style="font-size:10px;padding:2px 6px">' + (t.side || 'BUY') + '</span></td>' +
+              '<td><span class="badge ' + (t.side === 'BUY' ? 'pro' : 'danger') + '" style="font-size:10px;padding:2px 6px">' + escapeHtml(t.side || 'BUY') + '</span></td>' +
               '<td>' + (t.qty || 1) + '</td>' +
               '<td>₹' + (t.entry || 0) + '</td>' +
               '<td>₹' + (t.exit || 0) + '</td>' +
@@ -1751,7 +1801,7 @@
               '<td style="color:var(--text)">' + escapeHtml(t.setup || '—') + '</td>' +
               '<td style="color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(t.notes || '') + '">' + escapeHtml(t.notes || '—') + '</td>' +
               '<td>' + provBadge + '</td>' +
-              '<td><button class="danger delete-trade-btn" data-month="' + selectedMonthKey + '" data-date="' + dStr + '" data-id="' + t.id + '" style="padding:2px 6px;font-size:10px">×</button></td>' +
+              '<td><button type="button" class="danger delete-trade-btn" aria-label="Delete ' + escapeHtml(t.symbol || 'manual trade') + ' trade on ' + dStr + '" title="Delete trade" data-month="' + selectedMonthKey + '" data-date="' + dStr + '" data-id="' + escapeHtml(t.id) + '" style="padding:2px 6px;font-size:10px">×</button></td>' +
             '</tr>';
         });
 
@@ -1788,6 +1838,9 @@
 
         chrome.storage.local.get(['tlState', 'tlJournal'], function (res) {
           var state = res.tlState;
+          if (!state) return;
+          state.log = (state.log || []).filter(function (x) { return String(x.id) !== String(tId); });
+          if (R.rebuildSessionFromLog) R.rebuildSessionFromLog(state);
           if (state && state.journal && state.journal.months && state.journal.months[mKey]) {
             var dayRec = state.journal.months[mKey].days[dStr];
             if (dayRec && Array.isArray(dayRec.trades)) {
@@ -1795,9 +1848,23 @@
               state.journal.months[mKey].summary = R.calculateMonthSummary(state.journal.months[mKey].days);
             }
           }
+          if (state.journal && state.journal.months) {
+            R.archiveDayToJournal(state.journal, state.session.date, state.log, state.session);
+            Object.keys(state.journal.months).forEach(function (month) {
+              var days = state.journal.months[month].days || {};
+              Object.keys(days).forEach(function (day) {
+                if (!(days[day].trades || []).length) delete days[day];
+              });
+              state.journal.months[month].summary = R.calculateMonthSummary(days);
+              if (!Object.keys(days).length) delete state.journal.months[month];
+            });
+          }
           var flatJ = Array.isArray(res.tlJournal) ? res.tlJournal.filter(function (x) { return String(x.id) !== String(tId); }) : [];
-          chrome.storage.local.set({ tlState: state, tlJournal: flatJ }, function () {
-            loadAll();
+          chrome.storage.local.set({ tlState: state, tlJournal: flatJ, tlSavedAt: Date.now() }, function () {
+            currentState = state;
+            renderMonthlyJournal();
+            renderToday(currentState, currentSettings);
+            renderOverviewJournalSummary(currentState, flatJ);
             toast('Trade deleted');
           });
         });
@@ -1852,6 +1919,7 @@
       var exit = parseFloat(el('jExit').value) || 0;
       var qty = parseFloat(el('jQty').value) || 1;
       var charges = parseFloat(el('jCharges').value) || 0;
+      var plannedRisk = Math.max(0, parseFloat(el('jPlannedRisk').value) || 0);
       var setup = el('jSetup').value;
       var notes = (el('jNotes').value || '').trim();
 
@@ -1874,13 +1942,15 @@
         pnl: grossPnl,
         charges: charges,
         netPnl: netPnl,
+        risk: plannedRisk,
+        plannedRisk: plannedRisk,
         setup: setup,
         notes: notes,
         provenance: 'manual'
       };
 
-      chrome.storage.local.get(['tlState', 'tlSettings', 'tlJournal'], function (res) {
-        var settings = Object.assign({}, R.DEFAULT_SETTINGS, res.tlSettings || {});
+      chrome.storage.local.get(['tlState', 'tlSettings', 'tlLicense', 'tlJournal'], function (res) {
+        var settings = R.effectiveSettings(res.tlSettings, res.tlLicense, Date.now());
         var state = res.tlState ? R.syncSession(res.tlState, settings, Date.now()) : R.defaultState(Date.now());
 
         R.logTrade(state, settings, {
@@ -1893,7 +1963,8 @@
           pnl: grossPnl,
           charges: charges,
           netPnl: netPnl,
-          risk: Math.abs(netPnl * 0.5),
+          risk: plannedRisk,
+          plannedRisk: plannedRisk,
           setup: setup,
           notes: notes,
           provenance: 'manual',
@@ -1912,6 +1983,7 @@
           el('jEntry').value = '';
           el('jExit').value = '';
           el('jCharges').value = '';
+          el('jPlannedRisk').value = '';
           el('jNotes').value = '';
           if (el('jAddFormDrawer')) el('jAddFormDrawer').style.display = 'none';
 

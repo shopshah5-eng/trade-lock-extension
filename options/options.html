@@ -305,7 +305,7 @@
           <option value="full_site">Mode C: Full Trading-Site Restriction (Redirects broker tab to lock page — may prevent closing open positions)</option>
           <option value="chart_only">Mode D: Charting-Site Restriction (Restricts charting websites only)</option>
         </select>
-        <span class="h">Choose between full-screen discipline lock overlay and verified browser-level restriction.</span>
+        <span class="h">Mode A blocks the terminal screen, including keyboard access. Mode B uses new-order interception only where explicitly marked restriction-tested; otherwise it falls back to the same full-screen overlay.</span>
       </label>
 
       <div id="fullSiteAckBox" style="display:none;margin-bottom:14px" class="callout danger">
@@ -323,14 +323,8 @@
         <span class="txt"><span class="t">Reload tab if lock element is tampered with</span>
         <span class="s">Removing the overlay frame from DevTools automatically reloads and re-locks.</span></span>
       </label>
-      <label class="switch">
-        <input type="checkbox" id="blockSiteWhenLocked">
-        <span class="track"></span>
-        <span class="txt"><span class="t">Enable Chrome DNR Redirection when locked (Mode C only)</span>
-        <span class="s">Requires Mode C and explicit risk acknowledgment above.</span></span>
-      </label>
       <div class="callout" style="margin-top:12px">
-        🛡️ <b>Safe Position Management:</b> Mode A and Mode B leave position reduction and emergency exit actions (Exit, Close, Square Off, Cancel) functional so you are never trapped in open market exposure.
+        🛡️ <b>Position Management:</b> Mode A is a full-screen lock and can prevent terminal exits in this browser. Mode B preserves page exits only on restriction-tested adapters; unverified adapters use the full-screen warning overlay. Always keep your broker’s phone, mobile, or web exit procedure available.
       </div>
     </div>
 
@@ -423,9 +417,9 @@
             <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;color:#94a3b8">
               <input type="checkbox" id="toggleVwap" checked style="accent-color:#f59e0b"> VWAP
             </label>
-            <button id="chartZoomInBtn" class="ghost" style="padding:2px 8px;font-size:12px" title="Zoom In">+</button>
-            <button id="chartZoomOutBtn" class="ghost" style="padding:2px 8px;font-size:12px" title="Zoom Out">−</button>
-            <button id="chartResetBtn" class="ghost" style="padding:2px 8px;font-size:11px" title="Reset Zoom">Reset</button>
+            <button type="button" id="chartZoomInBtn" aria-label="Zoom in" class="ghost" style="padding:2px 8px;font-size:12px" title="Zoom In">+</button>
+            <button type="button" id="chartZoomOutBtn" aria-label="Zoom out" class="ghost" style="padding:2px 8px;font-size:12px" title="Zoom Out">−</button>
+            <button type="button" id="chartResetBtn" aria-label="Reset chart zoom and pan" class="ghost" style="padding:2px 8px;font-size:11px" title="Reset Zoom">Reset</button>
           </div>
         </div>
 
@@ -434,11 +428,11 @@
         </div>
 
         <div style="position:relative;width:100%;height:320px;background:#060913;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,0.05)">
-          <canvas id="marketCandleCanvas" style="width:100%;height:100%;display:block;cursor:crosshair;"></canvas>
+          <canvas id="marketCandleCanvas" tabindex="0" role="img" aria-label="Simulated candlestick chart. Left and right arrows pan, plus and minus zoom, Home resets." style="width:100%;height:100%;display:block;cursor:crosshair;"></canvas>
           <div id="chartStateOverlay" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(6,9,19,0.85);font-size:13px;color:#94a3b8;"></div>
         </div>
         <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10.5px;color:var(--muted)">
-          <span>Drag to Pan · Scroll to Zoom · Crosshair Enabled</span>
+          <span>Drag or use ←/→ to Pan · Scroll or +/− to Zoom · Home resets</span>
           <span id="chartTimestampRange">Source: Deterministic Model</span>
         </div>
       </div>
@@ -472,7 +466,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
           <div>
             <h3 style="margin:0;font-size:13px;font-weight:750">India VIX &amp; Volatility Regime</h3>
-            <p class="desc" style="margin:2px 0 0">Real-time market volatility benchmark and spike detection alert.</p>
+            <p class="desc" style="margin:2px 0 0">Deterministic demo volatility benchmark and spike detection (not a live India VIX feed).</p>
           </div>
           <span id="vixRegimeBadge" class="badge" style="background:rgba(16,185,129,0.18);color:#34d399;border:1px solid rgba(16,185,129,0.3)">Regime: Normal (13.85)</span>
         </div>
@@ -485,7 +479,7 @@
           <div class="stat-card">
             <span class="stat-lbl">IV Rank / Percentile</span>
             <span class="stat-val" id="vixRank">48% / 52%</span>
-            <span class="stat-sub">Historical 52-week range</span>
+            <span class="stat-sub">Illustrative 7-sample demo range</span>
           </div>
           <div class="stat-card">
             <span class="stat-lbl">Call IV vs Put IV</span>
@@ -495,7 +489,7 @@
           <div class="stat-card">
             <span class="stat-lbl">Spike Alert Status</span>
             <span class="stat-val" id="vixAlertStatus" style="color:#34d399">Normal</span>
-            <span class="stat-sub">Threshold: &gt;15% change</span>
+            <span class="stat-sub">Demo alert: ≥10% change or VIX ≥20</span>
           </div>
         </div>
       </div>
@@ -752,7 +746,7 @@
         </select>
         <select id="jFilterProv" style="font-size:12px;padding:6px 8px">
           <option value="ALL">All Sources</option>
-          <option value="broker">Broker-verified</option>
+          <option value="broker">Broker table</option>
           <option value="manual">Manual log</option>
         </select>
         <div class="spacer"></div>
@@ -803,6 +797,11 @@
               <option value="Scalp">Quick Scalp</option>
               <option value="Other">Other</option>
             </select>
+          </label>
+          <label class="field">
+            <span class="k">Planned risk (₹, optional)</span>
+            <input type="number" id="jPlannedRisk" min="0" step="1" placeholder="1000">
+            <span class="h">Your predefined loss budget; P&amp;L is not used as a risk substitute.</span>
           </label>
           <label class="field">
             <span class="k">Trade Notes</span>
@@ -897,12 +896,12 @@
           <p class="desc">Upgrade Trade Lock to unlock advanced risk rules, automatic broker order detection, and AI market analytics.</p>
         </div>
         <div style="display:flex;gap:8px">
-          <button id="licRestoreBtn" class="ghost" style="font-size:12px;padding:6px 12px">🔄 Sync / Restore Subscription</button>
+          <button id="licRestoreBtn" class="ghost" style="font-size:12px;padding:6px 12px">🔄 Sync License / Recovery Guidance</button>
         </div>
       </div>
 
       <!-- Current Subscription Status -->
-      <div class="callout blue" id="licStatus" style="margin-top:12px">Checking subscription status…</div>
+      <div class="callout blue" id="licStatus" style="margin-top:12px">Checking license status…</div>
 
       <!-- License Key Activation Bar -->
       <div style="background:rgba(0,0,0,0.25);border:1px solid var(--line-strong);border-radius:12px;padding:14px;margin:14px 0">
@@ -933,32 +932,32 @@
       <!-- Checkout Email Binding -->
       <div style="background:rgba(255,255,255,0.03);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px">
         <label class="field" style="margin:0">
-          <span class="k">Your Email Address (for license fulfillment, key delivery &amp; restoring subscriptions)</span>
+          <span class="k">Your Email Address (for license fulfillment, key delivery &amp; verified support recovery)</span>
           <div style="display:flex;gap:10px;margin-top:4px">
             <input type="email" id="checkoutEmail" placeholder="trader@domain.com" style="flex:1" autocomplete="email">
             <button id="saveEmailBtn" class="ghost" style="font-size:12px;padding:6px 14px">Save Email</button>
           </div>
-          <span class="h">Used strictly to verify and deliver your cryptographically signed license key.</span>
+          <span class="h">Used for order fulfillment and verified support recovery. The server stores only a hash of your license key.</span>
         </label>
       </div>
 
       <!-- Checkout Feedback Notification -->
       <div id="checkoutNotice" style="display:none;padding:12px;border-radius:8px;margin-bottom:16px;font-size:12.5px"></div>
 
-      <!-- 3-Plan Catalog with Monthly / Yearly Toggle -->
+      <!-- Plan catalog with 30-day / 365-day prepaid toggle -->
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin:24px 0 10px;">
         <div>
           <h3 style="margin:0;font-size:15px;font-weight:750">Choose Your Plan</h3>
-          <p style="margin:3px 0 0;font-size:12px;color:var(--muted)">Transparent risk discipline pricing · Switch between Monthly and Yearly (Pro Monthly, Pro Yearly, Pro+ AI Monthly, Pro+ AI Yearly)</p>
+          <p style="margin:3px 0 0;font-size:12px;color:var(--muted)">Transparent prepaid pricing · Choose 30-day or 365-day access. No auto-renewal.</p>
         </div>
         <!-- Billing Cycle Toggle Switch -->
         <div style="display:inline-flex;align-items:center;gap:10px;background:rgba(0,0,0,0.35);padding:5px 12px;border-radius:99px;border:1px solid var(--line)">
-          <span id="billingMonthlyLabel" style="font-size:12px;font-weight:700;color:#fff;cursor:pointer">Monthly</span>
-          <button id="billingCycleToggle" type="button" role="switch" aria-checked="false" aria-label="Toggle Monthly and Yearly billing" style="position:relative;width:44px;height:24px;background:rgba(255,255,255,0.15);border:1px solid var(--line);border-radius:99px;cursor:pointer;padding:0;transition:all .2s;outline:none">
+          <span id="billingMonthlyLabel" style="font-size:12px;font-weight:700;color:#fff;cursor:pointer">30 days</span>
+          <button id="billingCycleToggle" type="button" role="switch" aria-checked="false" aria-label="Toggle 30-day and 365-day prepaid access" style="position:relative;width:44px;height:24px;background:rgba(255,255,255,0.15);border:1px solid var(--line);border-radius:99px;cursor:pointer;padding:0;transition:all .2s;outline:none">
             <span id="billingCycleKnob" style="position:absolute;top:2px;left:3px;width:18px;height:18px;background:#3b82f6;border-radius:50%;transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></span>
           </button>
           <span id="billingYearlyLabel" style="font-size:12px;font-weight:500;color:var(--dim);cursor:pointer;display:inline-flex;align-items:center;gap:5px">
-            Yearly
+            365 days
             <span class="badge pro" style="font-size:9.5px;padding:1px 6px;background:rgba(16,185,129,0.2);color:#34d399;border:1px solid rgba(16,185,129,0.35);border-radius:99px">Save up to 37%</span>
           </span>
         </div>
@@ -969,14 +968,14 @@
         <div class="plan-card" id="cardFree">
           <div class="p-name">Free</div>
           <div class="p-price">₹0</div>
-          <div class="p-sub">Essential trading discipline · Free forever</div>
+          <div class="p-sub">Essential trading discipline · No license key required</div>
           <ul>
             <li>Trade-count limit rule</li>
             <li>Manual trade logging</li>
             <li>Opaque full-screen discipline lock</li>
             <li>Full monthly trade journal</li>
             <li>CSV &amp; JSON data export (no paywall)</li>
-            <li>1 browser device</li>
+            <li>Local browser use</li>
           </ul>
           <div style="margin-top:auto;padding-top:14px">
             <button class="ghost plan-select-btn" data-plan="free" style="width:100%;font-size:12px" disabled>Current Basic Plan</button>
@@ -986,11 +985,11 @@
         <!-- 2. Pro (Featured / Recommended) -->
         <div class="plan-card featured" id="cardPro">
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <div class="p-name" id="proCardName">Pro Monthly</div>
+            <div class="p-name" id="proCardName">Pro 30-Day</div>
             <span class="badge pro" style="font-size:10px;padding:2px 6px">Recommended</span>
           </div>
-          <div class="p-price" id="proCardPrice">₹199 <span style="font-size:12px;font-weight:400">/ mo</span></div>
-          <div class="p-sub" id="proCardSub">Complete risk rules suite · Billed monthly</div>
+          <div class="p-price" id="proCardPrice">₹199 <span style="font-size:12px;font-weight:400">/ 30 days</span></div>
+          <div class="p-sub" id="proCardSub">Complete risk rules suite · 30-day prepaid access</div>
           <ul>
             <li>All Free features included</li>
             <li>Max daily loss limit &amp; protection</li>
@@ -1007,17 +1006,17 @@
         <!-- 3. Pro+ AI -->
         <div class="plan-card" id="cardProAi">
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <div class="p-name" id="proAiCardName">Pro+ AI Monthly</div>
+            <div class="p-name" id="proAiCardName">Pro+ AI 30-Day</div>
             <span class="badge pro" id="proAiBadge" style="font-size:10px;padding:2px 6px;display:none">Save 16%</span>
           </div>
-          <div class="p-price" id="proAiCardPrice">₹399 <span style="font-size:12px;font-weight:400">/ mo</span></div>
-          <div class="p-sub" id="proAiCardSub">Discipline + AI intelligence · Billed monthly</div>
+          <div class="p-price" id="proAiCardPrice">₹399 <span style="font-size:12px;font-weight:400">/ 30 days</span></div>
+          <div class="p-sub" id="proAiCardSub">Discipline + market intelligence · 30-day prepaid access</div>
           <ul>
-            <li>All Pro risk &amp; broker features</li>
-            <li>AI Market Assistant coaching</li>
+            <li>All Pro features</li>
+            <li>Market briefs and rule-based discipline coach</li>
             <li>S/R, FVGs, Demand &amp; Supply</li>
             <li>NSE Options chain &amp; Greeks (simulated demo)</li>
-            <li>Daily AI behavioral coach report</li>
+            <li>Daily rule-based behavioral report</li>
             <li>Up to 5 devices</li>
           </ul>
           <div style="margin-top:auto;padding-top:14px">
@@ -1040,8 +1039,8 @@
             <tr>
               <th style="width:30%">Capability</th>
               <th style="width:20%">Free (₹0)</th>
-              <th style="width:25%">Pro (₹199/mo · ₹1,499/yr)</th>
-              <th style="width:25%">Pro+ AI (₹399/mo · ₹3,999/yr)</th>
+              <th style="width:25%">Pro (₹199 / 30 days · ₹1,499 / 365 days)</th>
+              <th style="width:25%">Pro+ AI (₹399 / 30 days · ₹3,999 / 365 days)</th>
             </tr>
           </thead>
           <tbody>
@@ -1082,13 +1081,13 @@
               <td><span class="feat-yes">✓ Unlimited</span></td>
             </tr>
             <tr>
-              <td>Technical structure &amp; supply/demand zones</td>
+              <td>Market structure &amp; supply/demand (simulated + authorized live route)</td>
               <td><span class="feat-no">—</span></td>
               <td><span class="feat-no">—</span></td>
-              <td><span class="feat-yes">✓ Real-time calculation</span></td>
+              <td><span class="feat-yes">✓ Pro+ access</span></td>
             </tr>
             <tr>
-              <td>NSE Options Chain &amp; PCR / Max Pain</td>
+              <td>Simulated Options Chain, PCR &amp; Max Pain workspace</td>
               <td><span class="feat-no">—</span></td>
               <td><span class="feat-no">—</span></td>
               <td><span class="feat-yes">✓ Included</span></td>
@@ -1101,21 +1100,21 @@
             </tr>
             <tr>
               <td>Supported Devices</td>
-              <td>1 device</td>
+              <td>Local use</td>
               <td>Up to 3 devices</td>
               <td>Up to 5 devices</td>
             </tr>
             <tr>
               <td>Data Retention</td>
-              <td>Permanent local retention</td>
-              <td>Permanent local retention</td>
-              <td>Permanent local retention</td>
+              <td>Local until browser data is cleared</td>
+              <td>Local until browser data is cleared</td>
+              <td>Local until browser data is cleared</td>
             </tr>
             <tr>
-              <td>Cancellation &amp; Refund</td>
+              <td>Billing model</td>
               <td>N/A</td>
-              <td>Cancel anytime; active until period end</td>
-              <td>Cancel anytime; active until period end</td>
+              <td>Prepaid; no auto-renewal</td>
+              <td>Prepaid; no auto-renewal</td>
             </tr>
           </tbody>
         </table>
@@ -1125,10 +1124,10 @@
       <div class="callout green" style="margin-top:20px">
         🛡️ <b>Fair Enforcement &amp; Security Policy:</b>
         <ul style="margin:6px 0 0;padding-left:18px;line-height:1.6">
-          <li><b>Safety is Never Held Hostage:</b> Core safety locks and self-imposed session lockouts function unconditionally on every plan, regardless of subscription status.</li>
-          <li><b>Your Journal History is Permanent:</b> Subscription expiry will <i>never</i> delete, truncate, or restrict your trade journal records or exports.</li>
-          <li><b>Zero Payment Secrets in Extension:</b> We never ask for or store debit/credit card credentials. Subscriptions and checkouts are securely authorized via backend Razorpay signature verification.</li>
-          <li><b>Manage &amp; Cancel:</b> Recurring subscriptions can be managed or cancelled anytime with zero penalty.</li>
+          <li><b>Safety is Never Held Hostage:</b> Core safety locks and self-imposed session lockouts function unconditionally on every plan, regardless of license status.</li>
+          <li><b>Journal Retention:</b> License expiry does not delete local journal records or exports. Clearing browser/extension storage can delete them, so keep exports.</li>
+          <li><b>Zero Payment Secrets in Extension:</b> We never ask for or store debit/credit card credentials. Checkouts are processed by Razorpay and verified by the backend; card credentials are not stored by Trade Lock.</li>
+          <li><b>Prepaid Access:</b> There is no recurring subscription to cancel. Timed access ends at its expiry unless you purchase another period.</li>
         </ul>
       </div>
     </div>

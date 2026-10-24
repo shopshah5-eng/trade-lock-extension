@@ -88,3 +88,14 @@ test('empty log is safe', () => {
   assert.strictEqual(a.score, 100);
   assert.deepStrictEqual(a.signals, []);
 });
+
+
+test('coach uses net P&L after charges for loss and revenge classification', () => {
+  const a = I.analyze([
+    { at: T0, pnl: 100, charges: 150, netPnl: -50, risk: 500 },
+    { at: T0 + 2 * MIN, pnl: 200, charges: 0, netPnl: 200, risk: 500 },
+  ], sess({ trades: 2, consecutiveLosses: 0 }), settings);
+  assert.strictEqual(a.patterns.tradesAfterLoss, 1);
+  assert.strictEqual(a.patterns.revengeTrades, 1);
+  assert.ok(!a.suggestions.some(s => /math cannot work/i.test(s)));
+});

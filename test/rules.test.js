@@ -646,3 +646,81 @@ test('resetDay with preserveActiveRuleLock preserves active rule lock unless eme
   assert.strictEqual(cleared.lock.active, false, 'Emergency override clears rule lock');
 });
 
+
+
+test('session rollover archives the old day and clears the live log', () => {
+  const t0 = ist(2026, 10, 13, 10, 0);
+  const st = R.syncSession(R.defaultState(t0), S, t0);
+  R.logTrade(st, S, { id: 'rollover-trade', pnl: 100, risk: 25 }, t0);
+  const nextDay = ist(2026, 10, 14, 9, 16);
+  R.syncSession(st, S, nextDay);
+  assert.strictEqual(st.log.length, 0);
+  assert.strictEqual(st.session.trades, 0);
+  const archived = st.journal.months['2026-10'].days['2026-10-13'];
+  assert.strictEqual(archived.trades.length, 1);
+  assert.strictEqual(archived.trades[0].id, 'rollover-trade');
+});
+
+test('duplicate journal IDs are counted once and undo removes the archived record', () => {
+  const t0 = ist(2026, 10, 13, 10, 0);
+  const st = R.syncSession(R.defaultState(t0), S, t0);
+  R.logTrade(st, S, { id: 'same-id', pnl: -100, risk: 40, source: 'manual' }, t0);
+  R.logTrade(st, S, { id: 'same-id', pnl: -100, risk: 40, source: 'manual' }, t0 + 1);
+  assert.strictEqual(st.session.trades, 1);
+  assert.strictEqual(st.log.length, 1);
+  const undone = R.undoLastTrade(st);
+  assert.strictEqual(undone.id, 'same-id');
+  assert.strictEqual(st.session.trades, 0);
+  assert.strictEqual(st.session.pnl, 0);
+  assert.strictEqual(st.session.riskUsed, 0);
+  assert.strictEqual(st.journal.months['2026-10'].days['2026-10-13'].trades.length, 0);
+});
+
+test('manual charges reduce realised session P&L and planned risk stays explicit', () => {
+  const t0 = ist(2026, 10, 13, 10, 0);
+  const st = R.syncSession(R.defaultState(t0), S, t0);
+  R.logTrade(st, S, { id: 'charges', pnl: 100, charges: 30, risk: 50, plannedRisk: 50, source: 'manual' }, t0);
+  assert.strictEqual(st.session.pnl, 70);
+  assert.strictEqual(st.log[0].pnl, 100);
+  assert.strictEqual(st.log[0].netPnl, 70);
+  assert.strictEqual(st.log[0].plannedRisk, 50);
+  R.logTrade(st, S, { id: 'no-risk', pnl: -25, source: 'manual' }, t0 + 1);
+  assert.strictEqual(st.log[1].risk, 0, 'P&L must not be used to fabricate risk');
+});
+
+test('automatic fill provenance is counted exactly once by logTrade', () => {
+  const t0 = ist(2026, 10, 13, 10, 0);
+  const st = R.syncSession(R.defaultState(t0), S, t0);
+  R.logTrade(st, S, { id: 'fill-1', pnl: 0, risk: 10, source: 'auto', provenance: 'broker-imported' }, t0);
+  assert.strictEqual(st.session.autoTrades, 1);
+  R.rebuildSessionFromLog(st);
+  assert.strictEqual(st.session.autoTrades, 1);
+});
+
+test('Pro and Pro+ entitlements remain distinct across aliases', () => {
+  const pro = { key: 'x', active: true, plan: 'pro_monthly' };
+  const plus = { key: 'x', active: true, plan: 'pro_plus_ai' };
+  assert.strictEqual(R.isPro(pro), true);
+  assert.strictEqual(R.isProPlus(pro), false);
+  assert.strictEqual(R.isProPlus(plus), true);
+  const proSettings = R.effectiveSettings({ marketEnabled: true, marketSource: 'live' }, pro);
+  assert.strictEqual(proSettings.marketEnabled, false);
+  const plusSettings = R.effectiveSettings({ marketEnabled: true, marketSource: 'live' }, plus);
+  assert.strictEqual(plusSettings.marketEnabled, true);
+  assert.strictEqual(plusSettings.marketSource, 'live');
+});
+
+
+test('journal archiving preserves ID-less legacy rows and deduplicates explicit IDs across types', () => {
+  const journal = { version: 2, months: {} };
+  const rows = [
+    { symbol: 'LEGACY-A', pnl: 10 },
+    { symbol: 'LEGACY-B', pnl: 20 },
+    { id: 7, symbol: 'EXPLICIT', pnl: 30 },
+    { id: '7', symbol: 'DUPLICATE', pnl: 999 },
+  ];
+  R.archiveDayToJournal(journal, '2026-10-24', rows, { start: 1 });
+  const archived = journal.months['2026-10'].days['2026-10-24'].trades;
+  assert.strictEqual(archived.length, 3);
+  assert.deepStrictEqual(archived.map(t => t.symbol), ['LEGACY-A', 'LEGACY-B', 'EXPLICIT']);
+});

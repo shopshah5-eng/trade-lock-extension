@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node --test test/"
+    "test": "node --test test/email.test.js test/license.test.js test/market.test.js test/security.test.js test/serverless.test.js test/deployment.test.js test/persistence.test.js test/admin.test.js"
   },
   "engines": {
     "node": ">=18"

@@ -1,7 +1,7 @@
 'use strict';
 /*
- * Tiny JSON-file store. Fine for launch volume (hundreds–thousands of keys).
- * Swap for SQLite/Postgres later — the rest of the server only uses this API.
+ * Single-process JSON-file store for development and small self-hosted deployments.
+ * Use the Supabase adapter for serverless or multi-instance production deployments.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -16,54 +16,45 @@ function getFilePath() {
   return path.join(__dirname, 'data.json');
 }
 
+function emptyStore() { return { licenses: {}, orders: {}, processedWebhooks: {} }; }
+
 function load() {
+  const file = getFilePath();
+  // Never seed a shared serverless /tmp store from bundled customer data.
+  if (!fs.existsSync(file)) return emptyStore();
   try {
-    const file = getFilePath();
-    if (!fs.existsSync(file)) {
-      // If running in serverless and local data.json exists in package, seed from it
-      const bundled = path.join(__dirname, 'data.json');
-      if (fs.existsSync(bundled)) {
-        const raw = fs.readFileSync(bundled, 'utf8');
-        return JSON.parse(raw);
-      }
-    }
     const raw = fs.readFileSync(file, 'utf8');
     const d = JSON.parse(raw);
     if (!d.licenses || !d.orders) throw new Error('bad shape');
     if (!d.processedWebhooks) d.processedWebhooks = {};
     return d;
   } catch (e) {
-    return { licenses: {}, orders: {}, processedWebhooks: {} }; // hash -> license, orderId -> order
+    if (process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY || process.env.VERCEL) {
+      console.error('[store] Ignoring unreadable ephemeral cache; remote durable state remains authoritative.');
+      return emptyStore();
+    }
+    // A corrupt file-only customer database must not look like an empty one.
+    throw new Error('Trade Lock data store could not be loaded from ' + file + ': ' + e.message);
   }
 }
 
 let data = load();
-let saveTimer = null;
 
-function save() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      const file = getFilePath();
-      const tmp = file + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-      fs.renameSync(tmp, file);
-    } catch (e) {
-      console.warn('[store] Local disk write skipped:', e.message);
-    }
-  }, 25);
-}
+// Retain the old API name without retaining its silent, delayed-write behavior.
+function save() { return saveSync(); }
 
 function saveSync() {
-  clearTimeout(saveTimer);
   try {
     const file = getFilePath();
     const tmp = file + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
     fs.renameSync(tmp, file);
   } catch (e) {
-    console.warn('[store] Local disk writeSync skipped:', e.message);
+    console.error('[store] Critical local disk write failed:', e.message);
+    throw e;
   }
+  return true;
 }
 
 module.exports = {

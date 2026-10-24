@@ -14,7 +14,8 @@
     els[id] = document.getElementById(id);
   });
 
-  var view = { state: null, settings: null, copy: null, untilLabel: '', live: false };
+  var view = { state: null, settings: null, license: null, copy: null, untilLabel: '', live: false,
+    tabUrl: '', hostname: '' };
 
   // Load saved Daily Focus goal
   function loadFocus() {
@@ -73,21 +74,33 @@
   function render() {
     var s = view.settings || R.DEFAULT_SETTINGS;
     var state = view.state;
+    var pro = R.isPro(view.license, Date.now());
+    var proPlus = R.isProPlus ? R.isProPlus(view.license, Date.now()) : pro;
 
     var istDate = (state && state.session && state.session.date) ? state.session.date : (R.todayIST ? R.todayIST() : '\u2014');
     if (els.date) els.date.textContent = istDate;
     if (els.planBadge) {
-      if (s.freeTier) {
+      if (!pro) {
         els.planBadge.textContent = 'FREE';
         els.planBadge.className = 'badge free';
       } else {
-        els.planBadge.textContent = 'PRO';
+        els.planBadge.textContent = proPlus ? 'PRO+' : 'PRO';
         els.planBadge.className = 'badge pro';
       }
     }
+    ['qaCharts', 'qaOptions', 'qaTechnicals', 'qaAi'].forEach(function (id) {
+      if (!els[id]) return;
+      els[id].disabled = !proPlus;
+      els[id].title = proPlus ? '' : 'Pro+ AI or Founder Lifetime required';
+    });
+    if (els.proUpgradeCard) els.proUpgradeCard.style.display = proPlus ? 'none' : 'flex';
+    if (els.upgradeHeaderBtn) els.upgradeHeaderBtn.style.display = proPlus ? 'none' : 'inline-block';
 
-    var isClosed = R.isClosedDay && R.isClosedDay(Date.now(), s);
+    var sessionInfo = R.marketSessionInfo ? R.marketSessionInfo(Date.now(), s) :
+      { isMarketOpen: !(R.isClosedDay && R.isClosedDay(Date.now(), s)), isClosedDay: R.isClosedDay && R.isClosedDay(Date.now(), s) };
+    var isClosed = !sessionInfo.isMarketOpen;
     if (els.sessionStatusTag) {
+      els.sessionStatusTag.title = sessionInfo.message || '';
       if (isClosed) {
         els.sessionStatusTag.className = 'session-pill closed';
         els.sessionStatusTag.textContent = 'Planning Mode';
@@ -125,8 +138,23 @@
           ? view.copy.detail + ' Terminal covered by full-screen discipline overlay until next market open.'
           : 'Trading limit reached. Opaque lock overlay covers broker terminal until next market open.';
       } else if (mode === 'order_restrict') {
-        els.bannerTitle.textContent = 'Order Restriction Active';
-        els.bannerText.textContent = 'New orders blocked on verified broker page. Emergency exits (Square off / Exit) remain accessible.';
+        var detector = globalThis.TLDetect;
+        var onBrokerTab = view.tabUrl && isBrokerUrl(view.tabUrl);
+        var verifiedRestriction = !!(onBrokerTab && detector && detector.isVerifiedOrderRestrictionBroker &&
+          detector.isVerifiedOrderRestrictionBroker(view.hostname));
+        var enforcement = detector && detector.getEnforcementLabel
+          ? detector.getEnforcementLabel(view.hostname, mode) : null;
+        if (!onBrokerTab) {
+          els.bannerTitle.textContent = 'Broker Lock Active';
+          els.bannerText.textContent = 'Mode B intercepts new orders only on a verified broker adapter. Open a supported broker tab to see its actual enforcement mode.';
+        } else {
+          els.bannerTitle.textContent = verifiedRestriction
+            ? 'Verified Order Restriction Active' : 'Full-Screen Lock Fallback Active';
+          els.bannerText.textContent = enforcement ? enforcement.desc :
+            (verifiedRestriction
+              ? 'New orders are intercepted on this verified broker adapter. Position exits remain accessible.'
+              : 'Order interception is not verified on this broker. The opaque full-screen lock is used instead.');
+        }
       } else if (mode === 'full_site') {
         els.bannerTitle.textContent = 'Full Site Restriction Active';
         els.bannerText.textContent = 'Broker domain restricted. Notice: Managing open positions may be affected.';
@@ -147,9 +175,10 @@
     } else {
       if (els.bannerIcon) els.bannerIcon.textContent = isClosed ? '📅' : '🛡️';
       if (isClosed) {
-        els.bannerTitle.textContent = 'Planning Mode (Weekend / Holiday)';
+        els.bannerTitle.textContent = 'Planning Mode (' + ({ WEEKEND: 'Weekend', EXCHANGE_HOLIDAY: 'Holiday',
+          PRE_MARKET: 'Before open', POST_MARKET: 'After close' }[sessionInfo.sessionType] || 'Market closed') + ')';
         var nextSession = R.nextMarketOpen ? R.istLabel(R.nextMarketOpen(Date.now(), s)) : 'next market session';
-        els.bannerText.textContent = 'Markets closed until ' + nextSession + '. Full access to Journal, Charts, Options and AI tools is open.';
+        els.bannerText.textContent = 'Markets closed until ' + nextSession + '. Journal and entitled planning tools remain available.';
       } else {
         els.bannerTitle.textContent = 'Trading Unlocked';
         var next = view.violationWarning;
@@ -159,9 +188,9 @@
     }
 
     if (els.coachLine && globalThis.TLInsights) {
-      if (s.freeTier) {
+      if (!proPlus) {
         els.coachLine.style.display = 'block';
-        els.coachLine.innerHTML = '🤖 <b>AI Coach (Pro):</b> revenge-trade & tilt detection, discipline score, day report.';
+        els.coachLine.innerHTML = '🤖 <b>AI Coach (Pro+):</b> deterministic revenge-trade & tilt detection, discipline score, and day report.';
       } else {
         var ia = globalThis.TLInsights.analyze(state.log, sess, s);
         var top = ia.signals.find(function (x) { return x.level !== 'ok'; }) || ia.signals[0];
@@ -181,7 +210,7 @@
       stat('Risk used', R.inr(sess.riskUsed), riskLim ? R.inr(riskLim) + (capLim ? ' capital budget' : ' budget') : 'no cap',
            R.progress(sess.riskUsed, riskLim));
 
-    if (!s.maxTradesPerDay && !s.maxDailyLoss && !s.profitTarget && !s.maxDailyRisk) {
+    if (!isClosed && !s.maxTradesPerDay && !s.maxDailyLoss && !s.profitTarget && !s.maxDailyRisk) {
       els.bannerText.innerHTML = '<span class="warn">No limits are switched on.</span> Set them in settings, or the lock will never trigger.';
     }
 
@@ -228,7 +257,14 @@
   }
 
   function refresh() {
+    chrome.storage.local.get('tlLicense', function (res) {
+      view.license = res.tlLicense || null;
+      render();
+    });
     activeTab().then(function (tab) {
+      view.tabUrl = tab && tab.url ? tab.url : '';
+      try { view.hostname = view.tabUrl ? new URL(view.tabUrl).hostname.toLowerCase() : ''; }
+      catch (e) { view.hostname = ''; }
       if (!tab || !tab.id) return fallback(tab);
       return tabMessage(tab.id, 'TL_PING').then(function (ping) {
         if (!ping || !ping.ok) {
@@ -242,6 +278,7 @@
           if (!res || !res.ok) return fallback(tab);
           view.state = res.state;
           view.settings = res.settings;
+          view.license = res.license || view.license;
           view.copy = res.copy;
           view.untilLabel = res.untilLabel;
           render(); tick();
@@ -254,8 +291,9 @@
   function fallback(tab) {
     view.live = false;
     return new Promise(function (resolve) {
-      chrome.storage.local.get(['tlState', 'tlSettings'], function (res) {
-        view.settings = Object.assign({}, R.DEFAULT_SETTINGS, res.tlSettings || {});
+      chrome.storage.local.get(['tlState', 'tlSettings', 'tlLicense'], function (res) {
+        view.license = res.tlLicense || null;
+        view.settings = R.effectiveSettings(res.tlSettings, view.license, Date.now());
         var st = res.tlState;
         if (st) {
           R.syncSession(st, view.settings, Date.now());
@@ -298,8 +336,9 @@
   }
 
   function writeDirect(pnl, risk) {
-    chrome.storage.local.get(['tlState', 'tlSettings'], function (res) {
-      var settings = Object.assign({}, R.DEFAULT_SETTINGS, res.tlSettings || {});
+    chrome.storage.local.get(['tlState', 'tlSettings', 'tlLicense'], function (res) {
+      var settings = R.effectiveSettings(res.tlSettings, res.tlLicense, Date.now());
+      view.license = res.tlLicense || null;
       var state = res.tlState ? R.syncSession(res.tlState, settings, Date.now()) : R.defaultState(Date.now());
       R.logTrade(state, settings, { pnl: pnl, risk: risk, source: 'popup' }, Date.now());
       var t = R.tick(state, settings, Date.now());
@@ -316,15 +355,13 @@
     if (type === 'TL_LOCK_NOW') {
       send('TL_LOCK_NOW').then(function (res) {
         if (res && res.state) view.state = res.state;
-        activeTab().then(function (tab) {
-          if (tab && tab.id) {
-            tabMessage(tab.id, 'TL_LOCK_NOW');
-            if (tab.url && isBrokerUrl(tab.url)) {
-              send('TL_ENSURE_LOCKED', { tabId: tab.id });
-            }
-          }
-          refresh();
-        });
+        if (!res || !res.ok) {
+          alert((res && (res.message || res.error)) || 'Could not create the lock. Please try again.');
+          return;
+        }
+        // The background transition already notifies and recovers broker tabs.
+        // Do not issue a second, independent content-script lock transition.
+        refresh();
       });
       return;
     }
@@ -357,10 +394,13 @@
       return;
     }
     var s = view.settings || R.DEFAULT_SETTINGS;
-    var isClosed = R.isClosedDay && R.isClosedDay(Date.now(), s);
+    var sessionInfo = R.marketSessionInfo ? R.marketSessionInfo(Date.now(), s) : null;
+    var isClosed = sessionInfo ? !sessionInfo.isMarketOpen : (R.isClosedDay && R.isClosedDay(Date.now(), s));
+    var closedLabel = sessionInfo ? ({ WEEKEND: 'Weekend', EXCHANGE_HOLIDAY: 'Exchange holiday',
+      PRE_MARKET: 'Before market open', POST_MARKET: 'After market close' }[sessionInfo.sessionType] || 'Market closed') : 'Market closed';
     var nextSession = R.nextMarketOpen ? R.istLabel(R.nextMarketOpen(Date.now(), s)) : 'next market session';
     var msg = isClosed
-      ? 'Market is currently closed (Weekend / Holiday planning mode).\n\nReopen session: ' + nextSession + '.\n\nLock trading terminal now?'
+      ? 'Market is currently closed (' + closedLabel + ').\n\nNext session: ' + nextSession + '.\n\nLock trading terminal now?'
       : 'Lock the trading terminal screen until ' + nextSession + '?';
     if (confirm(msg)) act('TL_LOCK_NOW');
   });
@@ -376,7 +416,7 @@
       var e = R.undoLastTrade(state);
       if (!e) { alert('Nothing to undo.'); return; }
       if (e.rejected) {
-        alert(e.message || 'Verified broker executions cannot be erased.');
+        alert(e.message || 'Broker-imported fills cannot be erased with manual Undo.');
         return;
       }
       chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }, function () {
@@ -392,7 +432,7 @@
   }
   if (els.planBadge) {
     els.planBadge.style.cursor = 'pointer';
-    els.planBadge.title = 'Click to view Pro plans and subscriptions';
+    els.planBadge.title = 'Click to view Pro prepaid plans';
     els.planBadge.addEventListener('click', function () { openWorkspace('license'); });
   }
 
@@ -487,7 +527,7 @@
   if (els.qaJournal) els.qaJournal.addEventListener('click', function () { openWorkspace('journal'); });
   if (els.qaRules) els.qaRules.addEventListener('click', function () { openWorkspace('rules'); });
   if (els.proUpgradeCard) els.proUpgradeCard.addEventListener('click', function () { openWorkspace('license'); });
-  if (els.proUpgradeBtn) els.proUpgradeBtn.addEventListener('click', function (e) { e.stopPropagation(); openWorkspace('license'); });
+
   if (els.qaAddTrade) els.qaAddTrade.addEventListener('click', function () {
     if (els.pnl) {
       els.pnl.focus();

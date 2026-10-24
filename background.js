@@ -65,8 +65,8 @@ var DEFAULT_SETTINGS = {
 // ------------------------------------------------------------- helpers ----
 
 function getSettings() {
-  return chrome.storage.local.get('tlSettings').then(function (res) {
-    return Object.assign({}, DEFAULT_SETTINGS, res.tlSettings || {});
+  return chrome.storage.local.get(['tlSettings', 'tlLicense']).then(function (res) {
+    return TLRules.effectiveSettings(res.tlSettings, res.tlLicense, Date.now());
   });
 }
 
@@ -134,7 +134,8 @@ function armAlarms(state) {
 
 function syncBlockRules(state, settings) {
   var fullSiteMode = settings && (settings.enforcementMode === 'full_site' && settings.fullSiteAcknowledged);
-  var on = Boolean((settings.blockSiteWhenLocked || fullSiteMode) && (state && state.lock && state.lock.active));
+  // Legacy blockSiteWhenLocked must never bypass the explicit Mode C acknowledgement.
+  var on = Boolean(fullSiteMode && (state && state.lock && state.lock.active));
   var hosts = (settings.blockedHosts || []).filter(Boolean);
   var removeRuleIds = [BLOCK_RULE_ID, BLOCK_RULE_ID + 1];
 
@@ -195,7 +196,14 @@ function marketUrl(settings) {
 function fetchMarket() {
   return getSettings().then(function (settings) {
     if (settings.marketEnabled === false) return null;
-    return fetch(marketUrl(settings))
+    return chrome.storage.local.get('tlLicense').then(function (licRes) {
+      var lic = licRes.tlLicense;
+      var headers = {};
+      if (settings.marketSource === 'live' && lic && lic.key && TLRules.isProPlus(lic, Date.now())) {
+        headers.Authorization = 'Bearer ' + lic.key;
+      }
+      return fetch(marketUrl(settings), { headers: headers });
+    })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (!data || !data.analysis) return null;
@@ -303,6 +311,103 @@ function releaseIfDue() {
   });
 }
 
+// --------------------------------------------------------- state guard ----
+
+function latestManualRelease(state) {
+  var audit = state && Array.isArray(state.audit) ? state.audit : [];
+  for (var i = audit.length - 1; i >= 0; i--) {
+    if (audit[i] && audit[i].action === 'MANUAL_LOCK_RELEASED' && Number(audit[i].releasedAt) > 0) {
+      return audit[i];
+    }
+  }
+  return null;
+}
+
+function isNewManualRelease(oldState, newState) {
+  if (!oldState || !oldState.lock || !oldState.lock.manual) return false;
+  var since = Number(oldState.lock.since);
+  var previous = latestManualRelease(oldState);
+  var current = latestManualRelease(newState);
+  if (!current || !(since > 0) || Number(current.releasedAt) < since) return false;
+  return !previous || Number(current.releasedAt) > Number(previous.releasedAt) ||
+    (newState.audit || []).length > (oldState.audit || []).length;
+}
+
+function stateSignature(state) {
+  try { return JSON.stringify(state || null); } catch (e) { return ''; }
+}
+
+var expectedRepairSignature = null;
+
+// Broker tabs and extension pages share one storage object. A stale tab must
+// not erase an unexpired lock or resurrect a focus lock already released by
+// the authoritative background transition.
+chrome.storage.onChanged.addListener(function (changes, area) {
+  if (area !== 'local' || !changes || !changes.tlState) return;
+  var oldState = changes.tlState.oldValue || null;
+  var newState = changes.tlState.newValue || null;
+  var newSignature = stateSignature(newState);
+  if (expectedRepairSignature && newSignature === expectedRepairSignature) {
+    expectedRepairSignature = null;
+    return;
+  }
+
+  var oldActive = !!(oldState && oldState.lock && oldState.lock.active);
+  var newActive = !!(newState && newState.lock && newState.lock.active);
+  var now = Date.now();
+  var repair = null;
+
+  if (oldActive && !newActive) {
+    var oldUntil = Number(oldState.lock.until);
+    var legitimatelyExpired = Number.isFinite(oldUntil) && oldUntil > 0 && oldUntil <= now;
+    if (!legitimatelyExpired && !isNewManualRelease(oldState, newState)) {
+      repair = (newState && typeof newState === 'object') ? newState : oldState;
+      if (!repair || typeof repair !== 'object') return;
+      repair.lock = oldState.lock;
+      repair.status = oldState.status;
+      repair.statusReason = oldState.statusReason;
+      repair.statusTimestamp = oldState.statusTimestamp;
+      repair.pendingLock = oldState.pendingLock;
+    }
+  } else if (!oldActive && newActive && newState && newState.lock) {
+    var newUntil = Number(newState.lock.until);
+    var release = latestManualRelease(oldState);
+    var staleManual = !!(release && newState.lock.manual &&
+      Number(newState.lock.since) <= Number(release.releasedAt));
+    if ((Number.isFinite(newUntil) && newUntil <= now) || staleManual) {
+      repair = newState;
+      if (oldState) {
+        repair.lock = oldState.lock;
+        repair.status = oldState.status;
+        repair.statusReason = oldState.statusReason;
+        repair.statusTimestamp = oldState.statusTimestamp;
+        repair.pendingLock = oldState.pendingLock;
+      } else {
+        repair.lock = { active: false, reason: null, since: null, until: null, manual: false };
+        repair.status = 'NORMAL';
+        repair.statusReason = null;
+      }
+    }
+  }
+  if (!repair) {
+    // Direct writes from an extension page still need immediate badge, alarm,
+    // and DNR synchronization even if their separate runtime message was lost.
+    if (oldActive !== newActive) {
+      enqueueOp(refresh).catch(function (e) { console.warn('[Trade Lock] Lock-state refresh failed', e); });
+    }
+    return;
+  }
+
+  enqueueOp(function () {
+    return getState().then(function (current) {
+      // A newer transition already superseded this storage event.
+      if (stateSignature(current) !== newSignature) return null;
+      expectedRepairSignature = stateSignature(repair);
+      return chrome.storage.local.set({ tlState: repair, tlSavedAt: Date.now() }).then(refresh);
+    });
+  }).catch(function (e) { console.warn('[Trade Lock Security] Could not repair lock state', e); });
+});
+
 // ---------------------------------------------------------------- init ----
 
 chrome.runtime.onInstalled.addListener(function (details) {
@@ -373,10 +478,23 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
             lock: { active: false, reason: null, since: null, until: null, manual: false },
             detectorSeen: {}, log: [], tamperCount: 0
           };
-          var until = (typeof TLRules !== 'undefined' && TLRules.nextMarketOpen)
-            ? TLRules.nextMarketOpen(Date.now(), settings)
-            : (Date.now() + 18 * 3600 * 1000);
-          state.lock = { active: true, reason: 'Manual lock', since: Date.now(), until: until, manual: true };
+          if (state.lock && state.lock.active && !state.lock.manual) {
+            sendResponse({ ok: false, error: 'RULE_LOCK_PROTECTED',
+              message: 'An automatic rule lock is already active and cannot be converted to a manual focus lock.',
+              state: state });
+            return;
+          }
+          if (typeof TLRules !== 'undefined' && TLRules.lockNow) {
+            TLRules.lockNow(state, settings, Date.now());
+          } else {
+            var until = (typeof TLRules !== 'undefined' && TLRules.nextMarketOpen)
+              ? TLRules.nextMarketOpen(Date.now(), settings)
+              : (Date.now() + 18 * 3600 * 1000);
+            state.lock = { active: true, reason: 'Manual lock', since: Date.now(), until: until, manual: true };
+            state.status = 'LOCKED';
+            state.statusTimestamp = Date.now();
+            state.statusReason = 'Manual lock';
+          }
           return chrome.storage.local.set({ tlState: state, tlSavedAt: Date.now() }).then(function () {
             return refresh().then(function () {
               enforceLockOnBrokerTabs();
@@ -449,9 +567,11 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       chrome.scripting.executeScript({
         target: { tabId: msg.tabId },
         files: ['lib/rules.js', 'lib/detector.js', 'lib/market.js', 'content/lock.js']
-      }).then(function () {
-        chrome.tabs.sendMessage(msg.tabId, { type: 'TL_LOCK_NOW' }).catch(function () {});
-        sendResponse({ ok: true });
+      }).then(getState).then(function (state) {
+        // Recovery reapplies authoritative state; it must never create a lock
+        // merely because the popup could not reach an existing content script.
+        return chrome.tabs.sendMessage(msg.tabId, { type: 'TL_ENFORCE_LOCK', state: state })
+          .catch(function () {}).then(function () { sendResponse({ ok: true }); });
       }).catch(function () { sendResponse({ ok: false }); });
       return true;
     }

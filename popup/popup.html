@@ -417,7 +417,7 @@
       <div class="sub">Trade with discipline</div>
     </div>
     <div class="spacer"></div>
-    <div id="planBadge" class="badge free">FREE</div>
+    <button type="button" id="planBadge" class="badge free" style="border:0;cursor:pointer" title="View your plan">FREE</button>
     <button id="upgradeHeaderBtn" class="badge" style="cursor:pointer;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;font-weight:750;padding:4px 9px;border-radius:7px;letter-spacing:0.04em;" title="View Pro &amp; Pro+ AI plans">Upgrade ↗</button>
     <button class="icon-btn" id="openSettingsTop" title="Open Settings &amp; Dashboard">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -490,14 +490,14 @@
   </div>
 
   <!-- Pro+ AI Coach Upgrade Card -->
-  <div class="pro-card" id="proUpgradeCard" title="Upgrade to Pro+ for AI Tilt Detection, Voice alerts &amp; Unlimited Journaling">
-    <div class="pro-icon">👑</div>
-    <div class="pro-info">
-      <div class="pro-title">Pro+ AI Coach</div>
-      <div class="pro-desc">Tilt &amp; revenge detection, live voice alerts &amp; day audits</div>
-    </div>
-    <div class="pro-cta" id="proUpgradeBtn">Upgrade ↗</div>
-  </div>
+  <button type="button" class="pro-card" id="proUpgradeCard" title="Upgrade to Pro+ for deterministic discipline coaching and market analytics" style="width:100%;color:inherit;text-align:left;font-family:inherit">
+    <span class="pro-icon">👑</span>
+    <span class="pro-info">
+      <span class="pro-title" style="display:block">Pro+ AI Coach</span>
+      <span class="pro-desc" style="display:block">Deterministic tilt detection, market analytics &amp; day audits</span>
+    </span>
+    <span class="pro-cta" id="proUpgradeBtn">Upgrade ↗</span>
+  </button>
 
   <!-- Daily Focus Card -->
   <div class="focus-card" id="focusCard">
@@ -532,10 +532,11 @@
   <!-- Footer -->
   <div class="foot">
     <span id="footnote">—</span>
-    <a id="openOptions2">rules</a>
+    <button type="button" id="openOptions2" style="background:none;border:0;padding:0;color:var(--link);cursor:pointer;font:inherit">rules</button>
   </div>
 
 <script src="../lib/rules.js"></script>
+<script src="../lib/detector.js"></script>
 <script src="../lib/insights.js"></script>
 <script src="popup.js"></script>
 </body>
