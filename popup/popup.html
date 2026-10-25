@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="popup-html">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,6 +14,7 @@
   <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="14" r="1"/><circle cx="12" cy="14" r="1"/><circle cx="16" cy="14" r="1"/><circle cx="8" cy="18" r="1"/><circle cx="12" cy="18" r="1"/></symbol>
   <symbol id="i-trades" viewBox="0 0 24 24"><path d="M4 17 9 12l3 3 7-8"/><path d="M14 7h5v5"/><path d="M4 4v16h16"/></symbol>
   <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 6.5h13a3 3 0 0 1 3 3v8a2 2 0 0 1-2 2H5a3 3 0 0 1-3-3v-11a3 3 0 0 1 3-3h11"/><path d="M15 11h7v5h-7a2.5 2.5 0 0 1 0-5Z"/></symbol>
   <symbol id="i-risk" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.2c0 4.6 3.1 8.2 7.5 9.8 4.4-1.6 7.5-5.2 7.5-9.8V6L12 3Z"/><path d="M12 8v5M12 16.5v.1"/></symbol>
@@ -22,117 +23,163 @@
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H11v17H6.5A2.5 2.5 0 0 0 4 21.5v-17ZM20 4.5A2.5 2.5 0 0 0 17.5 2H13v17h4.5a2.5 2.5 0 0 1 2.5 2.5v-17Z"/></symbol>
   <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3ZM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14ZM5 14l.7 1.8 1.8.7-1.8.7L5 19l-.7-1.8-1.8-.7 1.8-.7L5 14Z"/></symbol>
   <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 4v16h16"/><path d="m7 15 4-4 3 2 5-6"/></symbol>
-  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.5"/></symbol>
   <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h5M15 6h5M4 12h10M18 12h2M4 18h2M12 18h8"/><circle cx="12" cy="6" r="3"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="18" r="3"/></symbol>
   <symbol id="i-edit" viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l3.5-.7L20 6.8 17.2 4 4.7 16.5 4 20Z"/></symbol>
+  <symbol id="i-crown" viewBox="0 0 24 24"><path d="m3 7 4 10h10l4-10-5.5 4L12 5l-3.5 6L3 7Z"/><circle cx="3" cy="6" r="1"/><circle cx="12" cy="4" r="1"/><circle cx="21" cy="6" r="1"/></symbol>
+  <symbol id="i-robot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 4h6M9 13v1M15 13v1M8 17h8"/></symbol>
   <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></symbol>
+  <symbol id="i-sidepanel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><line x1="15" y1="4" x2="15" y2="20"/><path d="m11 10-2 2 2 2"/></symbol>
 </svg>
 
 <main class="popup-shell">
+  <!-- 1. HEADER: Logo, Title, Subtitle, Side Panel & Settings -->
   <header class="popup-head">
-    <div class="tl-brand-mark"><svg class="tl-icon" aria-hidden="true"><use href="#i-shield"></use></svg></div>
+    <div class="tl-brand-mark popup-brand-icon" aria-label="Trade Lock">
+      <svg class="tl-icon" aria-hidden="true"><use href="#i-lock"></use></svg>
+    </div>
     <div class="popup-brand-copy">
       <h1>Trade Lock</h1>
-      <p>Trade with discipline.</p>
+      <p>Trade with discipline</p>
     </div>
     <div class="popup-head-actions">
-      <span id="planBadge" class="badge free" role="button" tabindex="0" title="View plans">FREE</span>
+      <button id="headerSidePanelBtn" class="popup-icon-btn header-sidepanel-btn" type="button" title="Open Side Panel Dashboard" aria-label="Open Side Panel">
+        <svg class="tl-icon" aria-hidden="true"><use href="#i-sidepanel"></use></svg>
+      </button>
+      <span id="planBadge" class="badge free" role="button" tabindex="0" title="View plans" style="display:none">FREE</span>
       <button id="openSettingsTop" class="popup-icon-btn" type="button" title="Open settings" aria-label="Open settings">
         <svg class="tl-icon" aria-hidden="true"><use href="#i-settings"></use></svg>
       </button>
     </div>
   </header>
 
-  <section id="banner" class="banner open" aria-label="Trading lock status">
-    <span id="bannerIcon" class="banner-icon" aria-hidden="true"><svg class="tl-icon"><use href="#i-shield"></use></svg></span>
-    <div class="banner-copy">
-      <div class="banner-title-row">
-        <strong id="bannerTitle">Trading Unlocked</strong>
-        <span id="bannerCd" style="display:none"></span>
+  <!-- 2. LARGE TRANSLUCENT LOCK STATUS CARD -->
+  <section id="banner" class="banner open" aria-label="Trading lock status" role="region">
+    <div class="banner-status-left">
+      <span id="bannerIcon" class="banner-icon" aria-hidden="true">
+        <svg class="tl-icon"><use href="#i-shield"></use></svg>
+      </span>
+      <div class="banner-copy">
+        <div class="banner-title-row">
+          <strong id="bannerTitle">Trading Unlocked</strong>
+          <span id="bannerCd" style="display:none"></span>
+        </div>
+        <span id="bannerText">You're in planning mode</span>
       </div>
-      <span id="bannerText">Trading is allowed. Every fill counts toward your limits.</span>
     </div>
     <span class="banner-chevron" aria-hidden="true"><svg class="tl-icon"><use href="#i-chevron"></use></svg></span>
   </section>
 
+  <!-- 3. MARKET SESSION CARD -->
   <section id="sessionCard" class="popup-session" aria-label="NSE market session">
-    <span class="session-clock"><svg class="tl-icon" aria-hidden="true"><use href="#i-clock"></use></svg></span>
-    <div class="popup-session-main">
-      <div class="popup-session-title">NSE Session <span id="sessionStatusTag" class="session-pill closed">Planning Mode</span></div>
-      <div id="sessionHours" class="popup-session-meta"><span id="sessionSchedule">Mon–Fri · 09:15–15:30 IST</span> · <span id="date">—</span></div>
+    <div class="session-left">
+      <span class="session-clock-badge">
+        <svg class="tl-icon" aria-hidden="true"><use href="#i-calendar"></use></svg>
+      </span>
+      <div class="popup-session-main">
+        <div class="popup-session-sub">Next Market Session</div>
+        <div id="sessionSchedule" class="popup-session-date">Mon, 26 Oct 2026</div>
+        <div id="sessionHours" class="popup-session-time-sub">09:15 AM IST</div>
+        <span id="sessionStatusTag" class="session-pill closed" style="display:none">Planning Mode</span>
+        <span id="date" style="display:none">—</span>
+      </div>
     </div>
-    <div class="popup-session-time">
-      <small id="sessionTimeLabel">Market opens in</small>
-      <strong id="sessionCountdown">—</strong>
+    <div class="session-right">
+      <div class="session-status-row">
+        <span class="session-live-dot"></span>
+        <span id="sessionTimeLabel" class="session-countdown-label">NSE Open In</span>
+      </div>
+      <strong id="sessionCountdown" class="session-countdown-val">16h 42m</strong>
     </div>
   </section>
 
-  <section id="stats" class="stats" aria-label="Today's trading metrics"></section>
+  <!-- 4. THREE COMPACT METRICS -->
+  <section id="stats" class="stats popup-three-stats" aria-label="Today's trading metrics"></section>
 
-  <div class="popup-section-head"><h2>Quick actions</h2><span>Your trading toolkit</span></div>
-  <nav class="popup-quick-grid" aria-label="Quick actions">
-    <button id="qaAddTrade" class="popup-quick-tile" type="button">
-      <span class="quick-icon green"><svg class="tl-icon" aria-hidden="true"><use href="#i-plus"></use></svg></span>
-      <span>Log Trade</span>
+  <!-- 5. PROMINENT BLUE-PURPLE LOCK ACTION BUTTON -->
+  <div class="popup-lock-wrap">
+    <button id="lockNow" class="popup-lock-btn primary-gradient-btn" type="button">
+      <span class="btn-lock-content">
+        <svg class="tl-icon" aria-hidden="true"><use href="#i-lock"></use></svg>
+        <span id="lockLabel">Start Trading Lock</span>
+      </span>
+      <svg class="tl-icon btn-chevron" aria-hidden="true"><use href="#i-chevron"></use></svg>
     </button>
-    <button id="qaJournal" class="popup-quick-tile" type="button">
-      <span class="quick-icon blue"><svg class="tl-icon" aria-hidden="true"><use href="#i-book"></use></svg></span>
-      <span>Journal</span>
+  </div>
+
+  <!-- 6. SIX SHORTCUT TILES (2 rows x 3 columns) -->
+  <nav class="popup-quick-grid six-tiles-grid" aria-label="Shortcut tiles">
+    <button id="qaCharts" class="popup-quick-tile tile-market" type="button">
+      <span class="quick-icon-badge green"><svg class="tl-icon" aria-hidden="true"><use href="#i-trades"></use></svg></span>
+      <span class="quick-tile-label">Market &amp; OI</span>
     </button>
-    <button id="qaAi" class="popup-quick-tile" type="button">
-      <span class="quick-icon violet"><svg class="tl-icon" aria-hidden="true"><use href="#i-sparkles"></use></svg></span>
-      <span>AI Coach</span>
+    <button id="qaOptions" class="popup-quick-tile tile-options" type="button">
+      <span class="quick-icon-badge amber"><svg class="tl-icon" aria-hidden="true"><use href="#i-layers"></use></svg></span>
+      <span class="quick-tile-label">Options</span>
     </button>
-    <button id="qaCharts" class="popup-quick-tile" type="button">
-      <span class="quick-icon cyan"><svg class="tl-icon" aria-hidden="true"><use href="#i-chart"></use></svg></span>
-      <span>Market &amp; OI</span>
+    <button id="qaTechnicals" class="popup-quick-tile tile-charts" type="button">
+      <span class="quick-icon-badge blue"><svg class="tl-icon" aria-hidden="true"><use href="#i-chart"></use></svg></span>
+      <span class="quick-tile-label">Charts</span>
     </button>
-    <button id="qaOptions" class="popup-quick-tile" type="button">
-      <span class="quick-icon amber"><svg class="tl-icon" aria-hidden="true"><use href="#i-layers"></use></svg></span>
-      <span>Options Chain</span>
+    <button id="qaJournal" class="popup-quick-tile tile-journal" type="button">
+      <span class="quick-icon-badge purple"><svg class="tl-icon" aria-hidden="true"><use href="#i-book"></use></svg></span>
+      <span class="quick-tile-label">Journal</span>
     </button>
-    <button id="qaRules" class="popup-quick-tile" type="button">
-      <span class="quick-icon rose"><svg class="tl-icon" aria-hidden="true"><use href="#i-sliders"></use></svg></span>
-      <span>Rules &amp; Limits</span>
+    <button id="qaAi" class="popup-quick-tile tile-ai" type="button">
+      <span class="quick-icon-badge pink"><svg class="tl-icon" aria-hidden="true"><use href="#i-robot"></use></svg></span>
+      <span class="quick-tile-label">AI Coach</span>
+    </button>
+    <button id="qaRules" class="popup-quick-tile tile-rules" type="button">
+      <span class="quick-icon-badge cyan"><svg class="tl-icon" aria-hidden="true"><use href="#i-shield"></use></svg></span>
+      <span class="quick-tile-label">Risk Rules</span>
     </button>
   </nav>
 
+  <!-- 7. PRO+ AI UPGRADE CARD -->
   <button id="proUpgradeCard" class="popup-pro-card" type="button" title="View Pro+ AI plans">
-    <span class="popup-pro-icon"><svg class="tl-icon" aria-hidden="true"><use href="#i-sparkles"></use></svg></span>
-    <span class="popup-pro-copy"><strong>Upgrade to Pro+ AI</strong><small>Market intelligence &amp; discipline coaching</small></span>
-    <span id="proUpgradeBtn" class="popup-pro-cta">Upgrade ↗</span>
+    <div class="pro-card-left">
+      <span class="popup-pro-icon"><svg class="tl-icon" aria-hidden="true"><use href="#i-crown"></use></svg></span>
+      <div class="popup-pro-copy">
+        <strong>Upgrade to Pro+ AI</strong>
+        <small>Unlock advanced analytics &amp; AI coach</small>
+      </div>
+    </div>
+    <span class="pro-card-chevron"><svg class="tl-icon" aria-hidden="true"><use href="#i-chevron"></use></svg></span>
+    <span id="proUpgradeBtn" style="display:none">Upgrade ↗</span>
   </button>
 
-  <section id="focusCard" class="popup-focus-card" aria-label="Daily trading focus">
-    <svg class="tl-icon" aria-hidden="true"><use href="#i-target"></use></svg>
-    <div class="popup-focus-copy"><small>Daily focus</small><p id="focusText">Stick strictly to predefined setups. Never revenge trade.</p></div>
-    <button id="focusEditBtn" class="popup-focus-edit" type="button" title="Edit daily focus" aria-label="Edit daily focus"><svg class="tl-icon" aria-hidden="true"><use href="#i-edit"></use></svg></button>
-  </section>
+  <!-- COLLAPSIBLE MANUAL LOG & DAILY FOCUS (PRESERVED) -->
+  <div class="popup-secondary-drawer">
+    <div class="drawer-header-row">
+      <button id="qaAddTrade" class="mini-tool-btn" type="button" title="Quick log trade">
+        <svg class="tl-icon" aria-hidden="true"><use href="#i-plus"></use></svg> Log Trade
+      </button>
+      <button id="logDrawer" class="popup-log-toggle mini-tool-btn" type="button" aria-expanded="false" aria-controls="logDrawerBody">
+        Manual Entry <span class="log-plus">+</span>
+      </button>
+    </div>
+    <section id="logDrawerBody" class="popup-log-drawer" hidden>
+      <div class="popup-log-fields">
+        <input id="pnl" type="number" step="0.01" min="0" placeholder="P&amp;L amount (₹)" aria-label="Profit or loss amount in rupees">
+        <input id="risk" type="number" step="0.01" min="0" placeholder="Risk used (₹)" aria-label="Risk used in rupees">
+      </div>
+      <div class="popup-log-actions">
+        <button id="addWin" class="win" type="button">+ Log Win</button>
+        <button id="addLoss" class="loss" type="button">− Log Loss</button>
+      </div>
+      <button id="undo" class="popup-undo" type="button">↶ Undo last manual trade</button>
+    </section>
 
-  <button id="logDrawer" class="popup-log-toggle" type="button" aria-expanded="false" aria-controls="logDrawerBody">
-    <svg class="tl-icon" aria-hidden="true"><use href="#i-plus"></use></svg><span>Manual Trade Log</span><span class="log-plus">+</span>
-  </button>
-  <section id="logDrawerBody" class="popup-log-drawer" hidden>
-    <div class="popup-log-fields">
-      <input id="pnl" type="number" step="0.01" min="0" placeholder="P&amp;L amount (₹)" aria-label="Profit or loss amount in rupees">
-      <input id="risk" type="number" step="0.01" min="0" placeholder="Risk used (₹)" aria-label="Risk used in rupees">
-    </div>
-    <div class="popup-log-actions">
-      <button id="addWin" class="win" type="button">+ Log Win</button>
-      <button id="addLoss" class="loss" type="button">− Log Loss</button>
-    </div>
-    <button id="undo" class="popup-undo" type="button">↶ Undo last manual trade</button>
-  </section>
+    <section id="focusCard" class="popup-focus-card" aria-label="Daily trading focus" style="display:none">
+      <svg class="tl-icon" aria-hidden="true"><use href="#i-target"></use></svg>
+      <div class="popup-focus-copy"><small>Daily focus</small><p id="focusText">Stick strictly to predefined setups. Never revenge trade.</p></div>
+      <button id="focusEditBtn" class="popup-focus-edit" type="button" title="Edit daily focus" aria-label="Edit daily focus"><svg class="tl-icon" aria-hidden="true"><use href="#i-edit"></use></svg></button>
+    </section>
+  </div>
 
   <div id="coachLine" class="popup-coach" style="display:none"></div>
 
-  <div class="popup-lock-wrap">
-    <button id="lockNow" class="popup-lock-btn" type="button">
-      <svg class="tl-icon" aria-hidden="true"><use href="#i-lock"></use></svg><span id="lockLabel">Lock Trading Now</span>
-    </button>
-    <p class="popup-lock-hint">Protect your capital. Lock in your discipline.</p>
-  </div>
-
+  <!-- FOOTER -->
   <footer class="popup-footer">
     <button id="openSidePanelBtn" type="button">Open side panel</button><span>·</span>
     <button id="openOptions" type="button">Full dashboard</button><span>·</span>

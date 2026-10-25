@@ -177,6 +177,15 @@ function serve(root) {
   const swTarget = await browser.waitForTarget(
     (t) => t.type() === 'service_worker' && t.url().includes('/background.js'), { timeout: 20000 });
   const sw = await swTarget.worker();
+  try {
+    const cdp = await swTarget.createCDPSession();
+    cdp.on('Runtime.consoleAPICalled', (e) => {
+      console.log('    [sw ' + e.type + ']', e.args.map(a => a.value !== undefined ? a.value : a.description).join(' '));
+    });
+    await cdp.send('Runtime.enable');
+  } catch (e) {
+    console.log('    [sw cdp attach failed]', e.message);
+  }
   const getState = () => sw.evaluate(() => new Promise((res) =>
     chrome.storage.local.get(['tlState', 'tlSettings'], (r) => res(r))));
 

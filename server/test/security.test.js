@@ -18,6 +18,9 @@ delete process.env.TL_DEMO_MODE;
 delete process.env.NETLIFY;
 delete process.env.VERCEL;
 delete process.env.AWS_LAMBDA_FUNCTION_NAME;
+process.env.SUPABASE_URL = '';
+process.env.SUPABASE_SERVICE_KEY = '';
+process.env.SUPABASE_KEY = '';
 
 const originalFetch = global.fetch;
 let orderSequence = 0;

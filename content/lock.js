@@ -423,11 +423,12 @@
 
   function buildHud() {
     if (hud && hud.isConnected) return;
+    try { if (sessionStorage.getItem('tl-hud-closed') === '1') return; } catch (e) {}
     hudCss();
     var el = document.createElement('div');
     el.setAttribute('id', 'tl-hud');   // attribute, so #tl-hud actually resolves
     el.innerHTML =
-      '<div class="h"><span class="dot"></span><span>Trade Lock</span><span id="tl-min">\u2013</span></div>' +
+      '<div class="h"><span class="dot"></span><span>Trade Lock</span><span id="tl-min" title="Minimize HUD" style="cursor:pointer;padding:0 4px;">\u2013</span><span id="tl-close" title="Dismiss HUD" style="cursor:pointer;padding:0 4px;font-size:13px;opacity:0.75">\u00D7</span></div>' +
       '<div class="b">' +
         '<div class="row"><span>Trades</span><b id="tl-trades">0</b></div>' +
         '<div class="bar"><i id="tl-bar1" style="width:0%"></i></div>' +
@@ -477,6 +478,10 @@
     });
 
     el.querySelector('#tl-min').addEventListener('click', function () { el.classList.toggle('min'); });
+    el.querySelector('#tl-close').addEventListener('click', function () {
+      el.style.display = 'none';
+      try { sessionStorage.setItem('tl-hud-closed', '1'); } catch (e) {}
+    });
     el.querySelector('#tl-win').addEventListener('click', function () { quickLog(1); });
     el.querySelector('#tl-loss').addEventListener('click', function () { quickLog(-1); });
     el.querySelector('#tl-undo').addEventListener('click', function () {

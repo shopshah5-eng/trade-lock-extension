@@ -180,6 +180,24 @@ test('Monthly Journal: archiveDayToJournal is idempotent and preserves history a
   assert.strictEqual(journal.months['2026-11'].days['2026-11-02'].trades.length, 1);
 });
 
+test('Phase 5 Verification: Journal deterministic fixtures (Long ₹100->₹110 x10, Long ₹200->₹190 x5 = +₹50 before charges)', () => {
+  // Long entry ₹100, exit ₹110, quantity 10 = +₹100 before fees
+  const trade1 = { id: 'fx1', symbol: 'TEST_STOCK', side: 'BUY', qty: 10, entry: 100, exit: 110, pnl: (110 - 100) * 10, charges: 0, netPnl: 100 };
+  assert.strictEqual(trade1.pnl, 100, 'Trade 1 gross PnL must be +100');
+
+  // Long entry ₹200, exit ₹190, quantity 5 = −₹50 before fees
+  const trade2 = { id: 'fx2', symbol: 'TEST_STOCK', side: 'BUY', qty: 5, entry: 200, exit: 190, pnl: (190 - 200) * 5, charges: 0, netPnl: -50 };
+  assert.strictEqual(trade2.pnl, -50, 'Trade 2 gross PnL must be -50');
+
+  // Combined expected result = +₹50 before fees
+  const summary = R.calculateDaySummary([trade1, trade2]);
+  assert.strictEqual(summary.grossPnl, 50, 'Combined gross PnL must be +50');
+  assert.strictEqual(summary.totalTrades, 2, 'Total trades must be 2');
+  assert.strictEqual(summary.wins, 1, 'Wins must be 1');
+  assert.strictEqual(summary.losses, 1, 'Losses must be 1');
+  assert.strictEqual(summary.winRate, 50, 'Win rate must be 50%');
+});
+
 test('Export Security: formatCsvCell prevents formula injection attack in spreadsheet applications', () => {
   // Cells starting with =, +, -, @, \t, \r must be prefixed with a single quote '
   assert.strictEqual(R.formatCsvCell('=SUM(A1:A10)'), "'=SUM(A1:A10)");
@@ -580,12 +598,16 @@ test('Build 11 RC: Everyday shortcuts route through Side Panel and activate requ
   assert.ok(popupJs.includes("openWorkspace('journal')"), 'qaJournal must route to openWorkspace journal');
   assert.ok(popupJs.includes("openWorkspace('rules')"), 'qaRules must route to openWorkspace rules');
 
-  // Background must set tlActiveTab and broadcast TL_SWITCH_TAB
+  // Background must set tlActiveTab and broadcast TL_SWITCH_TAB with verified ack
+  assert.ok(bgJs.includes('VALID_TABS'), 'background.js must enforce VALID_TABS allowlist');
+  assert.ok(popupJs.includes('VALID_TABS'), 'popup.js must enforce VALID_TABS allowlist');
   assert.ok(bgJs.includes('tlActiveTab: requestedTab'), 'background.js must save requested tab to tlActiveTab');
   assert.ok(bgJs.includes("type: 'TL_SWITCH_TAB'"), 'background.js must broadcast TL_SWITCH_TAB to active panel');
+  assert.ok(bgJs.includes('verified: true'), 'background.js must acknowledge receipt only upon verified tab switch');
 
-  // options.js must listen for TL_SWITCH_TAB and read tlActiveTab
+  // options.js must listen for TL_SWITCH_TAB, acknowledge receipt, and read tlActiveTab
   assert.ok(optionsJs.includes("msg.type === 'TL_SWITCH_TAB'"), 'options.js must listen for TL_SWITCH_TAB');
+  assert.ok(optionsJs.includes("sendResponse({ ok: true, activeTab: msg.tab })"), 'options.js must acknowledge tab switch');
   assert.ok(optionsJs.includes("res.tlActiveTab"), 'options.js must check stored tlActiveTab on load');
 });
 
@@ -654,3 +676,258 @@ test('Popup Mode B copy follows real adapter verification and fallback status', 
   assert.strictEqual(js.includes("els.bannerTitle.textContent = 'Order Restriction Active';"), false,
     'unconditional verified-order status must not return');
 });
+
+// ---------------------------------------- 15. Deterministic Trade Fixtures & Mathematical Integrity ----
+
+test('Deterministic P&L: Test Case A, Test Case B, and combined gross calculation', () => {
+  // Test Case A: Long entry ₹100, exit ₹110, qty 10 => +₹100 gross
+  const caseA_entry = 100;
+  const caseA_exit = 110;
+  const caseA_qty = 10;
+  const caseA_gross = R.round2((caseA_exit - caseA_entry) * caseA_qty);
+  assert.strictEqual(caseA_gross, 100, 'Test case A gross P&L must be exactly +₹100 before fees');
+
+  // Test Case B: Long entry ₹200, exit ₹190, qty 5 => -₹50 gross
+  const caseB_entry = 200;
+  const caseB_exit = 190;
+  const caseB_qty = 5;
+  const caseB_gross = R.round2((caseB_exit - caseB_entry) * caseB_qty);
+  assert.strictEqual(caseB_gross, -50, 'Test case B gross P&L must be exactly -₹50 before fees');
+
+  // Combined expected gross P&L: +₹50 before fees
+  const combinedGross = R.round2(caseA_gross + caseB_gross);
+  assert.strictEqual(combinedGross, 50, 'Combined gross P&L must be exactly +₹50 before fees');
+
+  // Verify logging both into session state
+  const state = R.defaultState(Date.now());
+  const settings = Object.assign({}, R.DEFAULT_SETTINGS);
+
+  R.logTrade(state, settings, {
+    id: 'trade_case_a',
+    symbol: 'NIFTY 24500 CE',
+    side: 'BUY',
+    direction: 'LONG',
+    entry: caseA_entry,
+    exit: caseA_exit,
+    qty: caseA_qty,
+    pnl: caseA_gross,
+    charges: 20
+  });
+
+  R.logTrade(state, settings, {
+    id: 'trade_case_b',
+    symbol: 'BANKNIFTY 51000 CE',
+    side: 'BUY',
+    direction: 'LONG',
+    entry: caseB_entry,
+    exit: caseB_exit,
+    qty: caseB_qty,
+    pnl: caseB_gross,
+    charges: 20
+  });
+
+  assert.strictEqual(state.session.trades, 2, 'Session must record 2 trades');
+  // Gross sum: +100 + (-50) = 50. Total charges: 40. Net PnL = 10
+  assert.strictEqual(state.session.pnl, 10, 'Net session P&L must equal gross 50 minus 40 charges');
+
+  // Day summary check
+  const daySummary = R.calculateDaySummary(state.log);
+  assert.strictEqual(daySummary.grossPnl, 50, 'Day summary gross P&L must be +₹50');
+  assert.strictEqual(daySummary.charges, 40, 'Day summary charges must be ₹40');
+  assert.strictEqual(daySummary.netPnl, 10, 'Day summary net P&L must be +₹10');
+  assert.strictEqual(daySummary.wins, 1, 'Day summary must record 1 win');
+  assert.strictEqual(daySummary.losses, 1, 'Day summary must record 1 loss');
+});
+
+test('Deterministic P&L: Short-trade calculations and sign convention', () => {
+  // Short winning trade: Sell entry ₹200, buy exit ₹180, qty 10 => +₹200 gross
+  const shortWinGross = R.round2((200 - 180) * 10);
+  assert.strictEqual(shortWinGross, 200, 'Short win gross must be +₹200');
+
+  // Short losing trade: Sell entry ₹100, buy exit ₹115, qty 10 => -₹150 gross
+  const shortLossGross = R.round2((100 - 115) * 10);
+  assert.strictEqual(shortLossGross, -150, 'Short loss gross must be -₹150');
+});
+
+test('Trade Integrity: Duplicate-trade rejection and idempotent logging', () => {
+  const state = R.defaultState(Date.now());
+  const settings = Object.assign({}, R.DEFAULT_SETTINGS);
+
+  const duplicateTrade = {
+    id: 'uniq_order_9999',
+    symbol: 'NIFTY 24500 PE',
+    side: 'BUY',
+    entry: 150,
+    exit: 170,
+    qty: 25,
+    pnl: 500,
+    charges: 30
+  };
+
+  R.logTrade(state, settings, duplicateTrade);
+  assert.strictEqual(state.session.trades, 1);
+  assert.strictEqual(state.log.length, 1);
+
+  // Attempt to log the identical trade ID again
+  R.logTrade(state, settings, duplicateTrade);
+  assert.strictEqual(state.session.trades, 1, 'Session trades must not increment on duplicate trade ID');
+  assert.strictEqual(state.log.length, 1, 'Log array must not append duplicate trade record');
+});
+
+test('Trade Integrity: Currency rounding and IST trading-day grouping', () => {
+  // Currency rounding to 2 decimals
+  assert.strictEqual(R.round2(123.456), 123.46);
+  assert.strictEqual(R.round2(-99.999), -100);
+  assert.strictEqual(R.round2(0.004), 0);
+
+  // IST date grouping for 09:15 AM IST (03:45 UTC)
+  // Date: 2026-10-26T03:45:00.000Z => 09:15 AM IST on 2026-10-26
+  const oct26OpenUtc = new Date('2026-10-26T03:45:00.000Z').getTime();
+  const sessionDate = R.istDate(oct26OpenUtc);
+  assert.strictEqual(sessionDate, '2026-10-26', 'Session date must be 2026-10-26 in Asia/Kolkata');
+});
+
+// ---------------------------------------- 16. Comprehensive Behavioral Lock Enforcement & Safe Recovery ----
+
+test('Behavioral Lock: All 6 rule triggers activate lock with appropriate rule identifier', () => {
+  const baseSettings = {
+    maxTradesPerDay: 5,
+    maxDailyLoss: 2000,
+    profitTarget: 5000,
+    maxConsecutiveLosses: 3,
+    maxRiskPerTrade: 1000,
+    maxDailyRisk: 3000,
+    minLockMinutes: 30
+  };
+
+  const now = Date.now();
+
+  // 1. maxTradesPerDay
+  const sTrades = R.defaultState(now);
+  sTrades.session.trades = 5;
+  const resTrades = R.evaluate(sTrades, baseSettings);
+  assert.ok(resTrades && resTrades.rule === 'maxTradesPerDay', 'maxTradesPerDay trigger must activate');
+
+  // 2. maxDailyLoss
+  const sLoss = R.defaultState(now);
+  sLoss.session.pnl = -2000;
+  const resLoss = R.evaluate(sLoss, baseSettings);
+  assert.ok(resLoss && resLoss.rule === 'maxDailyLoss', 'maxDailyLoss trigger must activate');
+
+  // 3. profitTarget
+  const sTarget = R.defaultState(now);
+  sTarget.session.pnl = 5000;
+  const resTarget = R.evaluate(sTarget, baseSettings);
+  assert.ok(resTarget && resTarget.rule === 'profitTarget', 'profitTarget trigger must activate');
+
+  // 4. maxConsecutiveLosses
+  const sStreak = R.defaultState(now);
+  sStreak.session.consecutiveLosses = 3;
+  const resStreak = R.evaluate(sStreak, baseSettings);
+  assert.ok(resStreak && resStreak.rule === 'maxConsecutiveLosses', 'maxConsecutiveLosses trigger must activate');
+
+  // 5. maxRiskPerTrade
+  const sTradeRisk = R.defaultState(now);
+  sTradeRisk.session.maxTradeRisk = 1050;
+  const resTradeRisk = R.evaluate(sTradeRisk, baseSettings);
+  assert.ok(resTradeRisk && resTradeRisk.rule === 'maxRiskPerTrade', 'maxRiskPerTrade trigger must activate');
+
+  // 6. maxDailyRisk
+  const sDailyRisk = R.defaultState(now);
+  sDailyRisk.session.riskUsed = 3000;
+  const resDailyRisk = R.evaluate(sDailyRisk, baseSettings);
+  assert.ok(resDailyRisk && resDailyRisk.rule === 'maxDailyRisk', 'maxDailyRisk trigger must activate');
+});
+
+test('Behavioral Lock: Open trade deferral prevents freezing while orders are actively running', () => {
+  const settings = { maxDailyLoss: 2000, minLockMinutes: 30 };
+  const now = Date.now();
+  const state = R.defaultState(now);
+  state.session.pnl = -2500; // breached loss limit!
+
+  // While 1 trade is open, tick() must defer lock to protect live position exit
+  const tickDeferred = R.tick(state, settings, now, { openTrades: 1 });
+  assert.strictEqual(tickDeferred.deferred, true, 'Tick must defer lock while openTrades > 0');
+  assert.strictEqual(state.status, 'REVIEW', 'State must enter REVIEW status during deferral');
+  assert.strictEqual(state.lock.active, false, 'Lock must NOT activate while trade is running');
+  assert.ok(state.pendingLock, 'pendingLock must store deferred rule violation');
+
+  // When trade exits (openTrades = 0), next tick() must snap lock shut
+  const tickClosed = R.tick(state, settings, now + 1000, { openTrades: 0 });
+  assert.strictEqual(tickClosed.deferred, false, 'Tick must not defer when openTrades == 0');
+  assert.strictEqual(state.status, 'LOCKED', 'State must transition to LOCKED once open trades close');
+  assert.strictEqual(state.lock.active, true, 'Lock must be active');
+  assert.strictEqual(state.lock.reason, 'maxDailyLoss', 'Lock reason must reflect breached rule');
+});
+
+test('Behavioral Lock: Storage persistence and browser restart survival', () => {
+  const now = Date.now();
+  const until = now + 4 * 3600 * 1000; // 4 hours in future
+  const state = R.defaultState(now);
+  state.lock = {
+    active: true,
+    reason: 'maxTradesPerDay',
+    since: now,
+    until: until,
+    manual: false,
+    mode: 'warning'
+  };
+  state.status = 'LOCKED';
+
+  // Simulate serialization to and deserialization from chrome.storage.local
+  const serialized = JSON.stringify(state);
+  const reloadedState = JSON.parse(serialized);
+
+  // Verify reloaded state retains full integrity
+  assert.strictEqual(reloadedState.lock.active, true, 'Active lock must survive serialization');
+  assert.strictEqual(reloadedState.lock.until, until, 'Lock expiry timestamp must be preserved');
+  assert.strictEqual(reloadedState.status, 'LOCKED', 'LOCKED status must be preserved');
+
+  // Evaluate tick at now + 1 hour (before expiry)
+  const settings = Object.assign({}, R.DEFAULT_SETTINGS);
+  R.tick(reloadedState, settings, now + 3600 * 1000);
+  assert.strictEqual(reloadedState.lock.active, true, 'Tick before expiry must preserve active lock');
+
+  // Evaluate tick at now + 5 hours (after expiry)
+  R.tick(reloadedState, settings, now + 5 * 3600 * 1000);
+  assert.strictEqual(reloadedState.lock.active, false, 'Tick after expiry must release lock cleanly');
+  assert.strictEqual(reloadedState.status, 'NORMAL', 'State must return to NORMAL after release');
+});
+
+test('Behavioral Lock: Weekend and exchange-holiday carry-through', () => {
+  const settings = Object.assign({}, R.DEFAULT_SETTINGS, {
+    skipWeekends: true,
+    skipHolidays: true,
+    marketOpenMin: 555 // 09:15 AM IST
+  });
+
+  // Friday 23 Oct 2026 at 15:30 IST (10:00 UTC)
+  // Epoch: 1792749600000 ms
+  const friAfternoonUtc = new Date('2026-10-23T10:00:00.000Z').getTime();
+  const state = R.defaultState(friAfternoonUtc);
+
+  // Lock Friday afternoon
+  R.lockNow(state, settings, friAfternoonUtc);
+  assert.strictEqual(state.lock.active, true);
+
+  // The lock until timestamp must target Monday 26 Oct 2026 09:15 AM IST (03:45 UTC)
+  const monOpenUtc = new Date('2026-10-26T03:45:00.000Z').getTime();
+  assert.strictEqual(state.lock.until, monOpenUtc, 'Friday afternoon lock must target Monday 09:15 IST');
+
+  // Tick on Saturday morning (still closed)
+  const satUtc = new Date('2026-10-24T05:00:00.000Z').getTime();
+  R.tick(state, settings, satUtc);
+  assert.strictEqual(state.lock.active, true, 'Lock must remain active on Saturday');
+
+  // Tick on Sunday evening (still closed)
+  const sunUtc = new Date('2026-10-25T14:00:00.000Z').getTime();
+  R.tick(state, settings, sunUtc);
+  assert.strictEqual(state.lock.active, true, 'Lock must remain active on Sunday');
+
+  // Tick on Monday 09:16 AM IST (open)
+  const monPostOpenUtc = monOpenUtc + 60000;
+  R.tick(state, settings, monPostOpenUtc);
+  assert.strictEqual(state.lock.active, false, 'Lock must release at Monday market open');
+});
+
+

@@ -14,9 +14,9 @@ process.env.RAZORPAY_KEY_ID = 'rzp_test_mock';
 process.env.RAZORPAY_KEY_SECRET = 'mock_key_secret';
 process.env.RAZORPAY_WEBHOOK_SECRET = 'mock_webhook_secret';
 process.env.RESEND_API_KEY = 'mock_resend_key';
-delete process.env.SUPABASE_URL;
-delete process.env.SUPABASE_SERVICE_KEY;
-delete process.env.SUPABASE_KEY;
+process.env.SUPABASE_URL = '';
+process.env.SUPABASE_SERVICE_KEY = '';
+process.env.SUPABASE_KEY = '';
 delete process.env.TL_DEMO_MODE;
 
 const remote = { orders: new Map(), licenses: new Map(), webhooks: new Map() };
@@ -152,6 +152,13 @@ let server;
 let port;
 let fileSequence = 0;
 async function start() {
+  if (!process.env.SUPABASE_URL) {
+    process.env.SUPABASE_URL = '';
+    process.env.SUPABASE_SERVICE_KEY = '';
+    process.env.SUPABASE_KEY = '';
+    delete require.cache[require.resolve('../supabase.js')];
+    delete require.cache[require.resolve('../index.js')];
+  }
   server = require('../index.js');
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   port = server.address().port;

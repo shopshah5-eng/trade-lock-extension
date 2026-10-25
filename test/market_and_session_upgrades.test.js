@@ -176,3 +176,75 @@ test('Broker Capability Audit: Honest labeling is maintained across UI', () => {
   assert.ok(optionsHtml.includes('trade-lock-app.netlify.app'), 'options.html must reference production Netlify endpoint');
   assert.ok(optionsHtml.includes('id="licApi"'), 'options.html must have licApi input field');
 });
+
+test('Section A: All 9 Workspace Tabs exist in HTML and map to autonomous render handlers in options.js', () => {
+  const optionsHtml = fs.readFileSync(path.join(rootDir, 'options/options.html'), 'utf8');
+  const optionsJs = fs.readFileSync(path.join(rootDir, 'options/options.js'), 'utf8');
+
+  const requiredTabs = ['overview', 'market', 'options', 'charts', 'journal', 'ai', 'rules', 'license', 'sites'];
+
+  requiredTabs.forEach((tabId) => {
+    // Each tab section must exist in HTML
+    assert.ok(optionsHtml.includes(`id="tab-${tabId}"`), `options.html must define section #tab-${tabId}`);
+    // Each tab navigation button must exist in HTML
+    assert.ok(optionsHtml.includes(`data-tab="${tabId}"`), `options.html must define nav button data-tab="${tabId}"`);
+    // switchTab must specifically branch for each tabId
+    assert.ok(optionsJs.includes(`clean === '${tabId}'`), `options.js switchTab must branch for clean === '${tabId}'`);
+  });
+
+  // Check that dedicated render routines are declared
+  assert.ok(optionsJs.includes('function renderRiskRulesView'), 'options.js must define renderRiskRulesView');
+  assert.ok(optionsJs.includes('function renderAiCoachView'), 'options.js must define renderAiCoachView');
+  assert.ok(optionsJs.includes('function renderSitesView'), 'options.js must define renderSitesView');
+  assert.ok(optionsJs.includes('function renderDedicatedChartsView'), 'options.js must define renderDedicatedChartsView');
+  assert.ok(optionsJs.includes('function drawDedicatedSvgChart'), 'options.js must define drawDedicatedSvgChart');
+  assert.ok(optionsJs.includes('jEmptyAddTradeBtn'), 'options.js must wire jEmptyAddTradeBtn for empty journal state');
+});
+
+test('Section B: Side Panel API Parameter Invariants and Switching Architecture', () => {
+  const popupJs = fs.readFileSync(path.join(rootDir, 'popup/popup.js'), 'utf8');
+  const bgJs = fs.readFileSync(path.join(rootDir, 'background.js'), 'utf8');
+
+  // chrome.sidePanel.open must take { windowId }
+  assert.ok(popupJs.includes('chrome.sidePanel.open(opts)'), 'popup.js must pass opts to chrome.sidePanel.open');
+  assert.ok(popupJs.includes('{ windowId: activeWindowId }'), 'popup.js must build opts with windowId');
+
+  // chrome.sidePanel.setOptions must NOT pass windowId (API violation)
+  assert.ok(popupJs.includes("path: 'options/options.html#' + tabKey"), 'popup.js setOptions must specify path');
+  assert.strictEqual(popupJs.includes("chrome.sidePanel.setOptions({ windowId"), false, 'setOptions must not pass windowId');
+
+  // Background must handle TL_OPEN_SIDE_PANEL with windowId validation
+  assert.ok(bgJs.includes("msg.type === 'TL_OPEN_SIDE_PANEL'"), 'background.js must handle TL_OPEN_SIDE_PANEL');
+  assert.ok(bgJs.includes('chrome.sidePanel.open({ windowId: win.id })'), 'background.js must open side panel with windowId');
+});
+
+test('Section C: Truthful Live Market Feed vs Disconnected Setup State', () => {
+  const bgJs = fs.readFileSync(path.join(rootDir, 'background.js'), 'utf8');
+  const optionsHtml = fs.readFileSync(path.join(rootDir, 'options/options.html'), 'utf8');
+  const optionsJs = fs.readFileSync(path.join(rootDir, 'options/options.js'), 'utf8');
+
+  // Background must implement TL_CHECK_MARKET_FEED with Fyers endpoint probing and timeout
+  assert.ok(bgJs.includes("msg.type === 'TL_CHECK_MARKET_FEED'"), 'background.js must implement TL_CHECK_MARKET_FEED handler');
+  assert.ok(bgJs.includes('/api/market/live?symbol='), 'background.js must probe /api/market/live');
+  assert.ok(bgJs.includes('provider: \'Fyers API v3\''), 'background.js must return Fyers API v3 provider info');
+
+  // options.html must contain setup cards for market and options
+  assert.ok(optionsHtml.includes('id="liveMarketSetupCard"'), 'options.html must contain liveMarketSetupCard');
+  assert.ok(optionsHtml.includes('id="liveOptionsSetupCard"'), 'options.html must contain liveOptionsSetupCard');
+
+  // options.js must display setup cards when feed is disconnected without alert popup
+  assert.ok(optionsJs.includes('live-setup-card'), 'options.js must use live-setup-card');
+  assert.ok(optionsJs.includes('Fyers API v3'), 'options.js must reference Fyers API v3 provider truthfully');
+  assert.strictEqual(optionsJs.includes("alert('Live exchange WebSocket feed is not connected"), false, 'options.js must NOT show disruptive alert');
+});
+
+test('Section D: Responsive CSS for Side Panel (width <= 480px)', () => {
+  const css = fs.readFileSync(path.join(rootDir, 'options/dashboard.css'), 'utf8');
+
+  // Must include narrow side panel breakpoint
+  assert.ok(css.includes('@media (max-width: 480px)'), 'dashboard.css must include @media (max-width: 480px) rule for Chrome Side Panel');
+  assert.ok(css.includes('grid-template-columns: 1fr'), 'dashboard.css must collapse multi-column grids to 1fr');
+  assert.ok(css.includes('overflow-x: auto'), 'dashboard.css must provide horizontal scrolling for tables');
+  assert.ok(css.includes('.live-setup-card'), 'dashboard.css must define live-setup-card styles');
+});
+

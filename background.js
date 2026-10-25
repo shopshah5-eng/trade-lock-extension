@@ -357,6 +357,7 @@ chrome.storage.onChanged.addListener(function (changes, area) {
   var now = Date.now();
   var repair = null;
 
+
   if (oldActive && !newActive) {
     var oldUntil = Number(oldState.lock.until);
     var legitimatelyExpired = Number.isFinite(oldUntil) && oldUntil > 0 && oldUntil <= now;
@@ -400,10 +401,19 @@ chrome.storage.onChanged.addListener(function (changes, area) {
 
   enqueueOp(function () {
     return getState().then(function (current) {
-      // A newer transition already superseded this storage event.
-      if (stateSignature(current) !== newSignature) return null;
-      expectedRepairSignature = stateSignature(repair);
-      return chrome.storage.local.set({ tlState: repair, tlSavedAt: Date.now() }).then(refresh);
+      // If the current state is already in the repaired lock condition, no write needed.
+      var alreadyRepaired = !!(current && current.lock && current.lock.active &&
+        repair.lock && repair.lock.active && current.lock.reason === repair.lock.reason);
+      if (alreadyRepaired) return null;
+
+      var targetRepair = (current && typeof current === 'object') ? current : repair;
+      targetRepair.lock = repair.lock;
+      targetRepair.status = repair.status;
+      targetRepair.statusReason = repair.statusReason;
+      targetRepair.statusTimestamp = repair.statusTimestamp;
+      targetRepair.pendingLock = repair.pendingLock;
+      expectedRepairSignature = stateSignature(targetRepair);
+      return chrome.storage.local.set({ tlState: targetRepair, tlSavedAt: Date.now() }).then(refresh);
     });
   }).catch(function (e) { console.warn('[Trade Lock Security] Could not repair lock state', e); });
 });
@@ -579,43 +589,62 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     return true;
   }
   if (msg.type === 'TL_OPEN_SIDE_PANEL') {
-    var requestedTab = msg.tab || 'overview';
-    var targetUrl = chrome.runtime.getURL('options/options.html#' + requestedTab);
+    var VALID_TABS = ['overview', 'market', 'options', 'charts', 'journal', 'ai', 'rules', 'license', 'sites'];
+    var requestedTab = (msg && msg.tab && VALID_TABS.indexOf(msg.tab) !== -1) ? msg.tab : 'overview';
     chrome.storage.local.set({ tlActiveTab: requestedTab }).catch(function () {});
     if (chrome.sidePanel && chrome.sidePanel.open) {
       chrome.windows.getCurrent().then(function (win) {
-        if (!win || !win.id) throw new Error('No window');
+        if (!win || !win.id) throw new Error('No active browser window found');
+        var setOptionsPromise = Promise.resolve();
         if (chrome.sidePanel.setOptions) {
-          chrome.sidePanel.setOptions({
-            windowId: win.id,
+          // Note: chrome.sidePanel.setOptions accepts { path, enabled, tabId } but NOT windowId.
+          // windowId is passed to chrome.sidePanel.open() below.
+          setOptionsPromise = chrome.sidePanel.setOptions({
             path: 'options/options.html#' + requestedTab,
             enabled: true
-          }).catch(function () {});
-        }
-        return chrome.sidePanel.open({ windowId: win.id });
-      }).then(function () {
-        try {
-          chrome.runtime.sendMessage({ type: 'TL_SWITCH_TAB', tab: requestedTab }, function () {
-            void chrome.runtime.lastError;
           });
-        } catch (e) {}
-        sendResponse({ ok: true, sidePanel: true, tab: requestedTab });
-      }).catch(function () {
-        if (chrome.tabs && chrome.tabs.create) {
-          chrome.tabs.create({ url: targetUrl });
-        } else {
-          chrome.runtime.openOptionsPage();
         }
-        sendResponse({ ok: true, fallback: true, tab: requestedTab });
+        return setOptionsPromise.then(function () {
+          return chrome.sidePanel.open({ windowId: win.id });
+        });
+      }).then(function () {
+        var attempts = 0;
+        var responded = false;
+        function broadcastSwitch() {
+          if (responded) return;
+          attempts++;
+          try {
+            chrome.runtime.sendMessage({ type: 'TL_SWITCH_TAB', tab: requestedTab }, function (resp) {
+              if (responded) return;
+              if (!chrome.runtime.lastError && resp && resp.ok) {
+                responded = true;
+                sendResponse({ ok: true, sidePanel: true, tab: requestedTab, verified: true });
+                return;
+              }
+              if (attempts < 5) {
+                setTimeout(broadcastSwitch, 250);
+              } else {
+                responded = true;
+                sendResponse({ ok: true, sidePanel: true, tab: requestedTab, verified: false });
+              }
+            });
+          } catch (e) {
+            if (responded) return;
+            if (attempts < 5) {
+              setTimeout(broadcastSwitch, 250);
+            } else {
+              responded = true;
+              sendResponse({ ok: true, sidePanel: true, tab: requestedTab, verified: false, error: (e && e.message) });
+            }
+          }
+        }
+        broadcastSwitch();
+      }).catch(function (err) {
+        sendResponse({ ok: false, error: (err && err.message) || 'Failed to open side panel' });
       });
       return true;
     } else {
-      if (chrome.tabs && chrome.tabs.create) {
-        chrome.tabs.create({ url: targetUrl });
-      } else {
-        chrome.runtime.openOptionsPage();
-      }
-      sendResponse({ ok: true, fallback: true, tab: requestedTab });
+      sendResponse({ ok: false, error: 'Side panel API is not supported on this platform' });
       return true;
     }
   }
@@ -655,6 +684,73 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   if (msg.type === 'TL_CHECK_RELEASE') {
     releaseIfDue().then(function (r) {
       sendResponse({ ok: true, active: r ? r.active : false });
+    });
+    return true;
+  }
+  if (msg.type === 'TL_CHECK_MARKET_FEED') {
+    getSettings().then(function (settings) {
+      var base = String(settings.licenseApiBase || 'https://trade-lock-app.netlify.app').replace(/\/+$/, '');
+      var symbol = msg.symbol || settings.marketSymbol || 'NIFTY';
+      var fyersSymbol = symbol === 'NIFTY' ? 'NSE:NIFTY50-INDEX' : (symbol.startsWith('NSE:') || symbol.startsWith('BSE:') ? symbol : 'NSE:' + symbol + '-INDEX');
+      var resolution = msg.resolution || '15';
+      var targetUrl = base + '/api/market/live?symbol=' + encodeURIComponent(fyersSymbol) + '&resolution=' + encodeURIComponent(resolution);
+
+      return chrome.storage.local.get('tlLicense').then(function (licRes) {
+        var lic = licRes.tlLicense;
+        var headers = {};
+        if (lic && lic.key && TLRules.isProPlus(lic, Date.now())) {
+          headers.Authorization = 'Bearer ' + lic.key;
+        }
+        var controller = new AbortController();
+        var timer = setTimeout(function () { controller.abort(); }, 8000);
+        return fetch(targetUrl, { headers: headers, signal: controller.signal })
+          .then(function (res) {
+            clearTimeout(timer);
+            return res.json().then(function (body) {
+              return { status: res.status, ok: res.ok, body: body };
+            }).catch(function () {
+              return { status: res.status, ok: res.ok, body: null };
+            });
+          })
+          .catch(function (err) {
+            clearTimeout(timer);
+            return { status: 0, ok: false, error: err && err.message ? err.message : 'network_error' };
+          });
+      }).then(function (result) {
+        if (result.ok && result.body && result.body.analysis) {
+          var snap = {
+            fetchedAt: Date.now(),
+            source: 'live',
+            symbol: symbol,
+            provider: 'Fyers API v3',
+            analysis: result.body.analysis,
+            brief: result.body.brief || null,
+            candles: result.body.candles || 0
+          };
+          return chrome.storage.local.set({ tlMarket: snap }).then(function () {
+            sendResponse({
+              ok: true,
+              connected: true,
+              provider: 'Fyers API v3',
+              fetchedAt: snap.fetchedAt,
+              data: snap
+            });
+          });
+        }
+        var errCode = (result.body && result.body.error) || result.error || 'server_error';
+        var hint = (result.body && result.body.hint) || '';
+        sendResponse({
+          ok: false,
+          connected: false,
+          provider: 'Fyers API v3',
+          statusCode: result.status,
+          error: errCode,
+          hint: hint,
+          url: targetUrl
+        });
+      });
+    }).catch(function (err) {
+      sendResponse({ ok: false, connected: false, error: err && err.message ? err.message : 'unknown_error' });
     });
     return true;
   }

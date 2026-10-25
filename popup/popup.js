@@ -4,7 +4,7 @@
 
   var R = globalThis.TLRules;
   var els = {};
-  ['date', 'planBadge', 'openSettingsTop', 'coachLine', 'banner', 'bannerIcon', 'bannerTitle', 'bannerText', 'bannerCd', 'stats',
+  ['date', 'planBadge', 'openSettingsTop', 'headerSidePanelBtn', 'coachLine', 'banner', 'bannerIcon', 'bannerTitle', 'bannerText', 'bannerCd', 'stats',
    'sessionCard', 'sessionStatusTag', 'sessionHours', 'sessionSchedule', 'sessionTimeLabel', 'sessionCountdown',
    'focusCard', 'focusText', 'focusEditBtn',
    'qaCharts', 'qaOptions', 'qaTechnicals', 'qaAddTrade', 'qaAi', 'qaJournal', 'qaRules',
@@ -70,12 +70,34 @@
     });
   }
 
-  function stat(k, v, lim, pct, cls, iconName, tone) {
-    return '<div class="stat popup-stat">' +
-      '<span class="metric-icon ' + (tone || 'blue') + '">' + icon(iconName || 'trades') + '</span>' +
-      '<span class="stat-lbl">' + k + '</span>' +
+  var activeWindowId = null;
+  var activeTabId = null;
+
+  try {
+    if (chrome.windows && chrome.windows.getCurrent) {
+      chrome.windows.getCurrent(function (win) {
+        if (win && win.id) activeWindowId = win.id;
+      });
+    }
+    if (chrome.tabs && chrome.tabs.query) {
+      chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+        if (tabs && tabs[0]) {
+          activeTabId = tabs[0].id;
+          if (tabs[0].windowId) activeWindowId = tabs[0].windowId;
+        }
+      });
+    }
+  } catch (e) {}
+
+  function stat(k, v, lim, pct, cls, iconName, tone, sub) {
+    return '<div class="stat popup-stat ' + (tone || 'blue') + '">' +
+      '<div class="stat-top">' +
+        '<span class="metric-icon ' + (tone || 'blue') + '">' + icon(iconName || 'trades') + '</span>' +
+        '<span class="stat-lbl">' + k + '</span>' +
+      '</div>' +
       '<strong class="stat-val ' + (cls || '') + '" title="' + v + '">' + v + '</strong>' +
-      '<span class="stat-sub" title="' + lim + '">' + lim + '</span></div>';
+      (sub ? '<span class="stat-sub" title="' + sub + '">' + sub + '</span>' : (lim ? '<span class="stat-sub" title="' + lim + '">' + lim + '</span>' : '')) +
+      '</div>';
   }
 
   function hhmm(mins) {
@@ -101,12 +123,27 @@
       els.sessionStatusTag.className = 'session-pill ' + (info.isMarketOpen ? 'live' : 'closed');
       els.sessionStatusTag.textContent = info.isMarketOpen ? 'Market Open' : 'Planning Mode';
     }
+    var nextOpen = info.nextSessionOpen || (R.nextMarketOpen ? R.nextMarketOpen(now, s) : now);
     if (els.sessionSchedule) {
-      els.sessionSchedule.textContent = 'Mon–Fri · ' + hhmm(s.marketOpenMin) + '–' + hhmm(s.marketCloseMin || 930) + ' IST';
+      if (info.isMarketOpen) {
+        els.sessionSchedule.textContent = 'NSE Active Session';
+      } else {
+        var dateFormatted = new Date(nextOpen).toLocaleDateString('en-IN', {
+          weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata'
+        });
+        els.sessionSchedule.textContent = dateFormatted;
+      }
+    }
+    if (els.sessionHours) {
+      if (info.isMarketOpen) {
+        els.sessionHours.textContent = 'Closes ' + hhmm(s.marketCloseMin || 930) + ' IST';
+      } else {
+        els.sessionHours.textContent = hhmm(s.marketOpenMin || 555) + ' AM IST';
+      }
     }
     var until = info.nextSessionOpen;
     if (info.isMarketOpen && R.istAtMinutes) until = R.istAtMinutes(now, s.marketCloseMin || 930);
-    if (els.sessionTimeLabel) els.sessionTimeLabel.textContent = info.isMarketOpen ? 'Market closes in' : 'Market opens in';
+    if (els.sessionTimeLabel) els.sessionTimeLabel.textContent = info.isMarketOpen ? 'NSE Closes In' : 'NSE Open In';
     if (els.sessionCountdown) els.sessionCountdown.textContent = shortCountdown(until, now);
     return info;
   }
@@ -128,10 +165,10 @@
         els.planBadge.className = 'badge pro';
       }
     }
-    ['qaCharts', 'qaOptions', 'qaTechnicals', 'qaAi'].forEach(function (id) {
+    ['qaCharts', 'qaOptions', 'qaTechnicals', 'qaAi', 'qaJournal', 'qaRules'].forEach(function (id) {
       if (!els[id]) return;
-      els[id].disabled = !proPlus;
-      els[id].title = proPlus ? '' : 'Pro+ AI or Founder Lifetime required';
+      els[id].disabled = false;
+      els[id].title = '';
     });
     if (els.proUpgradeCard) els.proUpgradeCard.style.display = proPlus ? 'none' : 'flex';
     if (els.upgradeHeaderBtn) els.upgradeHeaderBtn.style.display = proPlus ? 'none' : 'inline-block';
@@ -141,17 +178,16 @@
 
     if (!state) {
       els.banner.className = 'banner open';
-      setBannerIcon(isClosed ? 'clock' : 'shield');
-      els.bannerTitle.textContent = isClosed ? 'Planning Mode' : 'Trading Unlocked';
-      els.bannerText.textContent = 'Open a broker tab to start your session. Journal and planning tools remain available.';
+      setBannerIcon('shield');
+      els.bannerTitle.textContent = 'Trading Unlocked';
+      els.bannerText.textContent = "You're in planning mode";
       els.bannerCd.style.display = 'none';
       els.stats.innerHTML =
-        stat('Trades', '0', 'no session', 0, '', 'trades', 'blue') +
-        stat('P&L', R.inr(0), 'today', 0, '', 'wallet', 'green') +
-        stat('Risk Used', R.inr(0), 'no session', 0, '', 'risk', 'violet') +
-        stat('Win Rate', '0%', '0W · 0L', 0, '', 'target', 'amber');
+        stat('Trades Today', '0 / ' + (s.maxTradesPerDay || '5'), '', 0, '', 'trades', 'cyan') +
+        stat('P&L Today', R.inr(0), '', 0, '', 'wallet', 'green', '0.00%') +
+        stat('Risk Used', '0%', '', 0, '', 'risk', 'red');
       els.footnote.textContent = 'No active broker session · planning tools available';
-      setLockLabel('Lock Trading Now');
+      setLockLabel('Start Trading Lock');
       return;
     }
 
@@ -206,17 +242,9 @@
         ' — terminal remains active so you can square off your open trade. Locks automatically the moment your position closes.';
       els.bannerCd.style.display = 'none';
     } else {
-      setBannerIcon(isClosed ? 'clock' : 'shield');
-      if (isClosed) {
-        els.bannerTitle.textContent = 'Planning Mode (' + ({ WEEKEND: 'Weekend', EXCHANGE_HOLIDAY: 'Holiday',
-          PRE_MARKET: 'Before open', POST_MARKET: 'After close' }[sessionInfo.sessionType] || 'Market closed') + ')';
-        var nextSession = R.nextMarketOpen ? R.istLabel(R.nextMarketOpen(Date.now(), s)) : 'next market session';
-        els.bannerText.textContent = 'Markets closed until ' + nextSession + '. Journal and entitled planning tools remain available.';
-      } else {
-        els.bannerTitle.textContent = 'Trading Unlocked';
-        var next = view.violationWarning;
-        els.bannerText.textContent = next || 'Trading is allowed. Every fill counts toward your limits.';
-      }
+      setBannerIcon('shield');
+      els.bannerTitle.textContent = 'Trading Unlocked';
+      els.bannerText.textContent = isClosed ? "You're in planning mode" : (view.violationWarning || 'Trading is allowed. Every fill counts toward your limits.');
       els.bannerCd.style.display = 'none';
     }
 
@@ -234,16 +262,19 @@
     var pnlCls = sess.pnl > 0 ? 'pos' : (sess.pnl < 0 ? 'neg' : '');
     var capLim = R.dailyRiskLimit ? R.dailyRiskLimit(s) : 0;
     var riskLim = capLim || s.maxDailyRisk;
-    var summary = R.summarizeLog ? R.summarizeLog(state.log) : { winRate: 0, wins: 0, losses: 0 };
+    var riskPct = riskLim ? Math.round((sess.riskUsed / riskLim) * 100) : 0;
+    var pnlPct = (capLim && capLim > 0) ? ((sess.pnl / capLim) * 100).toFixed(2) + '%' : '0.00%';
+
+    var tradeVal = sess.trades + (s.maxTradesPerDay ? ' / ' + s.maxTradesPerDay : '');
+    var pnlVal = (sess.pnl > 0 ? '+' : '') + R.inr(sess.pnl);
+    var riskVal = riskPct + '%';
+
+    var lossLimVal = s.maxDailyLoss ? R.inr(s.maxDailyLoss) : '—';
     els.stats.innerHTML =
-      stat('Trades', sess.trades, s.maxTradesPerDay ? 'of ' + s.maxTradesPerDay : 'no cap',
-           R.progress(sess.trades, s.maxTradesPerDay), '', 'trades', 'blue') +
-      stat('P&L', (sess.pnl > 0 ? '+' : '') + R.inr(sess.pnl), 'realised today',
-           R.progress(Math.abs(sess.pnl), s.maxDailyLoss), pnlCls, 'wallet', 'green') +
-      stat('Risk Used', R.inr(sess.riskUsed), riskLim ? 'of ' + R.inr(riskLim) : 'no cap',
-           R.progress(sess.riskUsed, riskLim), '', 'risk', 'violet') +
-      stat('Win Rate', (summary.winRate || 0) + '%', (summary.wins || 0) + 'W · ' + (summary.losses || 0) + 'L',
-           0, '', 'target', 'amber');
+      stat('Trades Today', tradeVal, '', 0, '', 'trades', 'cyan') +
+      stat('P&L Today', pnlVal, '', 0, pnlCls, 'wallet', 'green', pnlPct) +
+      stat('Loss Limit', lossLimVal, '', 0, '', 'risk', 'red') +
+      stat('Risk Used', riskVal, '', 0, '', 'risk', 'purple');
 
     if (!isClosed && !s.maxTradesPerDay && !s.maxDailyLoss && !s.profitTarget && !s.maxDailyRisk) {
       els.bannerText.innerHTML = '<span class="warn">No limits are switched on.</span> Set them in settings, or the lock will never trigger.';
@@ -475,63 +506,75 @@
     });
   }
 
+  function notifyTabSwitch(tabKey) {
+    try {
+      chrome.runtime.sendMessage({ type: 'TL_SWITCH_TAB', tab: tabKey }, function () {
+        void chrome.runtime.lastError;
+      });
+    } catch (e) {}
+  }
+
   function openWorkspace(targetTab) {
-    var tabKey = targetTab || 'overview';
+    var VALID_TABS = ['overview', 'market', 'options', 'charts', 'journal', 'ai', 'rules', 'license', 'sites'];
+    var tabKey = (targetTab && VALID_TABS.indexOf(targetTab) !== -1) ? targetTab : 'overview';
     try {
       chrome.storage.local.set({ tlActiveTab: tabKey });
     } catch (e) {}
 
-    // In Chrome MV3, chrome.sidePanel.open MUST execute directly within the active user click gesture
     if (chrome.sidePanel && typeof chrome.sidePanel.open === 'function') {
-      chrome.windows.getCurrent(function (win) {
-        if (win && win.id) {
-          if (chrome.sidePanel.setOptions) {
-            chrome.sidePanel.setOptions({
-              windowId: win.id,
-              path: 'options/options.html#' + tabKey,
-              enabled: true
-            }, function () {
-              void chrome.runtime.lastError;
-              chrome.sidePanel.open({ windowId: win.id }, function () {
-                if (chrome.runtime.lastError) {
-                  openTab(tabKey);
-                } else {
-                  try {
-                    chrome.runtime.sendMessage({ type: 'TL_SWITCH_TAB', tab: tabKey }, function () {
-                      void chrome.runtime.lastError;
-                    });
-                  } catch (err) {}
-                  window.close();
-                }
-              });
-            });
-            return;
-          }
-          chrome.sidePanel.open({ windowId: win.id }, function () {
-            if (chrome.runtime.lastError) {
-              openTab(tabKey);
+      try {
+        var opts = activeWindowId ? { windowId: activeWindowId } : {};
+        var setOptionsPromise = Promise.resolve();
+        if (chrome.sidePanel.setOptions) {
+          // Note: chrome.sidePanel.setOptions accepts { path, enabled } (or tabId).
+          // Do NOT pass tabId to avoid breaking panel display across window tabs.
+          // windowId is passed strictly to chrome.sidePanel.open().
+          setOptionsPromise = chrome.sidePanel.setOptions({
+            path: 'options/options.html#' + tabKey,
+            enabled: true
+          }).catch(function (e) {
+            console.warn('Side Panel setOptions error:', e);
+          });
+        }
+        setOptionsPromise.then(function () {
+          return opts.windowId ? chrome.sidePanel.open(opts) : chrome.sidePanel.open();
+        }).then(function () {
+          notifyTabSwitch(tabKey);
+          setTimeout(function () { notifyTabSwitch(tabKey); }, 150);
+          window.close();
+        }).catch(function (err) {
+          // Fall back to background open helper
+          chrome.runtime.sendMessage({ type: 'TL_OPEN_SIDE_PANEL', tab: tabKey }, function (resp) {
+            if (chrome.runtime.lastError || !resp || !resp.ok) {
+              console.warn('Side Panel open failed:', err);
+              showSidePanelUnavailable((err && err.message) || (resp && resp.error));
             } else {
-              try {
-                chrome.runtime.sendMessage({ type: 'TL_SWITCH_TAB', tab: tabKey }, function () {
-                  void chrome.runtime.lastError;
-                });
-              } catch (err) {}
               window.close();
             }
           });
-          return;
-        }
-        openTab(tabKey);
-      });
-      return;
+        });
+        return;
+      } catch (err) {
+        console.warn('Side Panel open error:', err);
+        showSidePanelUnavailable(err && err.message);
+        return;
+      }
     }
-    openTab(tabKey);
+    showSidePanelUnavailable('Chrome Side Panel API is not supported in this window.');
+  }
+
+  function showSidePanelUnavailable(detail) {
+    if (els.footnote) {
+      els.footnote.textContent = 'Side Panel unavailable' + (detail ? ': ' + detail : '') + '. Click "Full dashboard" below.';
+      els.footnote.classList.add('error');
+    } else {
+      alert('Side Panel is unavailable in this context. Use "Full dashboard" below.');
+    }
   }
 
   function openTab(targetTab) {
     var tabKey = targetTab || 'overview';
     var targetUrl = chrome.runtime.getURL('options/options.html#' + tabKey);
-    // Reuse existing options tab if already open, avoiding duplicate tabs
     chrome.tabs.query({}, function (tabs) {
       var existing = (tabs || []).find(function (t) {
         return t.url && t.url.indexOf(chrome.runtime.getURL('options/options.html')) !== -1;
@@ -549,9 +592,21 @@
     });
   }
 
+  if (els.banner) {
+    els.banner.style.cursor = 'pointer';
+    els.banner.addEventListener('click', function () { openWorkspace('overview'); });
+  }
+  if (els.sessionCard) {
+    els.sessionCard.style.cursor = 'pointer';
+    els.sessionCard.addEventListener('click', function () { openWorkspace('overview'); });
+  }
+
+  if (els.headerSidePanelBtn) {
+    els.headerSidePanelBtn.addEventListener('click', function () { openWorkspace('overview'); });
+  }
   if (els.openSettingsTop) els.openSettingsTop.addEventListener('click', function () { openWorkspace('rules'); });
-  els.openOptions.addEventListener('click', function () { openWorkspace('overview'); });
-  els.openOptions2.addEventListener('click', function () { openWorkspace('rules'); });
+  if (els.openOptions) els.openOptions.addEventListener('click', function () { openTab('overview'); });
+  if (els.openOptions2) els.openOptions2.addEventListener('click', function () { openWorkspace('rules'); });
   if (els.openSidePanelBtn) {
     els.openSidePanelBtn.addEventListener('click', function () { openWorkspace('overview'); });
   }

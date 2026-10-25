@@ -48,7 +48,7 @@
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.5" y="10" width="15" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></symbol>
   <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 4v16h16"/><path d="m7 15 4-4 3 2 5-6"/></symbol>
-  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.5"/></symbol>
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H11v17H6.5A2.5 2.5 0 0 0 4 21.5v-17ZM20 4.5A2.5 2.5 0 0 0 17.5 2H13v17h4.5a2.5 2.5 0 0 1 2.5 2.5v-17Z"/></symbol>
   <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 1.4 4.1 4.1 1.4-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3ZM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14ZM5 14l.7 1.8 1.8.7-1.8.7L5 19l-.7-1.8-1.8-.7 1.8-.7L5 14Z"/></symbol>
   <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h5M15 6h5M4 12h10M18 12h2M4 18h2M12 18h8"/><circle cx="12" cy="6" r="3"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="18" r="3"/></symbol>
@@ -57,7 +57,7 @@
   <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h12l3 3v15H4V3h1Z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></symbol>
   <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
-  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M8 14h.1M12 14h.1M16 14h.1M8 17h.1M12 17h.1"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="14" r="1"/><circle cx="12" cy="14" r="1"/><circle cx="16" cy="14" r="1"/><circle cx="8" cy="18" r="1"/><circle cx="12" cy="18" r="1"/></symbol>
   <symbol id="i-trades" viewBox="0 0 24 24"><path d="M4 17 9 12l3 3 7-8"/><path d="M14 7h5v5M4 4v16h16"/></symbol>
   <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 6.5h13a3 3 0 0 1 3 3v8a2 2 0 0 1-2 2H5a3 3 0 0 1-3-3v-11a3 3 0 0 1 3-3h11"/><path d="M15 11h7v5h-7a2.5 2.5 0 0 1 0-5Z"/></symbol>
   <symbol id="i-risk" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.2c0 4.6 3.1 8.2 7.5 9.8 4.4-1.6 7.5-5.2 7.5-9.8V6L12 3Z"/><path d="M12 8v5M12 16.5v.1"/></symbol>
@@ -65,159 +65,412 @@
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
   <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M14 7l5 5-5 5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
   <symbol id="i-edit" viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l3.5-.7L20 6.8 17.2 4 4.7 16.5 4 20Z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
+  <symbol id="i-crown" viewBox="0 0 24 24"><path d="m3 7 4 10h10l4-10-5.5 4L12 5l-3.5 6L3 7Z"/><circle cx="3" cy="6" r="1"/><circle cx="12" cy="4" r="1"/><circle cx="21" cy="6" r="1"/></symbol>
+  <symbol id="i-robot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 4h6M9 13v1M15 13v1M8 17h8"/></symbol>
+  <symbol id="i-quote" viewBox="0 0 24 24"><path d="M3 21c3 0 7-1 7-8V5c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v6c0 1.1.9 2 2 2h4c0 3.5-2.5 5.5-5 6v2Zm14 0c3 0 7-1 7-8V5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v6c0 1.1.9 2 2 2h4c0 3.5-2.5 5.5-5 6v2Z"/></symbol>
 </svg>
 
 <div class="app-shell">
+  <!-- LEFT VERTICAL NAVIGATION RAIL (Matches Reference Layout) -->
   <aside class="side-nav" aria-label="Trade Lock workspace navigation">
     <div class="side-brand">
-      <div class="tl-brand-mark"><svg class="tl-icon" aria-hidden="true"><use href="#i-shield"></use></svg></div>
-      <div class="side-brand-copy"><strong>Trade Lock</strong><small>Discipline terminal</small></div>
+      <div class="tl-brand-mark popup-brand-icon"><svg class="tl-icon" aria-hidden="true"><use href="#i-lock"></use></svg></div>
+      <div class="side-brand-copy">
+        <strong>Trade Lock</strong>
+        <small>Trade with discipline</small>
+      </div>
     </div>
     <div class="side-nav-scroll">
-      <div class="side-nav-label">Workspace</div>
-      <nav id="mainTabs" class="nav-tabs">
-        <button class="tab-btn nav-tab active" data-tab="overview"><svg class="tl-icon" aria-hidden="true"><use href="#i-home"></use></svg>Overview</button>
-        <button class="tab-btn nav-tab" data-tab="market"><svg class="tl-icon" aria-hidden="true"><use href="#i-chart"></use></svg>Market &amp; OI<span class="nav-pro-tag">PRO+</span></button>
-        <button class="tab-btn nav-tab" data-tab="options"><svg class="tl-icon" aria-hidden="true"><use href="#i-layers"></use></svg>Options Chain<span class="nav-pro-tag">PRO+</span></button>
-        <button class="tab-btn nav-tab" data-tab="journal"><svg class="tl-icon" aria-hidden="true"><use href="#i-book"></use></svg>Trade Journal</button>
-        <button class="tab-btn nav-tab" data-tab="ai"><svg class="tl-icon" aria-hidden="true"><use href="#i-sparkles"></use></svg>AI Coach<span class="nav-pro-tag">PRO+</span></button>
-        <div class="side-nav-label">Risk &amp; settings</div>
-        <button class="tab-btn nav-tab" data-tab="rules"><svg class="tl-icon" aria-hidden="true"><use href="#i-sliders"></use></svg>Rules &amp; Settings</button>
-        <button class="tab-btn nav-tab" data-tab="license"><svg class="tl-icon" aria-hidden="true"><use href="#i-diamond"></use></svg>Plans &amp; License</button>
-        <button class="tab-btn nav-tab" data-tab="sites"><svg class="tl-icon" aria-hidden="true"><use href="#i-globe"></use></svg>Supported Sites</button>
+      <nav id="mainTabs" class="nav-tabs vertical-nav-tabs">
+        <button class="tab-btn nav-tab active" data-tab="overview">
+          <span class="nav-icon-badge blue"><svg class="tl-icon" aria-hidden="true"><use href="#i-home"></use></svg></span>
+          <span>Home</span>
+        </button>
+        <button class="tab-btn nav-tab" data-tab="market">
+          <span class="nav-icon-badge green"><svg class="tl-icon" aria-hidden="true"><use href="#i-trades"></use></svg></span>
+          <span>Market &amp; OI</span>
+        </button>
+        <button class="tab-btn nav-tab" data-tab="options">
+          <span class="nav-icon-badge amber"><svg class="tl-icon" aria-hidden="true"><use href="#i-layers"></use></svg></span>
+          <span>Options</span>
+        </button>
+        <button class="tab-btn nav-tab" data-tab="charts">
+          <span class="nav-icon-badge blue-alt"><svg class="tl-icon" aria-hidden="true"><use href="#i-chart"></use></svg></span>
+          <span>Charts</span>
+        </button>
+        <button class="tab-btn nav-tab" data-tab="journal">
+          <span class="nav-icon-badge purple"><svg class="tl-icon" aria-hidden="true"><use href="#i-book"></use></svg></span>
+          <span>Journal</span>
+        </button>
+        <button class="tab-btn nav-tab" data-tab="ai">
+          <span class="nav-icon-badge pink"><svg class="tl-icon" aria-hidden="true"><use href="#i-robot"></use></svg></span>
+          <span>AI Coach</span>
+        </button>
+        <button class="tab-btn nav-tab" data-tab="rules">
+          <span class="nav-icon-badge cyan"><svg class="tl-icon" aria-hidden="true"><use href="#i-shield"></use></svg></span>
+          <span>Risk Rules</span>
+        </button>
       </nav>
     </div>
-    <div class="side-upgrade">
-      <div class="side-upgrade-head"><svg class="tl-icon" aria-hidden="true"><use href="#i-sparkles"></use></svg><span id="sidePlanName">Unlock Pro+ AI</span></div>
-      <p id="sidePlanNote">Market intelligence, options analytics and discipline coaching.</p>
-      <button id="sideUpgradeBtn" type="button">View upgrade options ↗</button>
+    
+    <!-- Upgrade Button -->
+    <button class="side-nav-upgrade-btn tab-btn nav-tab" data-tab="license" type="button">
+      <span class="nav-icon-badge gold"><svg class="tl-icon" aria-hidden="true"><use href="#i-crown"></use></svg></span>
+      <span>Upgrade</span>
+    </button>
+    
+    <!-- User Profile Chip -->
+    <div class="side-user-chip tab-btn nav-tab" data-tab="license" role="button" tabindex="0">
+      <span class="side-user-avatar-circle">T</span>
+      <div class="side-user-meta">
+        <strong>Taj</strong>
+        <small id="sideUserPlanLabel">Pro+ AI</small>
+      </div>
+      <svg class="tl-icon side-user-chevron" aria-hidden="true"><use href="#i-chevron"></use></svg>
     </div>
-    <button id="lockNow" class="side-lock-btn" type="button"><svg class="tl-icon" aria-hidden="true"><use href="#i-lock"></use></svg><span id="sideLockLabel">Lock Trading Now</span></button>
-    <div class="side-user">
-      <span class="side-user-avatar">TL</span>
-      <span class="side-user-copy"><strong>Trading workspace</strong><small id="sideUserPlan">Free plan · local &amp; private</small></span>
-      <button id="sideOpenFullTab" class="side-expand" type="button" title="Open full dashboard" aria-label="Open full dashboard"><svg class="tl-icon" aria-hidden="true"><use href="#i-external"></use></svg></button>
+
+    <!-- Hidden compatibility elements to maintain script bindings -->
+    <div style="display:none">
+      <span id="sidePlanName">Unlock Pro+ AI</span>
+      <span id="sidePlanNote">Market intelligence</span>
+      <button id="sideUpgradeBtn" type="button"></button>
+      <button id="lockNow" type="button"><span id="sideLockLabel">Lock Trading Now</span></button>
+      <span id="sideUserPlan">Free plan</span>
+      <button id="sideOpenFullTab" type="button"></button>
+      <button class="tab-btn nav-tab" data-tab="sites">Sites</button>
     </div>
   </aside>
 
+  <!-- MAIN WORKSPACE CONTAINER -->
   <div class="workspace container main-pane">
-    <header class="topbar">
-      <div class="mobile-brand"><div class="tl-brand-mark"><svg class="tl-icon" aria-hidden="true"><use href="#i-shield"></use></svg></div><strong>Trade Lock</strong></div>
-      <div class="topbar-heading">
-        <h1 id="overviewGreeting">Good morning, Trader 👋</h1>
-        <p>Here’s your trading discipline at a glance · <span id="headerDate">Today</span></p>
+    <!-- TOPBAR: Logo / Title, Symbol Search, Market Session, Countdown, Settings -->
+    <header class="topbar workspace-header">
+      <div class="topbar-brand">
+        <div class="tl-brand-mark"><svg class="tl-icon" aria-hidden="true"><use href="#i-lock"></use></svg></div>
+        <div class="topbar-brand-text">
+          <strong>Trade Lock</strong>
+          <small>Trade with discipline</small>
+        </div>
       </div>
-      <div class="topbar-actions">
+
+      <div class="header-search-wrap">
+        <svg class="tl-icon search-icon" aria-hidden="true"><use href="#i-search"></use></svg>
+        <input type="text" id="topSymbolSearch" placeholder="Search symbols (NIFTY, BANKNIFTY...)" aria-label="Search symbols">
+      </div>
+
+      <div class="topbar-right-controls">
+        <div class="header-market-pill">
+          <span class="badge-dot-live"></span>
+          <div class="pill-text-group">
+            <strong>NSE Open</strong>
+            <small id="topSessionHours">09:15 AM – 03:30 PM</small>
+          </div>
+        </div>
+
+        <div class="header-countdown-card">
+          <span class="countdown-icon-badge"><svg class="tl-icon" aria-hidden="true"><use href="#i-calendar"></use></svg></span>
+          <div class="countdown-copy">
+            <span id="topDateStr">Mon, 26 Oct 2026</span>
+            <strong id="topMarketCountdown">Market Open In 16h 42m</strong>
+          </div>
+        </div>
+
+        <button id="topSettingsBtn" class="topbar-action-glass" type="button" title="Settings" aria-label="Settings">
+          <svg class="tl-icon" aria-hidden="true"><use href="#i-settings"></use></svg>
+        </button>
+      </div>
+
+      <!-- Compatibility elements for existing scripts -->
+      <div style="display:none">
+        <h1 id="overviewGreeting">Good morning, Trader 👋</h1>
+        <span id="headerDate">Today</span>
         <span id="lockPill" class="lock-pill pill off">Trading Unlocked</span>
-        <button id="mobileLockNow" class="topbar-action mobile-lock" type="button" title="Lock trading now" aria-label="Lock trading now"><svg class="tl-icon" aria-hidden="true"><use href="#i-lock"></use></svg></button>
-        <button id="headerSaveBtn" class="topbar-action" type="button" title="Save rules" aria-label="Save rules"><svg class="tl-icon" aria-hidden="true"><use href="#i-save"></use></svg></button>
+        <button id="mobileLockNow" type="button"></button>
+        <button id="headerSaveBtn" type="button"></button>
       </div>
     </header>
 
-    <nav class="top-nav" aria-label="Compact workspace navigation">
-      <button class="tab-btn nav-tab active" data-tab="overview">Overview</button>
+    <!-- Compact Navigation for narrow panel widths -->
+    <nav class="top-nav compact-top-nav" aria-label="Compact workspace navigation">
+      <button class="tab-btn nav-tab active" data-tab="overview">Home</button>
       <button class="tab-btn nav-tab" data-tab="market">Market &amp; OI</button>
       <button class="tab-btn nav-tab" data-tab="options">Options</button>
+      <button class="tab-btn nav-tab" data-tab="charts">Charts</button>
       <button class="tab-btn nav-tab" data-tab="journal">Journal</button>
       <button class="tab-btn nav-tab" data-tab="ai">AI Coach</button>
-      <button class="tab-btn nav-tab" data-tab="rules">Rules</button>
+      <button class="tab-btn nav-tab" data-tab="rules">Risk Rules</button>
       <button class="tab-btn nav-tab" data-tab="license">Plans</button>
-      <button class="tab-btn nav-tab" data-tab="sites">Sites</button>
     </nav>
 
-  <!-- ======================================================== TAB: OVERVIEW -->
+  <!-- ======================================================== TAB: OVERVIEW (HOME) -->
   <div class="tab-content active" id="tab-overview">
-    <section class="overview-metrics" aria-label="Today's key metrics">
+    <!-- TOP ROW: Status Card + Next Market Session Card -->
+    <div class="home-top-banners">
+      <section id="homeBannerCard" class="card home-status-card" aria-label="Trading lock status">
+        <div class="home-status-left">
+          <span id="homeBannerIcon" class="home-shield-icon"><svg class="tl-icon"><use href="#i-shield"></use></svg></span>
+          <div class="home-status-copy">
+            <strong id="homeBannerTitle">Trading Unlocked</strong>
+            <p id="homeBannerSub">Follow your plan and stay disciplined.</p>
+          </div>
+        </div>
+        <span class="home-chevron"><svg class="tl-icon"><use href="#i-chevron"></use></svg></span>
+      </section>
+
+      <section class="card home-session-card" aria-label="Market session countdown">
+        <span class="home-cal-icon"><svg class="tl-icon"><use href="#i-calendar"></use></svg></span>
+        <div class="home-session-copy">
+          <span id="homeDateLabel">Mon, 26 Oct 2026</span>
+          <small>Market Open In</small>
+          <strong id="homeCountdownValue">16h 42m</strong>
+        </div>
+      </section>
+    </div>
+
+    <!-- METRICS ROW: 4 Cards (Trades Today, P&L Today, Risk Used, Daily Loss Limit) -->
+    <section class="overview-metrics home-four-metrics" aria-label="Today's key metrics">
       <div class="card overview-metric">
-        <div class="overview-metric-top"><span class="overview-metric-label">Realised P&amp;L</span><span class="metric-icon green"><svg class="tl-icon" aria-hidden="true"><use href="#i-wallet"></use></svg></span></div>
-        <strong class="overview-metric-value stat-val" id="ovPnlVal">₹0.00</strong>
-        <span class="overview-metric-sub" id="ovPnlSub">Net closed fills</span>
-        <div class="overview-metric-bar"><i id="ovPnlBar"></i></div>
-      </div>
-      <div class="card overview-metric">
-        <div class="overview-metric-top"><span class="overview-metric-label">Today's Trades</span><span class="metric-icon blue"><svg class="tl-icon" aria-hidden="true"><use href="#i-trades"></use></svg></span></div>
-        <strong class="overview-metric-value" id="ovTradesVal">0</strong>
-        <span class="overview-metric-sub" id="ovTradesSub">No session yet</span>
+        <div class="overview-metric-top">
+          <span class="metric-icon blue"><svg class="tl-icon" aria-hidden="true"><use href="#i-trades"></use></svg></span>
+          <span class="overview-metric-label">Trades Today</span>
+        </div>
+        <strong class="overview-metric-value" id="ovTradesVal">0 / 5</strong>
+        <span class="overview-metric-sub" id="ovTradesSub" style="display:none"></span>
         <div class="overview-metric-bar"><i id="ovTradesBar"></i></div>
       </div>
+
       <div class="card overview-metric">
-        <div class="overview-metric-top"><span class="overview-metric-label">Risk Used</span><span class="metric-icon violet"><svg class="tl-icon" aria-hidden="true"><use href="#i-risk"></use></svg></span></div>
-        <strong class="overview-metric-value" id="ovRiskVal">₹0.00</strong>
-        <span class="overview-metric-sub" id="ovRiskSub">No risk budget set</span>
+        <div class="overview-metric-top">
+          <span class="metric-icon green"><svg class="tl-icon" aria-hidden="true"><use href="#i-wallet"></use></svg></span>
+          <span class="overview-metric-label">P&amp;L Today</span>
+        </div>
+        <strong class="overview-metric-value stat-val" id="ovPnlVal">₹0.00</strong>
+        <span class="overview-metric-sub" id="ovPnlSub">0.00%</span>
+        <div class="overview-metric-bar"><i id="ovPnlBar"></i></div>
+      </div>
+
+      <div class="card overview-metric">
+        <div class="overview-metric-top">
+          <span class="metric-icon red"><svg class="tl-icon" aria-hidden="true"><use href="#i-risk"></use></svg></span>
+          <span class="overview-metric-label">Risk Used</span>
+        </div>
+        <strong class="overview-metric-value" id="ovRiskVal">0%</strong>
+        <span class="overview-metric-sub" id="ovRiskSub" style="display:none"></span>
         <div class="overview-metric-bar"><i id="ovRiskBar"></i></div>
       </div>
-      <div class="card overview-metric">
-        <div class="overview-metric-top"><span class="overview-metric-label">Win Rate</span><span class="metric-icon amber"><svg class="tl-icon" aria-hidden="true"><use href="#i-target"></use></svg></span></div>
-        <strong class="overview-metric-value" id="ovWinRateVal">0%</strong>
-        <span class="overview-metric-sub" id="ovWinRateSub">0 wins · 0 losses</span>
-        <div class="overview-metric-bar"><i id="ovWinRateBar"></i></div>
+
+      <div class="card overview-metric daily-limit-metric">
+        <div class="overview-metric-top">
+          <span class="metric-icon amber"><svg class="tl-icon" aria-hidden="true"><use href="#i-target"></use></svg></span>
+          <span class="overview-metric-label">Daily Loss Limit</span>
+          <button id="ovLossLimitEditBtn" class="edit-pen-btn" type="button" title="Edit loss limit"><svg class="tl-icon"><use href="#i-edit"></use></svg></button>
+        </div>
+        <strong class="overview-metric-value" id="ovLossLimitVal">₹2,000</strong>
+        <span class="overview-metric-sub" id="ovWinRateSub" style="display:none">0 wins · 0 losses</span>
+        <span id="ovWinRateVal" style="display:none">0%</span>
+        <div class="overview-metric-bar" style="display:none"><i id="ovWinRateBar"></i></div>
       </div>
     </section>
 
-    <div class="overview-primary-grid">
-      <section class="card overview-chart-card" aria-labelledby="overviewChartTitle">
-        <div class="overview-card-head">
-          <div class="overview-card-title"><svg class="tl-icon" aria-hidden="true"><use href="#i-chart"></use></svg><div><h2 id="overviewChartTitle">Market Overview</h2><p id="overviewChartSymbol">NIFTY 50 · NSE</p></div></div>
-          <span class="demo-badge">SIMULATED</span>
+    <!-- MAIN SPLIT WORKSPACE: Left 65% Chart Card / Right 35% Quick Actions & Focus -->
+    <div class="home-split-grid">
+      <!-- LEFT: Interactive Candlestick / Area Chart Card -->
+      <section class="card overview-chart-card home-main-chart" aria-labelledby="overviewChartTitle">
+        <div class="home-chart-header">
+          <div class="chart-selector-group">
+            <select id="overviewSymbol" class="glass-select" aria-label="Overview chart symbol">
+              <option value="NIFTY" selected>NIFTY 50</option>
+              <option value="BANKNIFTY">BANKNIFTY</option>
+              <option value="FINNIFTY">FINNIFTY</option>
+              <option value="MIDCPNIFTY">MIDCPNIFTY</option>
+              <option value="SENSEX">SENSEX</option>
+              <option value="BANKEX">BANKEX</option>
+            </select>
+            <select id="overviewTimeframe" class="glass-select" aria-label="Overview chart timeframe">
+              <option value="1m">1m</option>
+              <option value="5m">5m</option>
+              <option value="15m" selected>15m</option>
+              <option value="1h">1h</option>
+              <option value="1d">1D</option>
+              <option value="1w">1W</option>
+            </select>
+            <button id="overviewChartTypeBtn" class="chart-icon-btn" type="button" title="Toggle Indicators">
+              <svg class="tl-icon" aria-hidden="true"><use href="#i-chart"></use></svg>
+            </button>
+          </div>
+          <span class="demo-badge-green demo-badge">
+            <span class="live-pulse-dot"></span> SIMULATED
+          </span>
+          <span id="overviewChartTitle" style="display:none">Market Overview</span>
+          <span id="overviewChartSymbol" style="display:none">NIFTY 50 · NSE</span>
         </div>
-        <div class="overview-chart-controls">
-          <div class="overview-chart-price"><strong id="overviewChartPrice">—</strong><span id="overviewChartChange">Deterministic demo series</span></div>
-          <select id="overviewSymbol" aria-label="Overview chart symbol">
-            <option value="NIFTY">NIFTY</option><option value="BANKNIFTY">BANKNIFTY</option><option value="FINNIFTY">FINNIFTY</option><option value="MIDCPNIFTY">MIDCPNIFTY</option><option value="SENSEX">SENSEX</option><option value="BANKEX">BANKEX</option>
-          </select>
-          <select id="overviewTimeframe" aria-label="Overview chart timeframe">
-            <option value="1m">1m</option><option value="3m">3m</option><option value="5m">5m</option><option value="10m">10m</option><option value="15m" selected>15m</option><option value="30m">30m</option><option value="45m">45m</option><option value="1h">1h</option><option value="2h">2h</option><option value="4h">4h</option><option value="1d">1D</option><option value="1w">1W</option>
-          </select>
+
+        <div class="home-chart-price-row">
+          <div class="price-big-group">
+            <strong id="overviewChartPrice">24,520.00</strong>
+            <span id="overviewChartChange" class="price-change-pill pos">+82.45 (+0.34%)</span>
+          </div>
+          <div class="ohlc-summary-row" id="overviewOhlcSummary">
+            <span>O <b>24,441.20</b></span>
+            <span>H <b>24,612.30</b></span>
+            <span>L <b>24,400.10</b></span>
+            <span>Prev <b>24,437.55</b></span>
+          </div>
         </div>
-        <div class="overview-chart-wrap"><svg id="overviewChart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Simulated market overview chart"><title>Simulated market overview — not live market data</title></svg></div>
-        <div class="overview-chart-foot"><span id="overviewChartSource">Deterministic demo data · Not a live market feed</span><button class="overview-text-btn overview-action" data-tab="market" type="button">Open Market &amp; OI<svg class="tl-icon" aria-hidden="true"><use href="#i-arrow"></use></svg></button></div>
+
+        <!-- SVG Candlestick & Volume Chart -->
+        <div class="overview-chart-wrap home-chart-canvas-wrap">
+          <svg id="overviewChart" viewBox="0 0 720 230" preserveAspectRatio="none" role="img" aria-label="Simulated market overview chart">
+            <title>Simulated market overview — not live market data</title>
+          </svg>
+        </div>
+
+        <!-- Timeframe Pills Row -->
+        <div class="chart-tf-pills-row">
+          <button class="tf-pill" data-tf="1m" type="button">1m</button>
+          <button class="tf-pill" data-tf="5m" type="button">5m</button>
+          <button class="tf-pill active" data-tf="15m" type="button">15m</button>
+          <button class="tf-pill" data-tf="1h" type="button">1h</button>
+          <button class="tf-pill" data-tf="1d" type="button">D</button>
+          <button class="tf-pill" data-tf="1w" type="button">W</button>
+        </div>
+
+        <!-- Session Progress Bar at Bottom of Chart -->
+        <div class="home-chart-session-bar">
+          <div class="session-bar-head">
+            <div class="session-bar-left">
+              <svg class="tl-icon" aria-hidden="true"><use href="#i-clock"></use></svg>
+              <span>Market Session</span>
+              <span class="session-open-badge">Open</span>
+            </div>
+            <span class="session-bar-hours">NSE: 09:15 AM - 03:30 PM</span>
+            <span id="sessionTimeRemaining" class="session-bar-remaining">16h 42m left</span>
+          </div>
+          <div class="session-track-line">
+            <div class="session-fill-line" style="width: 42%;"></div>
+          </div>
+        </div>
+
+        <div class="overview-chart-foot">
+          <span id="overviewChartSource">Deterministic demo data · Not a live market feed</span>
+          <button class="overview-text-btn overview-action" data-tab="market" type="button">Open Market &amp; OI<svg class="tl-icon" aria-hidden="true"><use href="#i-arrow"></use></svg></button>
+        </div>
       </section>
 
-      <div class="overview-side-stack">
-        <section class="card overview-focus-card" aria-labelledby="dailyFocusTitle">
-          <div class="overview-card-head"><div class="overview-card-title"><svg class="tl-icon" aria-hidden="true"><use href="#i-target"></use></svg><div><h2 id="dailyFocusTitle">Daily Focus</h2><p>One intention for every decision</p></div></div></div>
-          <p class="overview-focus-quote" id="overviewFocusText">Stick strictly to predefined setups. Never revenge trade.</p>
-          <ul class="focus-rule-list"><li><svg class="tl-icon" aria-hidden="true"><use href="#i-check"></use></svg>Wait for your predefined setup</li><li><svg class="tl-icon" aria-hidden="true"><use href="#i-check"></use></svg>Respect your risk budget</li><li><svg class="tl-icon" aria-hidden="true"><use href="#i-check"></use></svg>Never trade to recover a loss</li></ul>
-          <button id="overviewFocusEdit" class="overview-text-btn overview-focus-edit" type="button"><svg class="tl-icon" aria-hidden="true"><use href="#i-edit"></use></svg>Edit daily focus</button>
+      <!-- RIGHT: Quick Actions & Today's Focus Checklist -->
+      <div class="home-right-stack">
+        <!-- Quick Actions Card (2x3 Grid) -->
+        <section class="card home-quick-actions-card">
+          <div class="home-card-header">
+            <h3>Quick Actions</h3>
+            <button class="overview-action view-all-link" data-tab="market" type="button">View all</button>
+          </div>
+          <nav class="home-quick-actions-grid overview-quick-grid" aria-label="Quick Actions">
+            <button id="ovQaLock" class="home-qa-tile red-tile overview-quick-tile" type="button">
+              <span class="qa-icon-wrap red"><svg class="tl-icon"><use href="#i-lock"></use></svg></span>
+              <span>Start Lock</span>
+            </button>
+            <button id="overviewLogTrade" class="home-qa-tile green-tile overview-quick-tile" type="button">
+              <span class="qa-icon-wrap green"><svg class="tl-icon"><use href="#i-plus"></use></svg></span>
+              <span>Add Trade</span>
+            </button>
+            <button class="home-qa-tile blue-tile overview-action overview-quick-tile" data-tab="market" type="button">
+              <span class="qa-icon-wrap blue"><svg class="tl-icon"><use href="#i-trades"></use></svg></span>
+              <span>Market &amp; OI</span>
+            </button>
+            <button class="home-qa-tile amber-tile overview-action overview-quick-tile" data-tab="options" type="button">
+              <span class="qa-icon-wrap amber"><svg class="tl-icon"><use href="#i-layers"></use></svg></span>
+              <span>Options Chain</span>
+            </button>
+            <button class="home-qa-tile purple-tile overview-action overview-quick-tile" data-tab="journal" type="button">
+              <span class="qa-icon-wrap purple"><svg class="tl-icon"><use href="#i-book"></use></svg></span>
+              <span>Journal</span>
+            </button>
+            <button class="home-qa-tile pink-tile overview-action overview-quick-tile" data-tab="ai" type="button">
+              <span class="qa-icon-wrap pink"><svg class="tl-icon"><use href="#i-robot"></use></svg></span>
+              <span>AI Coach</span>
+            </button>
+          </nav>
         </section>
 
-        <section class="card overview-session-card" aria-labelledby="sessionProgressTitle">
-          <div class="overview-card-head"><div class="overview-card-title"><svg class="tl-icon" aria-hidden="true"><use href="#i-calendar"></use></svg><div><h2 id="sessionProgressTitle">Session Progress</h2><p id="overviewSessionDate">Today · Asia/Kolkata</p></div></div></div>
-          <div class="session-status-row"><div class="session-status-copy"><strong id="overviewSessionState">Planning Mode</strong><small id="overviewSessionStateSub">Journal and planning tools available</small></div><span id="overviewMarketStatus" class="overview-market-status closed">Market closed</span></div>
-          <div class="session-progress-layout">
-            <div id="overviewProgressRing" class="session-progress-ring"><strong id="overviewProgressPct">0%</strong></div>
-            <div class="session-progress-copy"><span>Trade limit progress</span><strong id="overviewTradeProgress">0 / No cap</strong><div class="session-progress-track"><i id="overviewTradeProgressBar"></i></div></div>
+        <!-- Today's Focus Checklist Card -->
+        <section class="card home-focus-card" id="overviewFocusCard" aria-labelledby="dailyFocusTitle">
+          <div class="home-card-header">
+            <div class="focus-title-group">
+              <span class="focus-target-icon"><svg class="tl-icon"><use href="#i-target"></use></svg></span>
+              <h3 id="dailyFocusTitle">Today's Focus</h3>
+            </div>
+            <button id="overviewFocusEdit" class="overview-text-btn" type="button" title="Edit focus"><svg class="tl-icon"><use href="#i-edit"></use></svg></button>
           </div>
-          <div class="overview-session-time"><svg class="tl-icon" aria-hidden="true"><use href="#i-clock"></use></svg><span id="overviewSessionTime">Next market open · —</span></div>
+          <ul class="home-focus-checklist" id="homeFocusChecklist">
+            <li class="checklist-item checked">
+              <label class="custom-checkbox">
+                <input type="checkbox" checked data-index="0">
+                <span class="checkmark"><svg class="tl-icon"><use href="#i-check"></use></svg></span>
+                <span class="item-text">Review market trend</span>
+              </label>
+            </li>
+            <li class="checklist-item">
+              <label class="custom-checkbox">
+                <input type="checkbox" data-index="1">
+                <span class="checkmark"><svg class="tl-icon"><use href="#i-check"></use></svg></span>
+                <span class="item-text">Plan tomorrow's trades</span>
+              </label>
+            </li>
+            <li class="checklist-item">
+              <label class="custom-checkbox">
+                <input type="checkbox" data-index="2">
+                <span class="checkmark"><svg class="tl-icon"><use href="#i-check"></use></svg></span>
+                <span class="item-text">Journal today's thoughts</span>
+              </label>
+            </li>
+            <li class="checklist-item">
+              <label class="custom-checkbox">
+                <input type="checkbox" data-index="3">
+                <span class="checkmark"><svg class="tl-icon"><use href="#i-check"></use></svg></span>
+                <span class="item-text">Stay patient</span>
+              </label>
+            </li>
+          </ul>
+          <p class="overview-focus-quote" id="overviewFocusText" style="display:none">Stick strictly to predefined setups. Never revenge trade.</p>
+        </section>
+
+        <!-- Discipline Reminder Quote Card -->
+        <section class="card home-discipline-quote-card">
+          <svg class="tl-icon quote-glyph" aria-hidden="true"><use href="#i-quote"></use></svg>
+          <div class="quote-text-wrap">
+            <p id="overviewDisciplineText">Discipline today builds the freedom tomorrow.</p>
+            <h3 id="overviewDisciplineTitle" style="display:none">Your edge is patience</h3>
+          </div>
         </section>
       </div>
     </div>
 
-    <div class="overview-secondary-grid">
-      <section class="card overview-actions-card" aria-labelledby="quickActionsTitle">
-        <div class="overview-card-head"><div class="overview-card-title"><svg class="tl-icon" aria-hidden="true"><use href="#i-sparkles"></use></svg><div><h2 id="quickActionsTitle">Quick Actions</h2><p>Your trading toolkit, one click away</p></div></div></div>
-        <nav class="overview-quick-grid" aria-label="Overview quick actions">
-          <button id="overviewLogTrade" class="overview-quick-tile" type="button"><span class="quick-icon green"><svg class="tl-icon" aria-hidden="true"><use href="#i-plus"></use></svg></span>Log Trade</button>
-          <button class="overview-quick-tile overview-action" data-tab="journal" type="button"><span class="quick-icon blue"><svg class="tl-icon" aria-hidden="true"><use href="#i-book"></use></svg></span>Journal</button>
-          <button class="overview-quick-tile overview-action" data-tab="ai" type="button"><span class="quick-icon violet"><svg class="tl-icon" aria-hidden="true"><use href="#i-sparkles"></use></svg></span>AI Coach</button>
-          <button class="overview-quick-tile overview-action" data-tab="market" type="button"><span class="quick-icon cyan"><svg class="tl-icon" aria-hidden="true"><use href="#i-chart"></use></svg></span>Market &amp; OI</button>
-          <button class="overview-quick-tile overview-action" data-tab="options" type="button"><span class="quick-icon amber"><svg class="tl-icon" aria-hidden="true"><use href="#i-layers"></use></svg></span>Options Chain</button>
-          <button class="overview-quick-tile overview-action" data-tab="rules" type="button"><span class="quick-icon rose"><svg class="tl-icon" aria-hidden="true"><use href="#i-sliders"></use></svg></span>Rules &amp; Limits</button>
-        </nav>
-      </section>
-
-      <section class="card overview-discipline-card" aria-labelledby="overviewDisciplineTitle">
-        <div class="overview-card-title"><svg class="tl-icon" aria-hidden="true"><use href="#i-shield"></use></svg><div><h2>Discipline Status</h2><p>Your rules, working in the background</p></div></div>
-        <div class="discipline-icon"><svg class="tl-icon" aria-hidden="true"><use href="#i-shield"></use></svg></div>
-        <h3 id="overviewDisciplineTitle">Your edge is patience</h3>
-        <p id="overviewDisciplineText">No trades logged yet. Protect your capital by waiting for a valid setup instead of forcing the first trade.</p>
-        <div class="discipline-foot"><svg class="tl-icon" aria-hidden="true"><use href="#i-check"></use></svg><span><b id="ovDisciplineScore">100 / 100</b> · <span id="ovDisciplineSub">Awaiting trade data</span> · <b id="ovStreakVal">0</b> streak <span id="ovStreakSub" hidden>No streak limit</span></span></div>
-        <div class="discipline-foot"><svg class="tl-icon" aria-hidden="true"><use href="#i-clock"></use></svg><span>Rule locks release at <b id="openTimeLabel">09:15 IST</b></span></div>
-      </section>
+    <!-- Hidden compatibility elements to satisfy script bindings -->
+    <div style="display:none">
+      <span id="overviewSessionDate">Today · Asia/Kolkata</span>
+      <span id="overviewSessionState">Planning Mode</span>
+      <span id="overviewSessionStateSub">Journal and planning tools available</span>
+      <span id="overviewMarketStatus" class="overview-market-status closed">Market closed</span>
+      <div id="overviewProgressRing"></div>
+      <strong id="overviewProgressPct">0%</strong>
+      <strong id="overviewTradeProgress">0 / No cap</strong>
+      <i id="overviewTradeProgressBar"></i>
+      <span id="overviewSessionTime">Next market open · —</span>
+      <button class="legacy-quick-tile overview-action" data-tab="rules"></button>
+      <span id="ovDisciplineScore">100 / 100</span>
+      <span id="ovDisciplineSub">Awaiting trade data</span>
+      <span id="ovStreakVal">0</span>
+      <span id="ovStreakSub">No streak limit</span>
+      <span id="openTimeLabel">09:15 IST</span>
     </div>
 
-    <details class="card overview-details">
+    <!-- Expandable Session Telemetry & Trade Log Drawer (Preserved for exports) -->
+    <details class="card overview-details" style="margin-top:16px;">
       <summary>Session telemetry, reports &amp; recent journal activity</summary>
       <div class="overview-details-body">
         <div class="card" style="padding:16px">
@@ -448,6 +701,9 @@
         </div>
         <span class="badge" id="marketTimestampBadge" style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);color:#93c5fd;font-size:11px">Source: Deterministic Model · <span id="marketUpdatedTimestamp">Demo Render Time: Just now</span></span>
       </div>
+      <div class="callout" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;margin-bottom:14px;font-size:12px">
+        ⚠️ <b>SIMULATED DEMO DATA — NOT LIVE MARKET FEED:</b> All market statistics, charts, and OI levels are computed via deterministic mathematical simulation models for interface testing. Live NSE quotes and Greeks require an active broker API connection.
+      </div>
 
       <div class="grid4" style="margin-bottom:14px">
         <label class="field">
@@ -490,10 +746,13 @@
           <span class="k">Data Source</span>
           <select id="marketSource">
             <option value="demo" selected>Deterministic Sample Candles (Simulated Demo)</option>
-            <option value="live" disabled>Live Exchange Feed (Unconnected — Requires Broker WebSocket)</option>
+            <option value="live">Live Exchange Data (Fyers API v3 Backend)</option>
           </select>
         </label>
       </div>
+
+      <!-- Truthful Live Provider Setup & Disconnected State Card -->
+      <div id="liveMarketSetupCard" class="live-setup-card" style="display:none;margin-bottom:16px;"></div>
 
       <div class="actions" style="margin-bottom:16px">
         <button id="marketBtn" class="primary">Compute &amp; Refresh Market &amp; Chart</button>
@@ -623,18 +882,105 @@
       <div id="marketResult" style="margin-top:16px"></div>
     </div>
   </div>
-  <!-- Alias for backward compatibility -->
-  <div id="tab-charts" style="display:none"></div>
+  <!-- ======================================================== TAB: CHARTS -->
+  <div class="tab-content" id="tab-charts">
+    <div class="card glass-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+        <div>
+          <h2 style="margin:0;font-size:18px;font-weight:700">Interactive Technical Charts <span class="badge" style="background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);color:#60a5fa">Multi-Timeframe</span></h2>
+          <p class="desc" style="margin:4px 0 0">Multi-timeframe candlestick &amp; volume analysis. Real-time OHLC inspection, intraday indicators, and support/resistance zones.</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="demo-badge" id="chartsModeBadge"><span class="badge-dot-live"></span> SIMULATED DEMO DATA</span>
+        </div>
+      </div>
+
+      <!-- Controls toolbar for charts -->
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px;background:rgba(255,255,255,0.03);padding:10px 14px;border-radius:10px;border:1px solid var(--line);">
+        <label class="field" style="margin:0;min-width:180px">
+          <span class="k">Chart Instrument</span>
+          <select id="chartsSymbolSelect">
+            <option value="NIFTY" selected>NIFTY 50 (NSE)</option>
+            <option value="BANKNIFTY">BANK NIFTY (NSE)</option>
+            <option value="FINNIFTY">FIN NIFTY (NSE)</option>
+            <option value="MIDCPNIFTY">MIDCPNIFTY (NSE)</option>
+            <option value="SENSEX">BSE SENSEX (BSE)</option>
+            <option value="BANKEX">BSE BANKEX (BSE)</option>
+          </select>
+        </label>
+        <button type="button" id="chartsRefreshBtn" class="primary" style="padding:7px 16px;font-size:12px">Refresh Chart</button>
+        <span id="chartsStatusText" style="font-size:11.5px;color:var(--muted);align-self:center;margin-left:auto">Render mode: Deterministic Model</span>
+      </div>
+
+      <div class="callout" id="chartsCalloutBanner" style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.22);color:#93c5fd;margin-bottom:16px;font-size:12px">
+        ℹ️ <b>SIMULATED DEMO DATA — NOT LIVE MARKET DATA:</b> Candlestick sequences and volume profiles are rendered algorithmically for technical layout preview and strategy discipline training.
+      </div>
+
+      <div class="overview-chart-card glass-panel" style="padding:18px;margin-bottom:16px">
+        <div class="overview-card-head" style="flex-wrap:wrap;gap:12px">
+          <div class="chart-symbol-info">
+            <div class="symbol-title-row">
+              <h3 id="chartsSymbolDisplay" style="font-size:18px;font-weight:800;margin:0">NIFTY 50</h3>
+              <span class="symbol-change pos" id="chartsChangeDisplay" style="font-size:13px;font-weight:700;color:var(--tl-green)">+82.45 (+0.34%)</span>
+            </div>
+            <div class="ohlc-strip" id="chartsOhlcDisplay" style="font-size:11px;color:var(--tl-dim);margin-top:4px">
+              O: — &nbsp; H: — &nbsp; L: — &nbsp; C: —
+            </div>
+          </div>
+          <div class="chart-timeframe-pills" id="chartsTimeframePills">
+            <button type="button" class="tf-btn" data-tf="1m">1m</button>
+            <button type="button" class="tf-btn" data-tf="5m">5m</button>
+            <button type="button" class="tf-btn active" data-tf="15m">15m</button>
+            <button type="button" class="tf-btn" data-tf="1h">1h</button>
+            <button type="button" class="tf-btn" data-tf="1d">D</button>
+            <button type="button" class="tf-btn" data-tf="1w">W</button>
+          </div>
+        </div>
+
+        <!-- Telemetry Indicators Strip -->
+        <div id="chartsTelemetryBar" class="grid4" style="margin-top:14px;margin-bottom:14px">
+          <div class="stat-card" style="padding:8px 12px">
+            <span class="stat-lbl" style="font-size:10px">RSI (14)</span>
+            <span class="stat-val" id="chartsRsiVal" style="font-size:14px">54.2</span>
+          </div>
+          <div class="stat-card" style="padding:8px 12px">
+            <span class="stat-lbl" style="font-size:10px">VWAP</span>
+            <span class="stat-val" id="chartsVwapVal" style="font-size:14px">₹24,510</span>
+          </div>
+          <div class="stat-card" style="padding:8px 12px">
+            <span class="stat-lbl" style="font-size:10px">ATR (14)</span>
+            <span class="stat-val" id="chartsAtrVal" style="font-size:14px">₹142.50</span>
+          </div>
+          <div class="stat-card" style="padding:8px 12px">
+            <span class="stat-lbl" style="font-size:10px">Trend Structure</span>
+            <span class="stat-val" id="chartsTrendVal" style="font-size:14px;color:var(--tl-green)">Uptrend</span>
+          </div>
+        </div>
+
+        <div class="overview-chart-wrap" style="height:360px;margin-top:10px">
+          <svg id="dedicatedChartsSvg" viewBox="0 0 740 320" preserveAspectRatio="none" style="width:100%;height:100%">
+            <!-- Dynamically populated or rendered -->
+          </svg>
+        </div>
+
+        <div id="chartsOfflineNotice" style="display:none;padding:36px;text-align:center;border:1px dashed var(--line);border-radius:12px;background:rgba(0,0,0,0.25);margin-top:14px"></div>
+      </div>
+    </div>
+  </div>
 
   <!-- ======================================================== TAB: OPTIONS -->
   <div class="tab-content" id="tab-options">
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px">
-        <h2 style="margin:0">NSE Options Chain &amp; Analytics <span class="badge" style="background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);color:#fbbf24">Simulated Model Chain</span></h2>
+        <h2 style="margin:0">NSE Options Chain &amp; Analytics <span class="badge" id="optionsModeBadge" style="background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);color:#fbbf24">Simulated Model Chain</span></h2>
         <span class="badge" style="background:rgba(255,255,255,0.06);color:var(--muted)">Strike-by-Strike Analytics</span>
       </div>
       <p class="desc">Open Interest (OI) distribution, Put-Call Ratio (PCR), and Max Pain computed via mathematical model. Data is simulated for strategy review and not a live exchange feed.</p>
-      <div class="callout" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;margin-bottom:14px;font-size:12px">
+
+      <!-- Live Provider Setup Card for Options -->
+      <div id="liveOptionsSetupCard" class="live-setup-card" style="display:none;margin-bottom:14px;"></div>
+
+      <div id="optionsSimulatedCallout" class="callout" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;margin-bottom:14px;font-size:12px">
         ⚠️ <b>SIMULATED DEMO DATA — NOT LIVE MARKET FEED:</b> This chain is generated via deterministic mathematical models strictly for testing user experience and interface functionality. Live NSE tick data requires a configured broker API feed. Do NOT place real orders based on simulated strikes.
       </div>
 
@@ -697,7 +1043,9 @@
         </div>
       </div>
 
-      <div class="options-wrap">
+      <div id="optionsChainEmptyNotice" style="display:none;padding:36px;text-align:center;border:1px dashed var(--line);border-radius:12px;background:rgba(0,0,0,0.25);margin:14px 0;"></div>
+
+      <div class="options-wrap" id="optionsTableWrap">
         <table class="options-chain" id="optionsChainTable">
           <thead>
             <tr>
@@ -982,6 +1330,10 @@
         <textarea id="blockedHosts" style="min-height:100px"></textarea>
         <span class="h">Add your custom broker or proprietary trading web terminal host here.</span>
       </label>
+      <div style="margin-top:10px;display:flex;gap:10px;align-items:center">
+        <button id="saveBlockedHostsBtn" type="button" class="primary" style="padding:6px 16px;font-size:12px">Save Restricted Domains</button>
+        <span id="saveBlockedHostsStatus" style="font-size:12px;color:var(--tl-green);display:none">✓ Saved</span>
+      </div>
     </div>
   </div>
 

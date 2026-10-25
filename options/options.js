@@ -38,7 +38,6 @@
   function switchTab(name) {
     if (!name) name = 'overview';
     var clean = name.replace(/^#/, '');
-    if (clean === 'charts') clean = 'market';
     var btns = document.querySelectorAll('.nav-tab');
     var contents = document.querySelectorAll('.tab-content');
     var targetBtns = document.querySelectorAll('.nav-tab[data-tab="' + clean + '"]');
@@ -56,10 +55,26 @@
     targetBtns.forEach(function (b) { b.classList.add('active'); });
     if (targetContent) targetContent.classList.add('active');
 
-    if (clean === 'market') {
+    if (clean === 'overview') {
+      if (currentState) renderOverview(currentState, currentSettings);
+      if (currentState && currentJournal) renderOverviewJournalSummary(currentState, currentJournal);
+      renderOverviewChart();
+    } else if (clean === 'market') {
       renderMarketAndOiDashboard();
     } else if (clean === 'options') {
       renderOptionsChainView();
+    } else if (clean === 'charts') {
+      renderDedicatedChartsView();
+    } else if (clean === 'journal') {
+      renderMonthlyJournal();
+    } else if (clean === 'ai') {
+      renderAiCoachView();
+    } else if (clean === 'rules') {
+      renderRiskRulesView();
+    } else if (clean === 'license') {
+      renderLicense(currentLicense, currentSettings);
+    } else if (clean === 'sites') {
+      renderSitesView();
     }
 
     if (window.location.hash !== '#' + clean) {
@@ -67,11 +82,58 @@
     }
   }
 
+  function renderRiskRulesView() {
+    fill(currentSettings);
+    renderCalendarStatus(currentSettings);
+  }
+
+  function renderAiCoachView() {
+    var box = el('chatMessages');
+    if (box && !box.children.length) {
+      appendChatMessage('assistant', 'Hello! I am your Trade Lock AI Trading Assistant. I can help interpret computed chart levels, analyze options OI structure, and audit your session discipline. What would you like to review?');
+    }
+  }
+
+  function renderSitesView() {
+    if (el('blockedHosts')) {
+      el('blockedHosts').value = (currentSettings && currentSettings.blockedHosts)
+        ? currentSettings.blockedHosts.join('\n')
+        : '';
+    }
+    if (chrome.tabs && chrome.tabs.query) {
+      chrome.tabs.query({}, function (tabs) {
+        var openUrls = (tabs || []).map(function (t) { return (t.url || '').toLowerCase(); });
+        var cards = document.querySelectorAll('.brokers-grid .broker-card');
+        cards.forEach(function (card) {
+          var hostEl = card.querySelector('.b-host');
+          if (!hostEl) return;
+          var host = hostEl.textContent.trim().toLowerCase();
+          var isOpen = openUrls.some(function (u) {
+            try { return new URL(u).hostname.toLowerCase().indexOf(host) !== -1; } catch (e) { return false; }
+          });
+          var existingLive = card.querySelector('.broker-live-tag');
+          if (isOpen) {
+            if (!existingLive) {
+              var liveTag = document.createElement('span');
+              liveTag.className = 'badge broker-live-tag';
+              liveTag.style.cssText = 'background:rgba(16,185,129,0.2);color:#34d399;font-size:10px;margin-left:6px;padding:1px 6px;border:1px solid rgba(16,185,129,0.3)';
+              liveTag.textContent = '● Open Tab Monitored';
+              var bInfo = card.querySelector('div');
+              if (bInfo) bInfo.appendChild(liveTag);
+            }
+          } else if (existingLive) {
+            existingLive.remove();
+          }
+        });
+      });
+    }
+  }
+
   function initTabs() {
-    var btns = document.querySelectorAll('.nav-tab');
-    btns.forEach(function (btn) {
+    document.querySelectorAll('[data-tab]').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        switchTab(btn.getAttribute('data-tab'));
+        var tab = btn.getAttribute('data-tab');
+        if (tab) switchTab(tab);
       });
     });
 
@@ -81,9 +143,12 @@
 
     // Listen for tab switch requests from background service worker (e.g. side panel open)
     if (chrome.runtime && chrome.runtime.onMessage) {
-      chrome.runtime.onMessage.addListener(function (msg) {
+      chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         if (msg && msg.type === 'TL_SWITCH_TAB' && msg.tab) {
           switchTab(msg.tab);
+          if (typeof sendResponse === 'function') {
+            sendResponse({ ok: true, activeTab: msg.tab });
+          }
         }
       });
     }
@@ -94,6 +159,8 @@
       chrome.storage.local.get(['tlActiveTab'], function (res) {
         if (res && res.tlActiveTab) {
           switchTab(res.tlActiveTab);
+        } else {
+          switchTab('overview');
         }
       });
     }
@@ -433,8 +500,8 @@
         pro_plus_ai_yearly: 'Pro+ AI 365-day Prepaid (₹3,999)',
         founder_lifetime: 'Founder Lifetime (₹2,999)'
       };
-      var pName = planNames[planId] || (lic.plan || 'Pro Active');
-      var expStr = lic.expiresAt ? ('valid until <b>' + R.istLabel(lic.expiresAt) + '</b>') : '<b>Lifetime Access</b>';
+      var pName = planNames[planId] || ((lic && lic.plan) || 'Pro Active');
+      var expStr = (lic && lic.expiresAt) ? ('valid until <b>' + R.istLabel(lic.expiresAt) + '</b>') : '<b>Lifetime Access</b>';
       box.className = 'callout green';
       box.innerHTML = '<b>Active Prepaid Plan:</b> You are on the <b>' + pName + '</b> plan (' + expStr + '). ' +
         'Advanced discipline rules, generic broker-table detection, and plan device entitlements are active.';
@@ -733,6 +800,7 @@
   // -------------------------------------------------------------- load ----
 
   function loadAll() {
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
     chrome.storage.local.get(['tlSettings', 'tlState', 'tlLicense', 'tlJournal', 'tlUserEmail', 'tlDailyFocus'], function (res) {
       if (res.tlUserEmail && el('checkoutEmail') && !el('checkoutEmail').value) {
         el('checkoutEmail').value = res.tlUserEmail;
@@ -929,7 +997,7 @@
       var high = Math.max(open, close) + 15;
       var low = Math.min(open, close) - 14;
       p = close;
-      candles.push({ t: now + (i * 15 * 60 * 1000), o: round(open), h: round(high), l: round(low), c: round(close), v: 1200 + (i * 50) });
+      candles.push({ t: now + (i * 15 * 60 * 1000), o: round(open), h: round(high), l: round(low), c: round(close), v: 1200 + (i * 50), isDemo: true });
     }
     return candles;
   }
@@ -992,22 +1060,299 @@
     for (var g = 0; g <= 4; g++) {
       var gy = top + (g / 4) * plotHeight;
       var value = max - (g / 4) * range;
-      html += '<line x1="' + left + '" y1="' + gy.toFixed(2) + '" x2="' + (width - right) + '" y2="' + gy.toFixed(2) + '" stroke="rgba(148,163,184,.10)" stroke-width="1" vector-effect="non-scaling-stroke"/>' +
+      html += '<line x1="' + left + '" y1="' + gy.toFixed(2) + '" x2="' + (width - right) + '" y2="' + gy.toFixed(2) + '" stroke="rgba(148,163,184,.08)" stroke-dasharray="3 3" stroke-width="1" vector-effect="non-scaling-stroke"/>' +
         '<text x="' + (width - right + 8) + '" y="' + (gy + 3).toFixed(2) + '" fill="#64748b" font-size="9" font-family="Inter,sans-serif">' + value.toFixed(0) + '</text>';
     }
-    for (var t = 0; t < 4; t++) {
-      var idx = Math.round((t / 3) * (candles.length - 1));
-      var p = points[idx];
-      var time = new Date(p.candle.t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
-      html += '<text x="' + p.x.toFixed(2) + '" y="' + (height - 6) + '" text-anchor="' + (t === 0 ? 'start' : (t === 3 ? 'end' : 'middle')) + '" fill="#64748b" font-size="9" font-family="Inter,sans-serif">' + time + '</text>';
-    }
-    var end = points[points.length - 1];
+
+    // Time Axis Labels (09:15, 10:30, 12:00, 13:30, 15:00)
+    var timeMarkers = ['09:15', '10:30', '12:00', '13:30', '15:00'];
+    timeMarkers.forEach(function (tm, idx) {
+      var tx = left + (idx / (timeMarkers.length - 1)) * plotWidth;
+      var anchor = idx === 0 ? 'start' : (idx === timeMarkers.length - 1 ? 'end' : 'middle');
+      html += '<text x="' + tx.toFixed(2) + '" y="' + (height - 6) + '" fill="#64748b" font-size="8.5" text-anchor="' + anchor + '" font-family="Inter,sans-serif">' + tm + '</text>';
+    });
+
+    // Subtle area and trend line behind candlesticks
     html += '<path d="' + areaPath + '" fill="url(#overviewAreaGradient)"/>' +
-      '<path d="' + linePath + '" fill="none" stroke="url(#overviewLineGradient)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
-      '<circle cx="' + end.x.toFixed(2) + '" cy="' + end.y.toFixed(2) + '" r="7" fill="rgba(167,139,250,.14)"/>' +
-      '<circle cx="' + end.x.toFixed(2) + '" cy="' + end.y.toFixed(2) + '" r="3.2" fill="#c4b5fd" stroke="#111827" stroke-width="1.5" vector-effect="non-scaling-stroke"/>';
+      '<path d="' + linePath + '" fill="none" stroke="url(#overviewLineGradient)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" opacity="0.35"/>';
+
+    // Draw Volume Bars
+    var maxVol = Math.max.apply(null, candles.map(function (c) { return Number(c.v) || 1; }));
+    var volHeight = plotHeight * 0.22;
+    var candleSpacing = plotWidth / candles.length;
+    var candleW = Math.max(2.5, candleSpacing * 0.65);
+
+    candles.forEach(function (c, i) {
+      var cx = left + i * candleSpacing + (candleSpacing / 2);
+      var vH = ((Number(c.v) || 1) / maxVol) * volHeight;
+      var vy = baseY - vH;
+      var isBull = Number(c.c) >= Number(c.o);
+      var volColor = isBull ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)';
+      html += '<rect x="' + (cx - candleW / 2).toFixed(2) + '" y="' + vy.toFixed(2) + '" width="' + candleW.toFixed(2) + '" height="' + Math.max(1, vH).toFixed(2) + '" fill="' + volColor + '" rx="0.5"/>';
+    });
+
+    // Draw Candlesticks in foreground (Wick + Body)
+    candles.forEach(function (c, i) {
+      var cx = left + i * candleSpacing + (candleSpacing / 2);
+      var isBull = Number(c.c) >= Number(c.o);
+      var candleColor = isBull ? '#10b981' : '#f43f5e';
+      var yOpen = top + ((max - Number(c.o)) / range) * plotHeight;
+      var yClose = top + ((max - Number(c.c)) / range) * plotHeight;
+      var yHigh = top + ((max - Number(c.h)) / range) * plotHeight;
+      var yLow = top + ((max - Number(c.l)) / range) * plotHeight;
+      var bodyY = Math.min(yOpen, yClose);
+      var bodyH = Math.max(1.8, Math.abs(yClose - yOpen));
+
+      // Wick
+      html += '<line x1="' + cx.toFixed(2) + '" y1="' + yHigh.toFixed(2) + '" x2="' + cx.toFixed(2) + '" y2="' + yLow.toFixed(2) + '" stroke="' + candleColor + '" stroke-width="1.2" vector-effect="non-scaling-stroke"/>';
+      // Body
+      html += '<rect x="' + (cx - candleW / 2).toFixed(2) + '" y="' + bodyY.toFixed(2) + '" width="' + candleW.toFixed(2) + '" height="' + bodyH.toFixed(2) + '" fill="' + candleColor + '" rx="1"/>';
+    });
+
     svg.innerHTML = html;
   }
+
+  function drawDedicatedSvgChart(svg, candles) {
+    if (!svg || !candles || !candles.length) {
+      if (svg) svg.innerHTML = '<text x="370" y="160" text-anchor="middle" fill="#64748b" font-size="13">No candle data available</text>';
+      return;
+    }
+
+    var width = 740;
+    var height = 320;
+    var rightMargin = 68;
+    var bottomMargin = 26;
+    var topMargin = 24;
+    var plotWidth = width - rightMargin;
+    var totalPlotHeight = height - bottomMargin - topMargin;
+    var priceHeight = totalPlotHeight * 0.74;
+    var volHeight = totalPlotHeight * 0.22;
+    var volTop = topMargin + priceHeight + (totalPlotHeight * 0.04);
+
+    var count = Math.min(candles.length, 50);
+    var visible = candles.slice(-count);
+
+    var minP = Infinity, maxP = -Infinity, maxVol = 1;
+    visible.forEach(function (c) {
+      var low = Number(c.l), high = Number(c.h), vol = Number(c.v || c.volume || 1);
+      if (low < minP) minP = low;
+      if (high > maxP) maxP = high;
+      if (vol > maxVol) maxVol = vol;
+    });
+
+    var pRange = Math.max(1, maxP - minP);
+    var pMargin = pRange * 0.06;
+    minP -= pMargin;
+    maxP += pMargin;
+    pRange = maxP - minP;
+
+    function yPrice(p) {
+      return topMargin + priceHeight - ((Number(p) - minP) / pRange * priceHeight);
+    }
+    function yVol(v) {
+      return (volTop + volHeight) - ((Number(v) / maxVol) * volHeight);
+    }
+
+    var candleSpacing = plotWidth / count;
+    var bodyWidth = Math.max(2, Math.min(14, candleSpacing * 0.72));
+
+    var html = '';
+
+    // Subtle background grid
+    var gridSteps = 4;
+    for (var g = 0; g <= gridSteps; g++) {
+      var gy = topMargin + (priceHeight / gridSteps) * g;
+      var gPrice = maxP - (pRange / gridSteps) * g;
+      html += '<line x1="0" y1="' + gy.toFixed(1) + '" x2="' + plotWidth + '" y2="' + gy.toFixed(1) + '" stroke="rgba(255,255,255,0.06)" stroke-width="1" stroke-dasharray="3,3" />';
+      html += '<text x="' + (plotWidth + 6) + '" y="' + (gy + 3.5).toFixed(1) + '" fill="#64748b" font-size="10" font-family="monospace">₹' + gPrice.toFixed(0) + '</text>';
+    }
+
+    // Legend
+    html += '<text x="10" y="16" fill="#94a3b8" font-size="10.5" font-weight="600">' +
+      '<tspan fill="#06b6d4">― EMA 9</tspan>  ' +
+      '<tspan fill="#f59e0b">― EMA 20</tspan>  ' +
+      '<tspan fill="#a855f7">- - VWAP</tspan>' +
+    '</text>';
+
+    // Volume bars and Candlesticks
+    var ema9Vals = (M && M.ema) ? M.ema(visible.map(function (c) { return Number(c.c); }), 9) : [];
+    var ema20Vals = (M && M.ema) ? M.ema(visible.map(function (c) { return Number(c.c); }), 20) : [];
+    var vwapVals = (M && M.vwap) ? M.vwap(visible) : [];
+
+    var ema9Path = '';
+    var ema20Path = '';
+    var vwapPath = '';
+
+    visible.forEach(function (c, i) {
+      var cx = i * candleSpacing + (candleSpacing / 2);
+      var isBull = Number(c.c) >= Number(c.o);
+      var color = isBull ? '#10b981' : '#ef4444';
+
+      // Volume bar
+      var vy = yVol(c.v);
+      var vh = Math.max(1, (volTop + volHeight) - vy);
+      html += '<rect x="' + (cx - bodyWidth / 2).toFixed(1) + '" y="' + vy.toFixed(1) + '" width="' + bodyWidth.toFixed(1) + '" height="' + vh.toFixed(1) + '" fill="' + (isBull ? 'rgba(16,185,129,0.22)' : 'rgba(239,68,68,0.22)') + '" />';
+
+      // Candle Wick
+      var yh = yPrice(c.h);
+      var yl = yPrice(c.l);
+      html += '<line x1="' + cx.toFixed(1) + '" y1="' + yh.toFixed(1) + '" x2="' + cx.toFixed(1) + '" y2="' + yl.toFixed(1) + '" stroke="' + color + '" stroke-width="1.2" />';
+
+      // Candle Body
+      var yo = yPrice(c.o);
+      var yc = yPrice(c.c);
+      var bTop = Math.min(yo, yc);
+      var bHeight = Math.max(1.5, Math.abs(yo - yc));
+      html += '<rect x="' + (cx - bodyWidth / 2).toFixed(1) + '" y="' + bTop.toFixed(1) + '" width="' + bodyWidth.toFixed(1) + '" height="' + bHeight.toFixed(1) + '" fill="' + color + '" rx="1" />';
+
+      // Time axis labels (every 8 candles)
+      if (i % 8 === 0) {
+        var tDate = new Date(c.t);
+        var tLabel = tDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+        html += '<text x="' + cx.toFixed(1) + '" y="' + (height - 6) + '" text-anchor="middle" fill="#64748b" font-size="9.5">' + tLabel + '</text>';
+      }
+
+      // Indicator paths
+      if (ema9Vals[i] !== undefined) {
+        var ey9 = yPrice(ema9Vals[i]);
+        ema9Path += (i === 0 ? 'M' : 'L') + cx.toFixed(1) + ' ' + ey9.toFixed(1) + ' ';
+      }
+      if (ema20Vals[i] !== undefined) {
+        var ey20 = yPrice(ema20Vals[i]);
+        ema20Path += (i === 0 ? 'M' : 'L') + cx.toFixed(1) + ' ' + ey20.toFixed(1) + ' ';
+      }
+      if (vwapVals[i] !== undefined) {
+        var vyw = yPrice(vwapVals[i]);
+        vwapPath += (i === 0 ? 'M' : 'L') + cx.toFixed(1) + ' ' + vyw.toFixed(1) + ' ';
+      }
+    });
+
+    if (vwapPath) html += '<path d="' + vwapPath + '" fill="none" stroke="#a855f7" stroke-width="1.4" stroke-dasharray="4,3" />';
+    if (ema20Path) html += '<path d="' + ema20Path + '" fill="none" stroke="#f59e0b" stroke-width="1.4" opacity="0.85" />';
+    if (ema9Path) html += '<path d="' + ema9Path + '" fill="none" stroke="#06b6d4" stroke-width="1.5" />';
+
+    svg.innerHTML = html;
+  }
+
+  function renderDedicatedChartsView() {
+    var svg = el('dedicatedChartsSvg');
+    if (!svg) return;
+    var symbol = (el('chartsSymbolSelect') && el('chartsSymbolSelect').value) || (el('marketSymbol') && el('marketSymbol').value) || 'NIFTY';
+    var activePill = document.querySelector('#chartsTimeframePills .tf-btn.active');
+    var tf = (activePill && activePill.getAttribute('data-tf')) || '15m';
+    var source = (el('marketSource') && el('marketSource').value) || (currentSettings && currentSettings.marketSource) || 'demo';
+
+    var offlineNotice = el('chartsOfflineNotice');
+    var calloutBanner = el('chartsCalloutBanner');
+    var modeBadge = el('chartsModeBadge');
+    var statusText = el('chartsStatusText');
+
+    if (source === 'live') {
+      chrome.storage.local.get('tlMarket', function (res) {
+        var snap = res && res.tlMarket;
+        var hasLive = snap && snap.source === 'live' && snap.candles > 0;
+        if (!hasLive) {
+          if (offlineNotice) {
+            offlineNotice.style.display = 'block';
+            offlineNotice.innerHTML =
+              '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#fca5a5">Live Exchange Chart Unavailable</div>' +
+              '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Live exchange candles are not connected or server credentials are missing. Trade Lock does not fabricate live candles.</div>' +
+              '<button type="button" id="chartsSwitchDemoBtn" class="primary" style="padding:6px 16px;font-size:12px">Switch to Simulated Demo Model</button>';
+            var sbtn = el('chartsSwitchDemoBtn');
+            if (sbtn) {
+              sbtn.addEventListener('click', function () {
+                if (el('marketSource')) el('marketSource').value = 'demo';
+                renderMarketAndOiDashboard();
+                renderDedicatedChartsView();
+              });
+            }
+          }
+          if (svg) svg.style.display = 'none';
+          if (modeBadge) {
+            modeBadge.innerHTML = '<span class="badge-dot-live" style="background:#ef4444"></span> LIVE FEED OFFLINE';
+            modeBadge.style.color = '#fca5a5';
+          }
+          if (statusText) statusText.textContent = 'Live Feed: Offline';
+          if (calloutBanner) calloutBanner.style.display = 'none';
+          return;
+        }
+
+        if (offlineNotice) offlineNotice.style.display = 'none';
+        if (svg) svg.style.display = 'block';
+        if (calloutBanner) calloutBanner.style.display = 'none';
+        if (modeBadge) {
+          modeBadge.innerHTML = '<span class="badge-dot-live" style="background:#10b981"></span> VERIFIED LIVE FEED';
+          modeBadge.style.color = '#34d399';
+        }
+        if (statusText) statusText.textContent = 'Provider: Fyers API v3 · ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
+
+        // Render live chart data if candles available
+        if (snap.analysis && snap.analysis.candles) {
+          // If live candles are stored
+          drawDedicatedSvgChart(svg, chartState.candles || []);
+        }
+      });
+      return;
+    }
+
+    // Demo Mode
+    if (offlineNotice) offlineNotice.style.display = 'none';
+    if (svg) svg.style.display = 'block';
+    if (calloutBanner) calloutBanner.style.display = 'block';
+    if (modeBadge) {
+      modeBadge.innerHTML = '<span class="badge-dot-live" style="background:#10b981"></span> SIMULATED DEMO DATA';
+      modeBadge.style.color = '#34d399';
+    }
+    if (statusText) statusText.textContent = 'Render mode: Deterministic Model (' + tf + ')';
+
+    var cfg = getInstrumentConfig(symbol);
+    var candles = generateSampleCandles(cfg.basePrice, 60, tf, symbol);
+    chartState.candles = candles;
+    chartState.symbol = symbol;
+    chartState.timeframe = tf;
+
+    // Update OHLC Header
+    var latest = candles[candles.length - 1];
+    var first = candles[0];
+    var diff = latest.c - first.c;
+    var diffPct = first.c ? (diff / first.c * 100).toFixed(2) : '0.00';
+    var isPos = diff >= 0;
+
+    if (el('chartsSymbolDisplay')) el('chartsSymbolDisplay').textContent = cfg.name + ' (' + cfg.exchange + ')';
+    if (el('chartsChangeDisplay')) {
+      el('chartsChangeDisplay').textContent = (isPos ? '+' : '') + diff.toFixed(2) + ' (' + (isPos ? '+' : '') + diffPct + '%)';
+      el('chartsChangeDisplay').className = 'symbol-change ' + (isPos ? 'pos' : 'neg');
+      el('chartsChangeDisplay').style.color = isPos ? 'var(--tl-green)' : 'var(--tl-red)';
+    }
+    if (el('chartsOhlcDisplay')) {
+      el('chartsOhlcDisplay').textContent = 'O: ₹' + latest.o.toFixed(2) + '  H: ₹' + latest.h.toFixed(2) + '  L: ₹' + latest.l.toFixed(2) + '  C: ₹' + latest.c.toFixed(2);
+    }
+
+    // Compute Indicators
+    if (M && M.analyze) {
+      var analysis = M.analyze(candles, { symbol: symbol, timeframe: tf });
+      if (el('chartsRsiVal')) el('chartsRsiVal').textContent = analysis.rsi14 || '—';
+      if (el('chartsVwapVal')) el('chartsVwapVal').textContent = '₹' + (analysis.vwap ? analysis.vwap.toLocaleString('en-IN') : '—');
+      if (el('chartsAtrVal')) el('chartsAtrVal').textContent = '₹' + (analysis.atr14 ? analysis.atr14.toFixed(2) : '—');
+      if (el('chartsTrendVal')) {
+        el('chartsTrendVal').textContent = (analysis.trend || 'Sideways').toUpperCase();
+        el('chartsTrendVal').style.color = analysis.trend === 'uptrend' ? 'var(--tl-green)' : (analysis.trend === 'downtrend' ? 'var(--tl-red)' : 'var(--muted)');
+      }
+    }
+
+    drawDedicatedSvgChart(svg, candles);
+  }
+
+  // Hook up event listeners for dedicated charts controls
+  if (el('chartsSymbolSelect')) el('chartsSymbolSelect').addEventListener('change', renderDedicatedChartsView);
+  if (el('chartsRefreshBtn')) el('chartsRefreshBtn').addEventListener('click', renderDedicatedChartsView);
+  document.querySelectorAll('#chartsTimeframePills .tf-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('#chartsTimeframePills .tf-btn').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      renderDedicatedChartsView();
+    });
+  });
 
   // Canvas Candlestick & Volume Chart Renderer
   function drawMarketCandleChart() {
@@ -1382,11 +1727,137 @@
 
   // ---------------------------------------------------- Market & OI Dashboard ----
 
+  function renderDisconnectedMarketState(symbol, err, hint) {
+    var oiContainer = el('oiBarsContainer');
+    if (oiContainer) {
+      oiContainer.innerHTML =
+        '<div style="text-align:center;color:var(--dim);padding:36px;border:1px dashed var(--line);border-radius:12px;background:rgba(0,0,0,0.25)">' +
+          '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#fca5a5">Live Open Interest Feed Offline</div>' +
+          '<div style="font-size:12px;color:var(--muted)">No verified exchange tick feed is available for ' + escapeHtml(symbol) + '. Trade Lock will not display fabricated OI data while Live mode is active.</div>' +
+        '</div>';
+    }
+    var canvas = el('marketCandleCanvas');
+    if (canvas) {
+      var ctx = canvas.getContext('2d');
+      if (ctx) {
+        var rect = canvas.getBoundingClientRect();
+        var width = rect.width || canvas.parentElement.clientWidth || 600;
+        var height = rect.height || 320;
+        ctx.fillStyle = '#060913';
+        ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = '#f87171';
+        ctx.font = '13px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Live Exchange Feed Disconnected (' + escapeHtml(String(err || 'OFFLINE').toUpperCase()) + ')', width / 2, height / 2 - 10);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '11px Inter, sans-serif';
+        ctx.fillText('Switch Data Source to Simulated Demo to view layout and indicator test curves', width / 2, height / 2 + 14);
+      }
+    }
+    if (el('marketSpotVal')) el('marketSpotVal').textContent = '—';
+    if (el('marketThetaVal')) el('marketThetaVal').textContent = 'Live Feed Disconnected';
+    if (el('marketPcrVal')) el('marketPcrVal').textContent = '—';
+    if (el('marketMaxPainVal')) el('marketMaxPainVal').textContent = '—';
+    if (el('marketResult')) {
+      el('marketResult').innerHTML =
+        '<div class="callout" style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);color:#fca5a5;font-size:12px">' +
+          'Live technical structure unavailable: ' + escapeHtml(hint || 'Provider credentials not configured on backend server.') +
+        '</div>';
+    }
+  }
+
   function renderMarketAndOiDashboard() {
     var symbol = el('marketSymbol') ? el('marketSymbol').value : 'NIFTY';
     var tf = el('marketTimeframe') ? el('marketTimeframe').value : '15m';
     var source = el('marketSource') ? el('marketSource').value : 'demo';
     var expiry = el('marketExpiry') ? el('marketExpiry').value : 'current';
+
+    var setupCard = el('liveMarketSetupCard');
+    var badgeEl = el('marketTimestampBadge');
+    var timeEl = el('marketUpdatedTimestamp');
+    var noteEl = el('marketNote');
+
+    if (source === 'live') {
+      if (noteEl) noteEl.textContent = 'Probing live exchange connection...';
+      chrome.runtime.sendMessage({ type: 'TL_CHECK_MARKET_FEED', symbol: symbol, resolution: tf.replace(/[^0-9]/g, '') || '15' }, function (resp) {
+        if (chrome.runtime.lastError || !resp || !resp.connected) {
+          var err = (resp && resp.error) || 'offline';
+          var hint = (resp && resp.hint) || 'Backend broker credentials (FYERS_APP_ID, FYERS_ACCESS_TOKEN) or Pro+ subscription required.';
+          if (setupCard) {
+            setupCard.style.display = 'block';
+            setupCard.className = 'live-setup-card';
+            setupCard.innerHTML =
+              '<div class="live-setup-head">' +
+                '<span class="live-setup-title">🔴 Live Exchange Feed: Disconnected / Setup Required</span>' +
+                '<span class="badge danger" style="font-size:10px">Provider: Fyers API v3</span>' +
+              '</div>' +
+              '<div class="live-setup-body">' +
+                'Live exchange WebSocket feed is not connected. Live market tick data requires verified broker API access. ' + escapeHtml(hint) +
+                ' To protect trading discipline, Trade Lock refuses to fabricate live ticks.' +
+              '</div>' +
+              '<div class="live-setup-meta">' +
+                '<span><b>Provider:</b> Fyers API v3</span>' +
+                '<span><b>Endpoint:</b> /api/market/live</span>' +
+                '<span><b>Status:</b> ' + escapeHtml(String(err).toUpperCase()) + '</span>' +
+                '<span><b>Last Checked:</b> ' + new Date().toLocaleTimeString('en-IN') + ' IST</span>' +
+              '</div>' +
+              '<div class="live-setup-actions">' +
+                '<button type="button" id="retryLiveFeedBtn" class="primary" style="padding:6px 14px;font-size:12px">Retry Connection</button>' +
+                '<button type="button" id="switchDemoModeBtn" class="ghost" style="padding:6px 14px;font-size:12px">Switch to Simulated Demo Model</button>' +
+              '</div>';
+
+            var retryBtn = el('retryLiveFeedBtn');
+            if (retryBtn) retryBtn.addEventListener('click', renderMarketAndOiDashboard);
+            var switchBtn = el('switchDemoModeBtn');
+            if (switchBtn) {
+              switchBtn.addEventListener('click', function () {
+                if (el('marketSource')) el('marketSource').value = 'demo';
+                renderMarketAndOiDashboard();
+              });
+            }
+          }
+
+          if (badgeEl) {
+            badgeEl.className = 'badge danger';
+            badgeEl.style.cssText = 'background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;font-size:11px';
+            badgeEl.innerHTML = '● Live Feed Disconnected · Provider Unreachable';
+          }
+          if (timeEl) timeEl.textContent = 'Last Probe: ' + new Date().toLocaleTimeString('en-IN') + ' IST';
+          if (noteEl) noteEl.textContent = 'Live exchange WebSocket feed is not connected (' + err + ')';
+
+          renderDisconnectedMarketState(symbol, err, hint);
+          return;
+        }
+
+        // Live feed connected!
+        if (setupCard) setupCard.style.display = 'none';
+        var snap = resp.data;
+        var isStale = (Date.now() - snap.fetchedAt) > 60000;
+        if (badgeEl) {
+          badgeEl.className = isStale ? 'badge warn' : 'badge pro';
+          badgeEl.style.cssText = isStale
+            ? 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-size:11px'
+            : 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399;font-size:11px';
+          badgeEl.innerHTML = isStale
+            ? '⚠️ STALE FEED (>60s) · Fyers API v3'
+            : '🟢 LIVE FEED CONNECTED · Fyers API v3';
+        }
+        if (timeEl) timeEl.textContent = 'Tick Time: ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
+        if (noteEl) noteEl.textContent = 'Live feed active';
+
+        if (snap.analysis) renderMarketData(snap);
+      });
+      return;
+    }
+
+    // Demo Mode
+    if (setupCard) setupCard.style.display = 'none';
+    if (badgeEl) {
+      badgeEl.className = 'badge';
+      badgeEl.style.cssText = 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-size:11px';
+      badgeEl.innerHTML = 'Source: Deterministic Model · <span id="marketUpdatedTimestamp">Demo Render Time: Just now</span>';
+    }
+    if (noteEl) noteEl.textContent = '';
 
     var cfg = getInstrumentConfig(symbol);
     var spot = cfg.basePrice;
@@ -1401,7 +1872,7 @@
     }
 
     if (el('marketSpotVal')) el('marketSpotVal').textContent = '₹' + spot.toLocaleString('en-IN') + '.00';
-    if (el('marketExchangeSub')) el('marketExchangeSub').textContent = cfg.exchange + ' ' + cfg.name;
+    if (el('marketExchangeSub')) el('marketExchangeSub').textContent = cfg.exchange + ' ' + cfg.name + ' [DEMO]';
 
     // Generate option strikes for visualization (15 strikes around spot)
     var rows = [];
@@ -1502,11 +1973,35 @@
   if (el('marketTimeframe')) el('marketTimeframe').addEventListener('change', renderMarketAndOiDashboard);
   if (el('marketSource')) {
     el('marketSource').addEventListener('change', function () {
-      if (el('marketSource').value === 'live') {
-        alert('Live exchange WebSocket feed is not connected. Trade Lock runs in Deterministic Model mode to prevent unreliable data.');
-        el('marketSource').value = 'demo';
-      }
+      var src = el('marketSource').value;
+      if (currentSettings) currentSettings.marketSource = src;
+      chrome.storage.local.get('tlSettings', function (res) {
+        var s = Object.assign({}, res.tlSettings || {}, { marketSource: src });
+        chrome.storage.local.set({ tlSettings: s });
+      });
       renderMarketAndOiDashboard();
+      if (el('optionsSymbol')) renderOptionsChainView();
+      if (el('chartsSymbolSelect')) renderDedicatedChartsView();
+    });
+  }
+
+  if (el('saveBlockedHostsBtn')) {
+    el('saveBlockedHostsBtn').addEventListener('click', function () {
+      var lines = parseLines(el('blockedHosts') ? el('blockedHosts').value : '');
+      currentSettings.blockedHosts = lines;
+      chrome.storage.local.get('tlSettings', function (res) {
+        var s = Object.assign({}, res.tlSettings || {}, { blockedHosts: lines });
+        chrome.storage.local.set({ tlSettings: s }, function () {
+          chrome.runtime.sendMessage({ type: 'TL_SETTINGS_SAVED' }, function () {
+            void chrome.runtime.lastError;
+          });
+          var st = el('saveBlockedHostsStatus');
+          if (st) {
+            st.style.display = 'inline';
+            setTimeout(function () { st.style.display = 'none'; }, 2500);
+          }
+        });
+      });
     });
   }
 
@@ -1531,9 +2026,10 @@
     chartState.symbol = symbol;
     chartState.timeframe = tf;
 
-    if (el('chartHeaderSymbol')) el('chartHeaderSymbol').textContent = cfg.name + ' (' + cfg.exchange + ')';
-    if (el('chartIntervalBadge')) el('chartIntervalBadge').textContent = tf;
-    if (el('chartCandleCount')) el('chartCandleCount').textContent = candles.length + ' candles';
+    if (el('chartHeaderSymbol')) el('chartHeaderSymbol').textContent = cfg.name + ' (' + cfg.exchange + ') [DEMO]';
+    if (el('chartIntervalBadge')) el('chartIntervalBadge').textContent = tf + ' · SIMULATED';
+    if (el('chartCandleCount')) el('chartCandleCount').textContent = candles.length + ' simulated candles';
+    if (el('chartTimestampRange')) el('chartTimestampRange').textContent = 'Source: Deterministic Model (Simulated Demo Data)';
 
     renderOverviewChart();
     initChartCanvasEvents();
@@ -1584,6 +2080,84 @@
     var symbol = el('optionsSymbol') ? el('optionsSymbol').value : 'NIFTY';
     var expiry = el('optionsExpiry') ? el('optionsExpiry').value : 'current';
     var filter = el('optMoneynessFilter') ? el('optMoneynessFilter').value : 'near';
+    var source = (el('marketSource') && el('marketSource').value) || (currentSettings && currentSettings.marketSource) || 'demo';
+
+    var setupCard = el('liveOptionsSetupCard');
+    var simCallout = el('optionsSimulatedCallout');
+    var modeBadge = el('optionsModeBadge');
+    var emptyNotice = el('optionsChainEmptyNotice');
+    var tableWrap = el('optionsTableWrap');
+
+    if (source === 'live') {
+      chrome.storage.local.get('tlMarket', function (res) {
+        var snap = res && res.tlMarket;
+        var hasLiveChain = snap && snap.source === 'live' && snap.analysis && snap.analysis.oi;
+        if (!hasLiveChain) {
+          if (setupCard) {
+            setupCard.style.display = 'block';
+            setupCard.className = 'live-setup-card warn';
+            setupCard.innerHTML =
+              '<div class="live-setup-head">' +
+                '<span class="live-setup-title">⚠️ Live Options Chain Unavailable</span>' +
+                '<span class="badge danger" style="font-size:10px">Exchange Feed Offline</span>' +
+              '</div>' +
+              '<div class="live-setup-body">' +
+                'A live index quote alone does not supply a complete live options chain with individual strikes, IV, and Greeks. ' +
+                'Live strike-by-strike options require a configured broker data API with options entitlements. ' +
+                'To prevent trading on unreliable data, Trade Lock refuses to fabricate live strikes.' +
+              '</div>' +
+              '<div class="live-setup-actions">' +
+                '<button type="button" id="optSwitchDemoBtn" class="primary" style="padding:6px 14px;font-size:12px">Switch to Simulated Demo Model</button>' +
+              '</div>';
+            var sbtn = el('optSwitchDemoBtn');
+            if (sbtn) {
+              sbtn.addEventListener('click', function () {
+                if (el('marketSource')) el('marketSource').value = 'demo';
+                renderMarketAndOiDashboard();
+                renderOptionsChainView();
+              });
+            }
+          }
+          if (simCallout) simCallout.style.display = 'none';
+          if (modeBadge) {
+            modeBadge.textContent = 'Live Feed Offline';
+            modeBadge.style.cssText = 'background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5';
+          }
+          if (emptyNotice) {
+            emptyNotice.style.display = 'block';
+            emptyNotice.innerHTML =
+              '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#fca5a5">Live Options Feed Unavailable</div>' +
+              '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">No live strike-by-strike options feed received. Trade Lock will not invent synthetic strike data under Live mode.</div>';
+          }
+          if (tableWrap) tableWrap.style.display = 'none';
+          if (el('optSpotPrice')) el('optSpotPrice').textContent = '—';
+          if (el('optCallThetaVal')) el('optCallThetaVal').textContent = '—';
+          if (el('optPutThetaVal')) el('optPutThetaVal').textContent = '—';
+          if (el('optHourlyDecay')) el('optHourlyDecay').textContent = '—';
+          return;
+        }
+
+        if (setupCard) setupCard.style.display = 'none';
+        if (simCallout) simCallout.style.display = 'none';
+        if (emptyNotice) emptyNotice.style.display = 'none';
+        if (tableWrap) tableWrap.style.display = 'block';
+        if (modeBadge) {
+          modeBadge.textContent = 'Live Exchange Chain';
+          modeBadge.style.cssText = 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399';
+        }
+      });
+      return;
+    }
+
+    // Demo Mode
+    if (setupCard) setupCard.style.display = 'none';
+    if (simCallout) simCallout.style.display = 'block';
+    if (emptyNotice) emptyNotice.style.display = 'none';
+    if (tableWrap) tableWrap.style.display = 'block';
+    if (modeBadge) {
+      modeBadge.textContent = 'Simulated Model Chain';
+      modeBadge.style.cssText = 'background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);color:#fbbf24';
+    }
 
     var cfg = getInstrumentConfig(symbol);
     var spot = cfg.basePrice;
@@ -1894,9 +2468,18 @@
       });
     }
 
-    // Monthly summary stats
+    // Monthly summary stats and active days
     var monthData = journal.months[selectedMonthKey] || { month: selectedMonthKey, days: {}, summary: null };
-    var mSummary = R.calculateMonthSummary(monthData.days || {});
+    var daysObj = Object.assign({}, monthData.days || {});
+    var todayKey = (currentState && currentState.session && currentState.session.date) || R.todayIST();
+    if (selectedMonthKey === curMonthKey && currentState && Array.isArray(currentState.log) && currentState.log.length > 0) {
+      daysObj[todayKey] = {
+        date: todayKey,
+        trades: currentState.log.slice(),
+        summary: R.calculateDaySummary(currentState.log)
+      };
+    }
+    var mSummary = R.calculateMonthSummary(daysObj);
 
     if (el('jTotalTrades')) el('jTotalTrades').textContent = mSummary.totalTrades;
     if (el('jWinRate')) el('jWinRate').textContent = mSummary.winRate + '% (' + mSummary.wins + 'W · ' + mSummary.losses + 'L)';
@@ -1920,7 +2503,6 @@
     if (!container) return;
     container.innerHTML = '';
 
-    var daysObj = monthData.days || {};
     var dayKeys = Object.keys(daysObj).sort().reverse();
 
     var outcomeFilter = el('jFilterOutcome') ? el('jFilterOutcome').value : 'ALL';
@@ -2040,11 +2622,26 @@
     });
 
     if (renderedDaysCount === 0) {
+      var isCur = selectedMonthKey === curMonthKey;
       container.innerHTML =
-        '<div style="text-align:center;color:var(--dim);padding:36px;border:1px dashed var(--line-strong);border-radius:12px;background:rgba(0,0,0,0.2)">' +
-          '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:var(--text)">No trade records for ' + monthLabel(selectedMonthKey) + '</div>' +
-          '<div style="font-size:12px">Execute trades in your supported broker or click <b>+ Add Trade</b> above to log manual entries.</div>' +
+        '<div style="text-align:center;color:var(--dim);padding:40px 20px;border:1px dashed var(--line-strong);border-radius:14px;background:rgba(0,0,0,0.25);margin-top:14px">' +
+          '<div style="font-size:32px;margin-bottom:8px">📓</div>' +
+          '<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:var(--text)">No trade records found for ' + monthLabel(selectedMonthKey) + '</div>' +
+          '<div style="font-size:12.5px;color:var(--muted);max-width:440px;margin:0 auto 16px;line-height:1.5">' +
+            (isCur
+              ? 'Trades executed in supported broker terminals (Zerodha, Upstox, Angel One, Dhan, etc.) are monitored automatically, or you can log manual trades below.'
+              : 'No historical trades were recorded for this month.') +
+          '</div>' +
+          '<button type="button" id="jEmptyAddTradeBtn" class="primary" style="padding:7px 18px;font-size:12.5px">+ Add Trade Entry</button>' +
         '</div>';
+      var emptyAddBtn = el('jEmptyAddTradeBtn');
+      if (emptyAddBtn) {
+        emptyAddBtn.addEventListener('click', function () {
+          var form = el('jManualForm');
+          if (form) form.style.display = 'block';
+          if (el('jSymbol')) el('jSymbol').focus();
+        });
+      }
     }
 
     // Wire individual trade delete buttons
@@ -2435,6 +3032,74 @@
     el('enforcementMode').addEventListener('change', function () {
       toggleFullSiteAckBox(el('enforcementMode').value);
       markDirty();
+    });
+  }
+
+  if (el('topSettingsBtn')) {
+    el('topSettingsBtn').addEventListener('click', function () {
+      switchTab('rules');
+    });
+  }
+
+  if (el('topSymbolSearch')) {
+    el('topSymbolSearch').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        var query = (e.target.value || '').trim().toUpperCase();
+        if (query.includes('BANK')) {
+          chartState.symbol = 'BANKNIFTY';
+        } else if (query.includes('FIN')) {
+          chartState.symbol = 'FINNIFTY';
+        } else if (query) {
+          chartState.symbol = 'NIFTY';
+        }
+        renderOverviewChart();
+        if (el('tab-market') && el('tab-market').classList.contains('active')) {
+          renderMarketAndOiDashboard();
+        }
+      }
+    });
+  }
+
+  if (el('ovLossLimitEditBtn')) {
+    el('ovLossLimitEditBtn').addEventListener('click', function () {
+      switchTab('rules');
+      if (el('maxDailyLoss')) el('maxDailyLoss').focus();
+    });
+  }
+
+  // Checklist item toggle handling with chrome.storage persistence
+  var checklist = el('homeFocusChecklist');
+  if (checklist && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(['tlChecklistState'], function (res) {
+      var saved = res && res.tlChecklistState;
+      if (saved && Array.isArray(saved)) {
+        var inputs = checklist.querySelectorAll('input[type="checkbox"]');
+        inputs.forEach(function (inp, idx) {
+          if (saved[idx] !== undefined) {
+            inp.checked = !!saved[idx];
+            var li = inp.closest('.checklist-item');
+            if (li) {
+              if (inp.checked) li.classList.add('checked');
+              else li.classList.remove('checked');
+            }
+          }
+        });
+      }
+    });
+
+    checklist.addEventListener('change', function (e) {
+      if (e.target && e.target.type === 'checkbox') {
+        var li = e.target.closest('.checklist-item');
+        if (li) {
+          if (e.target.checked) li.classList.add('checked');
+          else li.classList.remove('checked');
+        }
+        var inputs = checklist.querySelectorAll('input[type="checkbox"]');
+        var state = Array.from(inputs).map(function (inp) { return inp.checked; });
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.set({ tlChecklistState: state });
+        }
+      }
     });
   }
 

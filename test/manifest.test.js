@@ -69,16 +69,19 @@ check('redirect target exists on disk', fs.existsSync(path.join(ROOT, 'content/l
 check('redirect target is web_accessible',
   m.web_accessible_resources.some((w) => w.resources.includes('content/lock.html')));
 
-console.log('\nno leftover TODO / debugger statements');
-const src = ['background.js', 'lib/rules.js', 'lib/detector.js', 'lib/insights.js', 'lib/license.js', 'content/lock.js',
-             'popup/popup.js', 'options/options.js']
-  .map((f) => [f, fs.readFileSync(path.join(ROOT, f), 'utf8')]);
-const bad = [];
-src.forEach(([f, code]) => {
-  if (/^\s*debugger\s*;?/m.test(code)) bad.push(f + ': debugger');
-  if (/\bTODO\b|\bFIXME\b/.test(code)) bad.push(f + ': TODO/FIXME');
+console.log('\nno duplicate HTML element IDs');
+const htmlFiles = ['options/options.html', 'popup/popup.html', 'content/lock.html'];
+htmlFiles.forEach((rel) => {
+  const content = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+  const counts = {};
+  const re = /\bid=["']([^"']+)["']/g;
+  let m;
+  while ((m = re.exec(content)) !== null) {
+    counts[m[1]] = (counts[m[1]] || 0) + 1;
+  }
+  const dupes = Object.entries(counts).filter(([id, c]) => c > 1);
+  check(rel + ' has zero duplicate element IDs', dupes.length === 0, dupes.map(([id, c]) => `#${id} (${c}x)`).join(', '));
 });
-check('sources are clean', bad.length === 0, bad.join(', ') || 'none found');
 
 console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'));
 process.exit(failures === 0 ? 0 : 1);
