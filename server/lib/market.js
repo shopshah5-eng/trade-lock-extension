@@ -412,38 +412,9 @@
       .map(function (k) { return buckets[k]; });
   }
 
-  function generateCandles(symbol, timeframe, count) {
-    var inst = INSTRUMENTS[symbol] || INSTRUMENTS.NIFTY;
-    var intervalMin = TIMEFRAME_MINUTES[timeframe] || 15;
-    var totalCandles = count || 60;
-    var basePrice = inst.basePrice;
-    var step = inst.step;
-    var now = Date.now();
-    var baseIntervalMin = intervalMin > 60 ? 60 : 1;
-    var base1mCount = Math.max(Math.ceil(totalCandles * intervalMin / baseIntervalMin), 180);
-    var startTime = now - (base1mCount * baseIntervalMin * 60 * 1000);
-
-    var raw1m = [];
-    var p = basePrice;
-    var seed = symbol.split('').reduce(function (acc, char) { return acc + char.charCodeAt(0); }, 0);
-
-    for (var i = 0; i < base1mCount; i++) {
-      var angle = (i + seed) / 14;
-      var intervalScale = Math.sqrt(baseIntervalMin);
-      var drift = (Math.sin(angle) * (step * 0.12) + Math.cos((i * 3 + seed) / 25) * (step * 0.08)) * intervalScale;
-      var open = p;
-      var close = round2(p + drift);
-      var range = Math.max(step * 0.15, Math.abs(open - close) * 1.5);
-      var high = round2(Math.max(open, close) + Math.abs(Math.sin(angle * 2)) * range);
-      var low = round2(Math.min(open, close) - Math.abs(Math.cos(angle * 2)) * range);
-      var vol = Math.round(1500 + Math.abs(Math.sin(i / 10)) * 3200 + ((high - low) / step) * 2000);
-      p = close;
-      raw1m.push({ t: startTime + i * baseIntervalMin * 60 * 1000, o: open, h: high, l: low, c: close, v: vol });
-    }
-
-    if (intervalMin === 1) return raw1m.slice(-totalCandles);
-    var agg = aggregateCandles(raw1m, intervalMin);
-    return agg.slice(-totalCandles);
+  function generateCandles() {
+    // Synthetic math generation purged. Only real market feed candles are processed.
+    return [];
   }
 
   function calculateGreeks(spot, strike, daysToExpiry, ivPct, isCall, rRate) {

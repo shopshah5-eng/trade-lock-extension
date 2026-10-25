@@ -109,6 +109,15 @@ function serve(root) {
   const extId = swTarget.url().split('/')[2];
   console.log('Extension loaded in Chromium, id: ' + extId);
   const sw = await swTarget.worker();
+  await sw.evaluate((p) => {
+    return chrome.storage.local.set({
+      tlSettings: {
+        licenseApiBase: 'http://127.0.0.1:' + p,
+        brokerSelect: 'zerodha',
+        lockMode: 'full'
+      }
+    });
+  }, PORT);
 
   // ------------------------------------------------ 1. Side Panel & Workspace Tabs ----
   console.log('\n1. Verifying all 9 workspace tabs in Side Panel & Desktop dimensions');

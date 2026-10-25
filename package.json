@@ -10,7 +10,8 @@
     "lint": "node --check background.js && node --check lib/rules.js && node --check lib/detector.js && node --check content/lock.js && node --check popup/popup.js && node --check options/options.js && node --check server/index.js && node --check server/license.js && node --check server/ai.js && node --check server/email.js",
     "package": "node scripts/package-extension.js",
     "test:e2e": "node test/e2e.test.js",
-    "test:paid-e2e": "node test/paid-e2e.test.js"
+    "test:paid-e2e": "node test/paid-e2e.test.js",
+    "test:runtime": "node test/chrome_runtime_verification.test.js"
   },
   "devDependencies": {
     "linkedom": "^0.18.0",

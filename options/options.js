@@ -981,32 +981,24 @@
     return map[sym] || map.NIFTY;
   }
 
-  function generateSampleCandles(basePrice, count, tf, symbol) {
-    var sym = symbol || (el('marketSymbol') ? el('marketSymbol').value : 'NIFTY');
-    var interval = tf || (el('marketTimeframe') ? el('marketTimeframe').value : '15m');
-    if (M && typeof M.generateCandles === 'function') {
-      return M.generateCandles(sym, interval, count || 60);
-    }
-    var candles = [];
-    var now = Date.now() - ((count || 60) * 15 * 60 * 1000);
-    var p = basePrice || 24520;
-    for (var i = 0; i < (count || 60); i++) {
-      var change = (Math.sin(i / 5) * 20) + ((i % 3 === 0 ? 1 : -1) * 12);
-      var open = p;
-      var close = p + change;
-      var high = Math.max(open, close) + 15;
-      var low = Math.min(open, close) - 14;
-      p = close;
-      candles.push({ t: now + (i * 15 * 60 * 1000), o: round(open), h: round(high), l: round(low), c: round(close), v: 1200 + (i * 50), isDemo: true });
-    }
-    return candles;
+  function generateSampleCandles() {
+    // Synthetic math generation purged. Only real candles from live exchange feed are rendered.
+    return [];
   }
   function round(n) { return Math.round(n * 100) / 100; }
 
   // Lightweight overview chart. Uses the same deterministic series as Market & OI.
   function renderOverviewChart() {
     var svg = el('overviewChart');
-    if (!svg || !chartState.candles || !chartState.candles.length) return;
+    if (!svg) return;
+    if (!chartState.candles || !chartState.candles.length) {
+      svg.innerHTML = '<rect width="100%" height="100%" fill="none"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#64748b" font-size="12" font-family="Inter,sans-serif">Live exchange feed disconnected — awaiting real-time candles</text>';
+      setText('overviewChartSymbol', 'Awaiting live feed');
+      setText('overviewChartPrice', '—');
+      setText('overviewChartChange', '—');
+      setText('overviewChartSource', 'Live feed disconnected · Connect Fyers API v3 backend credentials');
+      return;
+    }
     var candles = chartState.candles.slice(-42).filter(function (c) {
       return c && [c.o, c.h, c.l, c.c].every(function (v) { return Number.isFinite(Number(v)); });
     });
@@ -1295,21 +1287,39 @@
       return;
     }
 
-    // Demo Mode
-    if (offlineNotice) offlineNotice.style.display = 'none';
-    if (svg) svg.style.display = 'block';
-    if (calloutBanner) calloutBanner.style.display = 'block';
-    if (modeBadge) {
-      modeBadge.innerHTML = '<span class="badge-dot-live" style="background:#10b981"></span> SIMULATED DEMO DATA';
-      modeBadge.style.color = '#34d399';
-    }
-    if (statusText) statusText.textContent = 'Render mode: Deterministic Model (' + tf + ')';
-
     var cfg = getInstrumentConfig(symbol);
-    var candles = generateSampleCandles(cfg.basePrice, 60, tf, symbol);
+    var candles = chartState.candles || [];
     chartState.candles = candles;
     chartState.symbol = symbol;
     chartState.timeframe = tf;
+
+    if (!candles || !candles.length) {
+      if (modeBadge) {
+        modeBadge.innerHTML = '<span class="badge-dot-live" style="background:#ef4444"></span> LIVE FEED DISCONNECTED';
+        modeBadge.style.color = '#fca5a5';
+      }
+      if (statusText) statusText.textContent = 'Awaiting verified broker live market feed';
+      if (el('chartsSymbolDisplay')) el('chartsSymbolDisplay').textContent = cfg.name + ' (' + cfg.exchange + ')';
+      if (el('chartsChangeDisplay')) {
+        el('chartsChangeDisplay').textContent = '—';
+        el('chartsChangeDisplay').className = 'symbol-change';
+        el('chartsChangeDisplay').style.color = 'var(--muted)';
+      }
+      if (el('chartsOhlcDisplay')) el('chartsOhlcDisplay').textContent = 'O: —  H: —  L: —  C: —';
+      if (el('chartsRsiVal')) el('chartsRsiVal').textContent = '—';
+      if (el('chartsVwapVal')) el('chartsVwapVal').textContent = '—';
+      if (el('chartsAtrVal')) el('chartsAtrVal').textContent = '—';
+      if (el('chartsTrendVal')) {
+        el('chartsTrendVal').textContent = 'DISCONNECTED';
+        el('chartsTrendVal').style.color = 'var(--muted)';
+      }
+      drawDedicatedSvgChart(svg, []);
+      return;
+    }
+
+    if (offlineNotice) offlineNotice.style.display = 'none';
+    if (svg) svg.style.display = 'block';
+    if (calloutBanner) calloutBanner.style.display = 'block';
 
     // Update OHLC Header
     var latest = candles[candles.length - 1];
@@ -1769,7 +1779,7 @@
   function renderMarketAndOiDashboard() {
     var symbol = el('marketSymbol') ? el('marketSymbol').value : 'NIFTY';
     var tf = el('marketTimeframe') ? el('marketTimeframe').value : '15m';
-    var source = el('marketSource') ? el('marketSource').value : 'demo';
+    var source = el('marketSource') ? el('marketSource').value : 'live';
     var expiry = el('marketExpiry') ? el('marketExpiry').value : 'current';
 
     var setupCard = el('liveMarketSetupCard');
@@ -1803,18 +1813,10 @@
               '</div>' +
               '<div class="live-setup-actions">' +
                 '<button type="button" id="retryLiveFeedBtn" class="primary" style="padding:6px 14px;font-size:12px">Retry Connection</button>' +
-                '<button type="button" id="switchDemoModeBtn" class="ghost" style="padding:6px 14px;font-size:12px">Switch to Simulated Demo Model</button>' +
               '</div>';
 
             var retryBtn = el('retryLiveFeedBtn');
             if (retryBtn) retryBtn.addEventListener('click', renderMarketAndOiDashboard);
-            var switchBtn = el('switchDemoModeBtn');
-            if (switchBtn) {
-              switchBtn.addEventListener('click', function () {
-                if (el('marketSource')) el('marketSource').value = 'demo';
-                renderMarketAndOiDashboard();
-              });
-            }
           }
 
           if (badgeEl) {
@@ -1874,40 +1876,15 @@
     if (el('marketSpotVal')) el('marketSpotVal').textContent = '₹' + spot.toLocaleString('en-IN') + '.00';
     if (el('marketExchangeSub')) el('marketExchangeSub').textContent = cfg.exchange + ' ' + cfg.name + ' [DEMO]';
 
-    // Generate option strikes for visualization (15 strikes around spot)
-    var rows = [];
-    var start = Math.floor(spot / step) * step - (step * 7);
+    // Option strikes arrive from live exchange feed; synthetic math is purged.
+    var rows = Array.isArray(chartState.optionRows) ? chartState.optionRows : [];
     var maxOi = 1;
-    for (var i = 0; i < 15; i++) {
-      var strike = start + (i * step);
-      var callDist = (spot - strike) / step;
-      var putDist = (strike - spot) / step;
+    rows.forEach(function (r) {
+      if (r.callOi > maxOi) maxOi = r.callOi;
+      if (r.putOi > maxOi) maxOi = r.putOi;
+    });
 
-      var timeValue = Math.round((140 - Math.abs(callDist) * 16) * dteFactor);
-      var callPrice = Math.max(10, round((callDist > 0 ? (spot - strike) : 0) + timeValue));
-      var putPrice = Math.max(10, round((putDist > 0 ? (strike - spot) : 0) + timeValue));
-
-      var oiMultiplier = expiry === 'monthly' ? 1.6 : (expiry === 'next' ? 1.2 : 1.0);
-      var callOi = Math.round((45000 + Math.abs(Math.sin((strike + 150) / 100)) * 95000) * oiMultiplier);
-      var putOi = Math.round((40000 + Math.abs(Math.cos((strike + 250) / 100)) * 105000) * oiMultiplier);
-      var callOiChg = Math.round(Math.sin(i * 1.5) * 14000);
-      var putOiChg = Math.round(Math.cos(i * 1.5) * 15000);
-
-      if (callOi > maxOi) maxOi = callOi;
-      if (putOi > maxOi) maxOi = putOi;
-
-      rows.push({
-        strike: strike,
-        callPrice: callPrice,
-        callOi: callOi,
-        callOiChange: callOiChg,
-        putPrice: putPrice,
-        putOi: putOi,
-        putOiChange: putOiChg
-      });
-    }
-
-    var summary = (M && M.oiSummary) ? M.oiSummary(rows, spot) : null;
+    var summary = (rows.length && M && M.oiSummary) ? M.oiSummary(rows, spot) : null;
     if (summary) {
       if (el('marketPcrVal')) el('marketPcrVal').textContent = summary.pcr;
       if (el('marketPcrBias')) {
@@ -1922,12 +1899,19 @@
         el('marketMaxPainVal').textContent = (summary.maxPain ? summary.maxPain.toLocaleString('en-IN') : '—') +
           (dist ? ' (' + (dist > 0 ? '+' : '') + dist + ')' : '');
       }
+    } else {
+      if (el('marketPcrVal')) el('marketPcrVal').textContent = '—';
+      if (el('marketPcrBias')) el('marketPcrBias').innerHTML = '<span class="badge" style="background:rgba(255,255,255,0.08);color:var(--muted);font-size:10.5px">Awaiting Live Feed</span>';
+      if (el('marketMaxPainVal')) el('marketMaxPainVal').textContent = '—';
     }
 
     // Render Dual-Bar Visual Chart
     var container = el('oiBarsContainer');
     if (container) {
       container.innerHTML = '';
+      if (!rows.length) {
+        container.innerHTML = '<div style="padding:32px 16px;text-align:center;color:#94a3b8;font-size:12px;background:rgba(255,255,255,0.02);border:1px dashed var(--line);border-radius:8px">No live option chain data available. Connect live broker WebSocket feed to stream strikes and OI walls.</div>';
+      } else {
       rows.forEach(function (r) {
         var isAtm = Math.abs(r.strike - spot) < step;
         var isCallWall = summary && r.strike === summary.maxCallOiStrike;
@@ -1954,6 +1938,7 @@
           '</div>';
         container.appendChild(rowDiv);
       });
+      }
     }
 
     // Compute Technical Candles, Indicators, and VIX Analytics
@@ -2162,76 +2147,35 @@
     var cfg = getInstrumentConfig(symbol);
     var spot = cfg.basePrice;
     var step = cfg.step;
-
     var dte = expiry === 'monthly' ? 23 : (expiry === 'next' ? 9 : 2);
-    var dteFactor = Math.sqrt(dte / 2);
-    var ivBase = expiry === 'monthly' ? 14.8 : (expiry === 'next' ? 14.2 : 13.5);
 
-    if (el('optSpotPrice')) el('optSpotPrice').textContent = '₹' + spot.toLocaleString('en-IN') + '.00';
+    // Option strikes arrive from live exchange feed; synthetic math is purged.
+    var rows = Array.isArray(chartState.fullOptionRows) ? chartState.fullOptionRows : [];
 
-    var totalStrikes = filter === 'wide' ? 21 : filter === 'all' ? 29 : 11;
-    var half = Math.floor(totalStrikes / 2);
-    var start = Math.floor(spot / step) * step - (step * half);
-    var rows = [];
+    if (!rows.length) {
+      if (el('optCallThetaVal')) el('optCallThetaVal').textContent = '—';
+      if (el('optCallThetaSub')) el('optCallThetaSub').textContent = 'Live broker feed required';
+      if (el('optPutThetaVal')) el('optPutThetaVal').textContent = '—';
+      if (el('optPutThetaSub')) el('optPutThetaSub').textContent = 'Live broker feed required';
+      if (el('optHourlyDecay')) el('optHourlyDecay').textContent = '—';
+      if (el('optPcrVal')) el('optPcrVal').textContent = '—';
+      if (el('optPcrBias')) el('optPcrBias').textContent = 'Awaiting Live Feed';
+      if (el('optMaxPain')) el('optMaxPain').textContent = '—';
+
+      var tbody = el('optionsChainTbody');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:48px 16px;color:#94a3b8;font-size:13px;line-height:1.6">' +
+          '<div style="font-size:15px;font-weight:600;margin-bottom:6px;color:#e2e8f0">🔴 Live Option Chain Disconnected</div>' +
+          '<div>Real-time option strikes, Greeks, Open Interest, and volume require an authenticated broker feed (Fyers API v3). Trade Lock does not fabricate simulated strikes.</div>' +
+          '</td></tr>';
+      }
+      return;
+    }
 
     var atmCallTheta = 0;
     var atmPutTheta = 0;
     var atmCallPrice = 0;
     var atmPutPrice = 0;
-
-    for (var i = 0; i < totalStrikes; i++) {
-      var strike = start + (i * step);
-      var callDist = (spot - strike) / step;
-      var putDist = (strike - spot) / step;
-
-      var callIv = round(ivBase + Math.abs(callDist) * 0.4);
-      var putIv = round((ivBase + 0.5) + Math.abs(putDist) * 0.4);
-
-      // Black-Scholes Greeks calculation for distinct Call vs Put Theta
-      var callGreeks = (M && M.calculateGreeks) ? M.calculateGreeks(spot, strike, dte, callIv, true) : null;
-      var putGreeks = (M && M.calculateGreeks) ? M.calculateGreeks(spot, strike, dte, putIv, false) : null;
-
-      var callPrice = callGreeks ? callGreeks.price : Math.max(10, round((callDist > 0 ? (spot - strike) : 0) + Math.round((140 - Math.abs(callDist) * 16) * dteFactor)));
-      var putPrice = putGreeks ? putGreeks.price : Math.max(10, round((putDist > 0 ? (strike - spot) : 0) + Math.round((140 - Math.abs(putDist) * 16) * dteFactor)));
-
-      var callTheta = callGreeks ? callGreeks.thetaDay : round(-18 * dteFactor);
-      var putTheta = putGreeks ? putGreeks.thetaDay : round(-16 * dteFactor);
-
-      if (Math.abs(strike - spot) < step) {
-        atmCallTheta = callTheta;
-        atmPutTheta = putTheta;
-        atmCallPrice = callPrice;
-        atmPutPrice = putPrice;
-      }
-
-      var oiMultiplier = expiry === 'monthly' ? 1.6 : (expiry === 'next' ? 1.2 : 1.0);
-      var callOi = Math.round((50000 + Math.abs(Math.sin((strike + 120) / 100)) * 85000) * oiMultiplier);
-      var putOi = Math.round((45000 + Math.abs(Math.cos((strike + 220) / 100)) * 90000) * oiMultiplier);
-      var callOiChange = Math.round(Math.sin(i * 1.3) * 12000);
-      var putOiChange = Math.round(Math.cos(i * 1.3) * 11000);
-
-      var callVol = Math.round(callOi * 0.35 + Math.abs(Math.sin(i)) * 15000);
-      var putVol = Math.round(putOi * 0.35 + Math.abs(Math.cos(i)) * 15000);
-
-      if (filter === 'itm' && !(strike < spot)) continue;
-      if (filter === 'otm' && !(strike > spot)) continue;
-
-      rows.push({
-        strike: strike,
-        callPrice: callPrice,
-        callTheta: callTheta,
-        callOi: callOi,
-        callOiChange: callOiChange,
-        callVol: callVol,
-        callIv: callIv,
-        putPrice: putPrice,
-        putTheta: putTheta,
-        putOi: putOi,
-        putOiChange: putOiChange,
-        putVol: putVol,
-        putIv: putIv
-      });
-    }
 
     // Update Telemetry with Distinct Call & Put Theta
     if (el('optCallThetaVal')) el('optCallThetaVal').textContent = '₹' + atmCallTheta.toFixed(2) + ' / d';
@@ -2241,7 +2185,7 @@
     }
     if (el('optPutThetaVal')) el('optPutThetaVal').textContent = '₹' + atmPutTheta.toFixed(2) + ' / d';
     if (el('optPutThetaSub')) {
-      var putPct = atmPutPrice > 0 ? Math.round((Math.abs(atmPutTheta) / atmPutPrice) * 100) : 12;
+      var putPct = atmPutPrice > 0 ? Math.round((Math.abs(atmPutTheta) / atmPutPrice) * 100) : 14;
       el('optPutThetaSub').textContent = '~' + putPct + '% decay / day (DTE ' + dte + ')';
     }
     if (el('optHourlyDecay')) {
@@ -2340,65 +2284,17 @@
         var isDemoRequested = query.indexOf('demo') !== -1 || query.indexOf('sample') !== -1;
         var optSymbol = (el('optionsSymbol') && el('optionsSymbol').value) || 'NIFTY';
 
-        if (isDemoRequested) {
-          var optSpot = optSymbol === 'BANKNIFTY' ? 51200 : optSymbol === 'FINNIFTY' ? 23400 : 24520;
-          var optStep = optSymbol === 'BANKNIFTY' ? 100 : 50;
-          var optRows = [];
-          var optStart = Math.floor(optSpot / optStep) * optStep - (optStep * 5);
-          for (var idx = 0; idx < 11; idx++) {
-            var sPrice = optStart + (idx * optStep);
-            optRows.push({
-              strike: sPrice,
-              callOi: Math.round(50000 + Math.abs(Math.sin(sPrice / 100)) * 75000),
-              putOi: Math.round(45000 + Math.abs(Math.cos(sPrice / 100)) * 80000)
-            });
-          }
-          var oiSummary = (M && M.oiSummary) ? M.oiSummary(optRows, optSpot) : { pcr: 1.05, maxCallOiStrike: 24700, maxPutOiStrike: 24300, maxPain: 24500 };
-          var sentiment = oiSummary.pcr > 1.2 ? 'Bullish bias' : oiSummary.pcr < 0.8 ? 'Bearish bias' : 'Neutral consolidation range';
-
-          resp = '[SIMULATED DEMO DATA — NOT LIVE MARKET FEED]\n' +
-                 '⚠️ Notice: The following figures are generated strictly for testing/demonstration purposes and do NOT reflect live exchange values.\n\n' +
-                 '• Symbol: ' + optSymbol + ' (Simulated Underlying: ' + R.inr(optSpot) + ')\n' +
-                 '• Put-Call Ratio (PCR): ' + oiSummary.pcr + ' (' + sentiment + ')\n' +
-                 '• Call Wall (Sample Resistance): ' + oiSummary.maxCallOiStrike.toLocaleString('en-IN') + ' strike\n' +
-                 '• Put Wall (Sample Support): ' + oiSummary.maxPutOiStrike.toLocaleString('en-IN') + ' strike\n' +
-                 '• Max Pain Settlement Strike: ' + (oiSummary.maxPain ? oiSummary.maxPain.toLocaleString('en-IN') : '—') + '\n\n' +
-                 '🛡️ Risk Lock Notice: AI analysis does not alter your risk limits or open/close trading locks.';
-        } else {
-          resp = '⚠️ LIVE MARKET DATA UNAVAILABLE\n\n' +
-                 'No verified live exchange feed is currently connected (e.g. Fyers API or broker WebSocket).\n\n' +
-                 'To protect your capital and maintain strict discipline, Trade Lock refuses to fabricate artificial PCR, open interest walls, or max pain levels.\n\n' +
-                 '• To view real market calculations, connect a live feed under Settings → Market Intelligence.\n' +
-                 '• To inspect synthetic data for interface verification, ask: "Show demo options data".\n\n' +
-                 '🛡️ Risk Policy: Authoritative trading locks are executed strictly by the rules engine and cannot be altered by AI.';
-        }
+        resp = '⚠️ LIVE MARKET DATA UNAVAILABLE\n\n' +
+               '[SIMULATED DEMO DATA — NOT LIVE MARKET FEED]\n' +
+               'Synthetic mathematical generators have been purged. No verified live exchange feed is currently connected (e.g. Fyers API or broker WebSocket).\n\n' +
+               'To protect your capital and maintain strict discipline, Trade Lock refuses to fabricate artificial PCR, open interest walls, or max pain levels.\n\n' +
+               '• Connect an authenticated broker API (Fyers API v3) to stream real contracts and Greeks.\n\n' +
+               '🛡️ Risk Policy: Authoritative trading locks are executed strictly by the rules engine and cannot be altered by AI.';
       } else if (query.indexOf('support') !== -1 || query.indexOf('resistance') !== -1 || query.indexOf('structure') !== -1 || query.indexOf('pivot') !== -1) {
-        var isDemoReq = query.indexOf('demo') !== -1 || query.indexOf('sample') !== -1;
-        var chartSym = (el('optionsSymbol') && el('optionsSymbol').value) || 'NIFTY';
-
-        if (isDemoReq) {
-          var chartSpot = chartSym === 'BANKNIFTY' ? 51200 : chartSym === 'FINNIFTY' ? 23400 : 24520;
-          var chartCandles = (typeof generateSampleCandles === 'function') ? generateSampleCandles(chartSpot, 60) : [];
-          var analysis = (M && M.analyze) ? M.analyze(chartCandles, { symbol: chartSym, timeframe: '5m' }) : null;
-          var r1 = (analysis && analysis.nearestResistance && analysis.nearestResistance[0]) ? analysis.nearestResistance[0].price : (chartSpot + 120);
-          var s1 = (analysis && analysis.nearestSupport && analysis.nearestSupport[0]) ? analysis.nearestSupport[0].price : (chartSpot - 120);
-          var trend = (analysis && analysis.trend) ? analysis.trend : 'neutral consolidation';
-          var rsiVal = (analysis && analysis.rsi14) ? analysis.rsi14 : 50;
-
-          resp = '[SIMULATED DEMO DATA — NOT LIVE MARKET FEED]\n' +
-                 '⚠️ Notice: The following technical levels are generated strictly from synthetic sample candles and do NOT reflect live exchange price action.\n\n' +
-                 '• Symbol: ' + chartSym + ' · Trend: ' + trend + ' · Sample RSI(14): ' + rsiVal + '\n' +
-                 '• Sample Resistance: ' + r1.toLocaleString('en-IN') + '\n' +
-                 '• Sample Support: ' + s1.toLocaleString('en-IN') + '\n\n' +
-                 '🛡️ Risk Lock Notice: Trade Lock locks trading screens solely based on verified rule limits, never simulated technical indicators.';
-        } else {
-          resp = '⚠️ LIVE MARKET DATA UNAVAILABLE\n\n' +
-                 'No verified live broker feed is currently connected.\n\n' +
-                 'Trade Lock will not invent synthetic support, resistance, pivot, or RSI numbers as real market levels.\n\n' +
-                 '• Connect a verified live feed in Settings → Market Intelligence to compute live pivot zones.\n' +
-                 '• To view simulated algorithmic levels for testing, ask: "Show demo market structure".\n\n' +
-                 '🛡️ Risk Policy: Authoritative trading locks are executed strictly by the rules engine and cannot be altered by AI.';
-        }
+        resp = '⚠️ LIVE MARKET DATA UNAVAILABLE\n\n' +
+               'No verified live exchange feed is currently connected.\n\n' +
+               'Trade Lock refuses to invent artificial price support or resistance levels. Connect your live broker feed to compute pivot points and technical structures.\n\n' +
+               '🛡️ Discipline Policy: Manual and automated discipline locks remain fully active regardless of live feed connection status.';
       } else {
         resp = 'Discipline & Risk Engine Guidance · ' + timeStr + ':\n' +
                'Keep trade count disciplined and adhere strictly to your predefined invalidation levels. ' +

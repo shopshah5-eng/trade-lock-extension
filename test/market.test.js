@@ -166,9 +166,7 @@ test('chartWindow applies pan offset and clamps it to available history', () => 
   assert.strictEqual(clamped.candles.length, 30);
 });
 
-test('weekly demo generation returns 60 aggregated candles without minute-scale work', () => {
-  const started = Date.now();
+test('synthetic candle generation has been purged in favor of real feeds', () => {
   const candles = M.generateCandles('NIFTY', '1W', 60);
-  assert.strictEqual(candles.length, 60);
-  assert.ok(Date.now() - started < 1000, 'weekly generation should not simulate 604,800 one-minute rows');
+  assert.strictEqual(candles.length, 0, 'synthetic candle generation must be empty');
 });
