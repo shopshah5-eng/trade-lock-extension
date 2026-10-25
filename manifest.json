@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Trade Lock — daily trading discipline",
   "version": "1.0.0",
-  "description": "Locks the trading screen once your daily trade count, loss limit, risk budget or profit target is reached. Releases at the next market open.",
+  "description": "Daily trading discipline guard and journal. Locks broker access when your trade count, loss limit, or risk budget is reached.",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",
