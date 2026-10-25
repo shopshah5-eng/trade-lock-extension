@@ -21,6 +21,8 @@ delete process.env.AWS_LAMBDA_FUNCTION_NAME;
 process.env.SUPABASE_URL = '';
 process.env.SUPABASE_SERVICE_KEY = '';
 process.env.SUPABASE_KEY = '';
+process.env.FYERS_APP_ID = '';
+process.env.FYERS_ACCESS_TOKEN = '';
 
 const originalFetch = global.fetch;
 let orderSequence = 0;

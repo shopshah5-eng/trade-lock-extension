@@ -567,6 +567,7 @@
   // ---------------------------------------------------------- detector ----
 
   var detectorTimer = null;
+  var lastQuoteScan = 0;
 
   function startDetector() {
     if (detectorTimer) clearInterval(detectorTimer);
@@ -577,8 +578,26 @@
   }
 
   function detectOnce() {
-    if (!settings.autoDetect || state.lock.active) return;
     if (document.hidden) return;
+
+    // Approach B: Browser Market Tap from active broker tabs
+    // Extracts live index quotes from open broker tabs (top window only) and syncs to background
+    if (IS_TOP && D.scanMarketQuotes && (Date.now() - lastQuoteScan > 2500)) {
+      lastQuoteScan = Date.now();
+      try {
+        var scannedQuotes = D.scanMarketQuotes(document);
+        if (scannedQuotes) {
+          chrome.runtime.sendMessage({
+            type: 'TL_BROKER_MARKET_TICK',
+            quotes: scannedQuotes,
+            url: location.href,
+            title: document.title
+          });
+        }
+      } catch (e) {}
+    }
+
+    if (!settings.autoDetect || state.lock.active) return;
     var found;
     try {
       found = D.scan(document, { riskPerUnit: Number(settings.riskPerUnit) || 0 });

@@ -1888,6 +1888,153 @@
     var badgeEl = el('marketTimestampBadge');
     var timeEl = el('marketUpdatedTimestamp');
     var noteEl = el('marketNote');
+    if (source === 'broker') {
+      if (noteEl) noteEl.textContent = 'Syncing quotes from active broker tab...';
+      chrome.runtime.sendMessage({ type: 'TL_CHECK_MARKET_FEED', source: 'broker', symbol: symbol }, function (resp) {
+        var tickerStrip = el('brokerTickerStrip');
+        if (chrome.runtime.lastError || !resp || !resp.connected || !resp.quotes) {
+          var err = (resp && resp.error) || 'no_broker_tab';
+          var hint = (resp && resp.hint) || 'Open your broker tab (Zerodha Kite, Fyers, Upstox, Dhan, Angel One) in Chrome to stream live quotes automatically.';
+          if (tickerStrip) tickerStrip.style.display = 'none';
+          if (setupCard) {
+            setupCard.style.display = 'block';
+            setupCard.className = 'live-setup-card';
+            setupCard.innerHTML =
+              '<div class="live-setup-head">' +
+                '<span class="live-setup-title">📡 Waiting for Active Broker Tab</span>' +
+                '<span class="badge warn" style="font-size:10px">Approach B: Browser Market Tap</span>' +
+              '</div>' +
+              '<div class="live-setup-body">' +
+                'Trade Lock syncs real live market quotes directly from your open broker tab in Google Chrome. ' +
+                'Zero developer tokens, zero Fyers API keys, and no 24/7 background servers required.' +
+              '</div>' +
+              '<div class="live-setup-meta">' +
+                '<span><b>Supported Brokers:</b> Zerodha Kite, Upstox, Fyers Web, Dhan, Angel One, Groww</span>' +
+                '<span><b>Status:</b> ' + (err === 'no_broker_tab' ? 'NO ACTIVE BROKER TAB DETECTED' : escapeHtml(String(err).toUpperCase())) + '</span>' +
+                '<span><b>Last Checked:</b> ' + new Date().toLocaleTimeString('en-IN') + ' IST</span>' +
+              '</div>' +
+              '<div class="live-setup-actions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+                '<a href="https://kite.zerodha.com" target="_blank" rel="noopener noreferrer" class="primary" style="text-decoration:none;display:inline-block;padding:7px 14px;font-size:12px;background:#ff5722;color:#fff;border-radius:6px;font-weight:600">Open Zerodha Kite</a>' +
+                '<a href="https://trade.fyers.in" target="_blank" rel="noopener noreferrer" class="primary" style="text-decoration:none;display:inline-block;padding:7px 14px;font-size:12px;background:#2563eb;color:#fff;border-radius:6px;font-weight:600">Open Fyers Web</a>' +
+                '<a href="https://web.dhan.co" target="_blank" rel="noopener noreferrer" class="primary" style="text-decoration:none;display:inline-block;padding:7px 14px;font-size:12px;background:#10b981;color:#fff;border-radius:6px;font-weight:600">Open Dhan</a>' +
+                '<a href="https://upstox.com" target="_blank" rel="noopener noreferrer" class="primary" style="text-decoration:none;display:inline-block;padding:7px 14px;font-size:12px;background:#6366f1;color:#fff;border-radius:6px;font-weight:600">Open Upstox</a>' +
+                '<button type="button" id="retryBrokerFeedBtn" class="ghost" style="padding:6px 14px;font-size:12px">Check Again</button>' +
+              '</div>';
+
+            var retryBrokerBtn = el('retryBrokerFeedBtn');
+            if (retryBrokerBtn) retryBrokerBtn.addEventListener('click', renderMarketAndOiDashboard);
+          }
+
+          if (badgeEl) {
+            badgeEl.className = 'badge warn';
+            badgeEl.style.cssText = 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-size:11px';
+            badgeEl.innerHTML = '⏳ Waiting for Broker Tab · Kite / Fyers / Dhan / Upstox';
+          }
+          if (timeEl) timeEl.textContent = 'Last Probe: ' + new Date().toLocaleTimeString('en-IN') + ' IST';
+          if (noteEl) noteEl.textContent = 'Waiting for broker tab in Chrome';
+
+          renderDisconnectedMarketState(symbol, err, hint);
+          return;
+        }
+
+        // Broker quotes connected!
+        if (setupCard) setupCard.style.display = 'none';
+        if (tickerStrip) tickerStrip.style.display = 'grid';
+
+        var quotes = resp.quotes;
+        var fetchedAt = resp.fetchedAt || Date.now();
+        var isStale = (Date.now() - fetchedAt) > 60000;
+        var provider = resp.provider || 'Broker Tab';
+
+        if (badgeEl) {
+          badgeEl.className = isStale ? 'badge warn' : 'badge pro';
+          badgeEl.style.cssText = isStale
+            ? 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-size:11px'
+            : 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399;font-size:11px';
+          badgeEl.innerHTML = isStale
+            ? '⚠️ STALE QUOTES (>60s) · ' + escapeHtml(provider)
+            : '🟢 LIVE BROKER TAP · ' + escapeHtml(provider);
+        }
+        if (timeEl) timeEl.textContent = 'Tick Time: ' + new Date(fetchedAt).toLocaleTimeString('en-IN') + ' IST';
+        if (noteEl) noteEl.textContent = 'Live quotes streaming from ' + provider;
+
+        function updateTickerItem(prefix, q) {
+          var priceEl = el(prefix + 'Price');
+          var chgEl = el(prefix + 'Chg');
+          if (q && q.price) {
+            if (priceEl) priceEl.textContent = '₹' + q.price.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+            if (chgEl) {
+              var isPos = q.change >= 0;
+              chgEl.style.color = isPos ? '#34d399' : '#f87171';
+              chgEl.textContent = (isPos ? '+' : '') + q.change.toFixed(2) + ' (' + (isPos ? '+' : '') + q.changePercent.toFixed(2) + '%)';
+            }
+          } else {
+            if (priceEl) priceEl.textContent = '—';
+            if (chgEl) chgEl.textContent = 'Waiting for tick';
+          }
+        }
+        updateTickerItem('tickerNifty', quotes.NIFTY);
+        updateTickerItem('tickerBank', quotes.BANKNIFTY);
+        updateTickerItem('tickerFin', quotes.FINNIFTY);
+        updateTickerItem('tickerSensex', quotes.SENSEX);
+
+        var activeQuote = quotes[symbol] || quotes.NIFTY || Object.values(quotes)[0];
+        if (activeQuote && el('marketSpotVal')) {
+          el('marketSpotVal').textContent = '₹' + activeQuote.price.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+          if (el('marketExchangeSub')) {
+            el('marketExchangeSub').textContent = 'Sync: ' + provider;
+          }
+        }
+        if (el('marketThetaVal')) el('marketThetaVal').textContent = 'Streaming Live';
+        if (el('marketPcrVal')) el('marketPcrVal').textContent = '—';
+        if (el('marketMaxPainVal')) el('marketMaxPainVal').textContent = '—';
+
+        var canvas = el('marketCandleCanvas');
+        if (canvas) {
+          var ctx = canvas.getContext('2d');
+          if (ctx) {
+            var rect = canvas.getBoundingClientRect();
+            var width = rect.width || canvas.parentElement.clientWidth || 600;
+            var height = rect.height || 320;
+            ctx.fillStyle = '#060913';
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+            ctx.lineWidth = 1;
+            for (var x = 40; x < width; x += 60) {
+              ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+            }
+            for (var y = 30; y < height; y += 40) {
+              ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+            }
+
+            ctx.fillStyle = 'rgba(16,185,129,0.08)';
+            ctx.strokeStyle = 'rgba(16,185,129,0.25)';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(width / 2 - 190, height / 2 - 65, 380, 130, 10);
+            else ctx.rect(width / 2 - 190, height / 2 - 65, 380, 130);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#34d399';
+            ctx.font = 'bold 15px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('🟢 LIVE BROKER MARKET TAP ACTIVE', width / 2, height / 2 - 32);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 22px Inter, sans-serif';
+            var priceText = activeQuote ? (activeQuote.name + ': ₹' + activeQuote.price.toLocaleString('en-IN', { minimumFractionDigits: 2 })) : 'Live Quotes Active';
+            ctx.fillText(priceText, width / 2, height / 2 + 2);
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '12px Inter, sans-serif';
+            ctx.fillText('Source: ' + provider + ' · Zero API keys or tokens required', width / 2, height / 2 + 32);
+            ctx.fillText('Updated: ' + new Date(fetchedAt).toLocaleTimeString('en-IN') + ' IST', width / 2, height / 2 + 50);
+          }
+        }
+      });
+      return;
+    }
 
     if (source === 'live') {
       if (noteEl) noteEl.textContent = 'Probing live exchange connection...';
@@ -1897,6 +2044,8 @@
           var hint = (resp && resp.hint) || 'Backend broker credentials (FYERS_APP_ID, FYERS_ACCESS_TOKEN) or Pro+ subscription required.';
           if (setupCard) {
             setupCard.style.display = 'block';
+            var apiBase = (currentSettings && currentSettings.licenseApiBase) || 'http://localhost:8787';
+            var fyersLoginUrl = (apiBase && !apiBase.includes('netlify.app')) ? (apiBase + '/api/fyers/login') : 'http://localhost:8787/api/fyers/login';
             setupCard.className = 'live-setup-card';
             setupCard.innerHTML =
               '<div class="live-setup-head">' +
@@ -1913,8 +2062,9 @@
                 '<span><b>Status:</b> ' + escapeHtml(String(err).toUpperCase()) + '</span>' +
                 '<span><b>Last Checked:</b> ' + new Date().toLocaleTimeString('en-IN') + ' IST</span>' +
               '</div>' +
-              '<div class="live-setup-actions">' +
-                '<button type="button" id="retryLiveFeedBtn" class="primary" style="padding:6px 14px;font-size:12px">Retry Connection</button>' +
+              '<div class="live-setup-actions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+                '<a href="' + escapeHtml(fyersLoginUrl) + '" target="_blank" rel="noopener noreferrer" class="primary" style="text-decoration:none;display:inline-block;padding:7px 16px;font-size:12px;background:#2563eb;color:#fff;border-radius:6px;font-weight:600">Connect Fyers (1-Click Login)</a>' +
+                '<button type="button" id="retryLiveFeedBtn" class="ghost" style="padding:6px 14px;font-size:12px">Retry Connection</button>' +
               '</div>';
 
             var retryBtn = el('retryLiveFeedBtn');

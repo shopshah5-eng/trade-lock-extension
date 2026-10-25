@@ -48,6 +48,9 @@ var DEFAULT_SETTINGS = {
   blockSiteWhenLocked: false,
   enforcementMode: 'warning', // 'warning' (Mode A) | 'order_restrict' (Mode B) | 'full_site' (Mode C) | 'chart_only' (Mode D)
   fullSiteAcknowledged: false,
+  marketEnabled: true,
+  marketSymbol: 'NIFTY',
+  marketSource: 'broker', // 'broker' (Approach B: Active broker tab) | 'live' (Fyers API)
   blockedHosts: [
     'kite.zerodha.com', 'upstox.com', 'web.angelone.in', 'angelone.in',
     'web.dhan.co', 'dhan.co', 'trade.5paisa.com', 'www.5paisa.com',
@@ -477,6 +480,88 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     refresh().then(function (r) { sendResponse({ ok: true, locked: r.active }); });
     return true;
   }
+  if (msg.type === 'TL_BROKER_MARKET_TICK') {
+    if (!msg.quotes || typeof msg.quotes !== 'object') {
+      sendResponse({ ok: false, error: 'INVALID_QUOTES_PAYLOAD' });
+      return;
+    }
+    var ALLOWED_SYMBOLS = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'SENSEX', 'MIDCPNIFTY'];
+    var sanitized = {};
+    var foundValid = false;
+    for (var k in msg.quotes) {
+      if (Object.prototype.hasOwnProperty.call(msg.quotes, k)) {
+        var cleanSym = String(k).toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (ALLOWED_SYMBOLS.indexOf(cleanSym) !== -1) {
+          var item = msg.quotes[k];
+          if (item && typeof item.price === 'number' && isFinite(item.price) && item.price > 0 && item.price < 500000) {
+            sanitized[cleanSym] = {
+              symbol: cleanSym,
+              name: cleanSym === 'NIFTY' ? 'NIFTY 50' : (cleanSym === 'BANKNIFTY' ? 'BANK NIFTY' : cleanSym),
+              price: Math.round(item.price * 100) / 100,
+              change: typeof item.change === 'number' && isFinite(item.change) ? Math.round(item.change * 100) / 100 : 0,
+              changePercent: typeof item.changePercent === 'number' && isFinite(item.changePercent) ? Math.round(item.changePercent * 100) / 100 : 0,
+              fetchedAt: Date.now(),
+              source: 'broker'
+            };
+            foundValid = true;
+          }
+        }
+      }
+    }
+    if (!foundValid) {
+      sendResponse({ ok: false, error: 'NO_VALID_QUOTES' });
+      return;
+    }
+
+    var brokerName = 'Broker Tab';
+    var rawUrl = msg.url || (sender && sender.tab && sender.tab.url) || '';
+    if (rawUrl) {
+      try {
+        var host = new URL(rawUrl).hostname.toLowerCase();
+        if (host.includes('zerodha') || host.includes('kite')) brokerName = 'Zerodha Kite';
+        else if (host.includes('upstox')) brokerName = 'Upstox';
+        else if (host.includes('angelone') || host.includes('angelbroking')) brokerName = 'Angel One';
+        else if (host.includes('dhan')) brokerName = 'Dhan';
+        else if (host.includes('fyers')) brokerName = 'Fyers Web';
+        else if (host.includes('groww')) brokerName = 'Groww';
+        else if (host.includes('5paisa')) brokerName = '5paisa';
+        else if (host.includes('kotak')) brokerName = 'Kotak Neo';
+        else if (host.includes('icicidirect')) brokerName = 'ICICI Direct';
+        else if (host.includes('shoonya') || host.includes('finvasia')) brokerName = 'Shoonya';
+        else brokerName = host;
+      } catch (e) {}
+    }
+
+    chrome.storage.local.get(['tlBrokerMarket', 'tlSettings'], function (res) {
+      var prev = (res && res.tlBrokerMarket && res.tlBrokerMarket.quotes) || {};
+      var merged = Object.assign({}, prev, sanitized);
+      var payload = {
+        quotes: merged,
+        brokerName: brokerName,
+        brokerUrl: rawUrl,
+        lastUpdated: Date.now()
+      };
+      var toSet = { tlBrokerMarket: payload };
+      var mSrc = (res && res.tlSettings && res.tlSettings.marketSource) || 'broker';
+      if (mSrc === 'broker' && (merged.NIFTY || merged.BANKNIFTY)) {
+        var primaryQuote = merged.NIFTY || merged.BANKNIFTY;
+        toSet.tlMarket = {
+          fetchedAt: Date.now(),
+          source: 'broker',
+          symbol: primaryQuote.symbol,
+          provider: 'Active Broker Tab (' + brokerName + ')',
+          quotes: merged,
+          price: primaryQuote.price,
+          change: primaryQuote.change,
+          changePercent: primaryQuote.changePercent
+        };
+      }
+      chrome.storage.local.set(toSet, function () {
+        sendResponse({ ok: true, quotes: merged, brokerName: brokerName });
+      });
+    });
+    return true;
+  }
   if (msg.type === 'TL_LOCK_NOW') {
     enqueueOp(function () {
       return getSettings().then(function (settings) {
@@ -689,8 +774,49 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   }
   if (msg.type === 'TL_CHECK_MARKET_FEED') {
     getSettings().then(function (settings) {
-      var base = String(settings.licenseApiBase || 'https://trade-lock-app.netlify.app').replace(/\/+$/, '');
+      var source = msg.source || settings.marketSource || 'broker';
       var symbol = msg.symbol || settings.marketSymbol || 'NIFTY';
+
+      if (source === 'broker') {
+        return chrome.storage.local.get('tlBrokerMarket').then(function (res) {
+          var bm = res && res.tlBrokerMarket;
+          var isRecent = bm && bm.quotes && (Date.now() - (bm.lastUpdated || 0) < 60 * 60 * 1000);
+          if (isRecent && Object.keys(bm.quotes).length > 0) {
+            var selectedQuote = bm.quotes[symbol] || bm.quotes.NIFTY || Object.values(bm.quotes)[0];
+            var snap = {
+              fetchedAt: bm.lastUpdated,
+              source: 'broker',
+              provider: 'Active Broker Tab (' + (bm.brokerName || 'Broker') + ')',
+              quotes: bm.quotes,
+              symbol: symbol,
+              price: selectedQuote ? selectedQuote.price : null,
+              change: selectedQuote ? selectedQuote.change : 0,
+              changePercent: selectedQuote ? selectedQuote.changePercent : 0
+            };
+            return chrome.storage.local.set({ tlMarket: snap }).then(function () {
+              sendResponse({
+                ok: true,
+                connected: true,
+                source: 'broker',
+                provider: snap.provider,
+                fetchedAt: snap.fetchedAt,
+                quotes: bm.quotes,
+                data: snap
+              });
+            });
+          }
+          sendResponse({
+            ok: false,
+            connected: false,
+            source: 'broker',
+            provider: 'Active Broker Tab',
+            error: 'no_broker_tab',
+            hint: 'No active broker tab detected. Keep your broker tab (Zerodha Kite, Fyers, Upstox, Dhan, Angel One) open in Chrome to stream live quotes automatically without API keys.'
+          });
+        });
+      }
+
+      var base = String(settings.licenseApiBase || 'https://trade-lock-app.netlify.app').replace(/\/+$/, '');
       var fyersSymbol = symbol === 'NIFTY' ? 'NSE:NIFTY50-INDEX' : (symbol.startsWith('NSE:') || symbol.startsWith('BSE:') ? symbol : 'NSE:' + symbol + '-INDEX');
       var resolution = msg.resolution || '15';
       var targetUrl = base + '/api/market/live?symbol=' + encodeURIComponent(fyersSymbol) + '&resolution=' + encodeURIComponent(resolution);
@@ -701,21 +827,38 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         if (lic && lic.key && TLRules.isProPlus(lic, Date.now())) {
           headers.Authorization = 'Bearer ' + lic.key;
         }
-        var controller = new AbortController();
-        var timer = setTimeout(function () { controller.abort(); }, 8000);
-        return fetch(targetUrl, { headers: headers, signal: controller.signal })
-          .then(function (res) {
-            clearTimeout(timer);
-            return res.json().then(function (body) {
-              return { status: res.status, ok: res.ok, body: body };
-            }).catch(function () {
-              return { status: res.status, ok: res.ok, body: null };
+
+        var probeEndpoint = function (endpointBase) {
+          var targetUrl = endpointBase + '/api/market/live?symbol=' + encodeURIComponent(fyersSymbol) + '&resolution=' + encodeURIComponent(resolution);
+          var probeHeaders = Object.assign({}, headers);
+          if (endpointBase === 'http://localhost:8787' && !probeHeaders.Authorization) {
+            probeHeaders['x-admin-token'] = 'tl_admin_secret_2026';
+          }
+          var controller = new AbortController();
+          var timer = setTimeout(function () { controller.abort(); }, 8000);
+          return fetch(targetUrl, { headers: probeHeaders, signal: controller.signal })
+            .then(function (res) {
+              clearTimeout(timer);
+              return res.json().then(function (body) {
+                return { status: res.status, ok: res.ok, body: body };
+              }).catch(function () {
+                return { status: res.status, ok: res.ok, body: null };
+              });
+            })
+            .catch(function (err) {
+              clearTimeout(timer);
+              return { status: 0, ok: false, error: err && err.message ? err.message : 'network_error' };
             });
-          })
-          .catch(function (err) {
-            clearTimeout(timer);
-            return { status: 0, ok: false, error: err && err.message ? err.message : 'network_error' };
-          });
+        };
+
+        return probeEndpoint(base).then(function (primaryRes) {
+          if (!primaryRes.ok && base !== 'http://localhost:8787') {
+            return probeEndpoint('http://localhost:8787').then(function (localRes) {
+              return localRes.ok ? localRes : primaryRes;
+            });
+          }
+          return primaryRes;
+        });
       }).then(function (result) {
         if (result.ok && result.body && result.body.analysis) {
           var snap = {

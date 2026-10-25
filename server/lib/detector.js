@@ -557,6 +557,102 @@
     });
   }
 
+  function extractIndexPrice(text, minVal, maxVal) {
+    if (!text || typeof text !== 'string') return null;
+    var matches = text.match(/[+-]?[0-9,]+\.?[0-9]*/g);
+    if (!matches) return null;
+    var price = null;
+    var change = null;
+    var changePercent = null;
+    for (var i = 0; i < matches.length; i++) {
+      var num = parseFloat(matches[i].replace(/,/g, ''));
+      if (isFinite(num)) {
+        if (price === null && num >= minVal && num <= maxVal) {
+          price = num;
+        } else if (price !== null && change === null && Math.abs(num) < (price * 0.15)) {
+          change = num;
+        } else if (price !== null && changePercent === null && Math.abs(num) < 25) {
+          changePercent = num;
+        }
+      }
+    }
+    return price ? { price: price, change: change || 0, changePercent: changePercent || 0 } : null;
+  }
+
+  function scanMarketQuotes(doc) {
+    if (!doc) return null;
+    var quotes = {};
+    var foundAny = false;
+
+    // 1. Check title tag
+    var title = String(doc.title || '').trim();
+    if (title) {
+      var nMatch = title.match(/(?:NIFTY\s*50|NIFTY)\s*[:|-]?\s*([0-9]{2}[0-9,.]*)/i) ||
+                   title.match(/([0-9]{2}[0-9,.]*)\s*[:|-]\s*(?:NIFTY\s*50|NIFTY)/i);
+      if (nMatch) {
+        var p = parseNum(nMatch[1]);
+        if (p >= 15000 && p <= 60000) {
+          quotes.NIFTY = { symbol: 'NIFTY', name: 'NIFTY 50', price: p, change: 0, changePercent: 0, fetchedAt: Date.now(), source: 'title' };
+          foundAny = true;
+        }
+      }
+      var bMatch = title.match(/(?:BANK\s*NIFTY|NIFTY\s*BANK)\s*[:|-]?\s*([0-9]{2}[0-9,.]*)/i) ||
+                   title.match(/([0-9]{2}[0-9,.]*)\s*[:|-]\s*(?:BANK\s*NIFTY|NIFTY\s*BANK)/i);
+      if (bMatch) {
+        var bp = parseNum(bMatch[1]);
+        if (bp >= 30000 && bp <= 100000) {
+          quotes.BANKNIFTY = { symbol: 'BANKNIFTY', name: 'BANK NIFTY', price: bp, change: 0, changePercent: 0, fetchedAt: Date.now(), source: 'title' };
+          foundAny = true;
+        }
+      }
+    }
+
+    // 2. Query DOM elements
+    var candidates = [];
+    try {
+      if (doc.querySelectorAll) {
+        candidates = doc.querySelectorAll(
+          '.instruments .instrument, .indices .item, .marketwatch-sidebar li, .ticker-item, .symbol-row, [data-symbol], .index-card, .index-data, tr, li, div'
+        );
+      }
+    } catch (e) { candidates = []; }
+
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i];
+      if (el.children && el.children.length > 15) continue;
+      var text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!text || text.length > 180) continue;
+
+      if (!quotes.NIFTY && /\bNIFTY\s*50\b|\bNIFTY50\b/i.test(text)) {
+        var num = extractIndexPrice(text, 15000, 60000);
+        if (num) {
+          quotes.NIFTY = { symbol: 'NIFTY', name: 'NIFTY 50', price: num.price, change: num.change, changePercent: num.changePercent, fetchedAt: Date.now(), source: 'dom' };
+          foundAny = true;
+        }
+      } else if (!quotes.BANKNIFTY && /\b(BANK\s*NIFTY|NIFTY\s*BANK)\b/i.test(text)) {
+        var bNum = extractIndexPrice(text, 30000, 100000);
+        if (bNum) {
+          quotes.BANKNIFTY = { symbol: 'BANKNIFTY', name: 'BANK NIFTY', price: bNum.price, change: bNum.change, changePercent: bNum.changePercent, fetchedAt: Date.now(), source: 'dom' };
+          foundAny = true;
+        }
+      } else if (!quotes.FINNIFTY && /\bFIN\s*NIFTY\b/i.test(text)) {
+        var fNum = extractIndexPrice(text, 15000, 50000);
+        if (fNum) {
+          quotes.FINNIFTY = { symbol: 'FINNIFTY', name: 'FIN NIFTY', price: fNum.price, change: fNum.change, changePercent: fNum.changePercent, fetchedAt: Date.now(), source: 'dom' };
+          foundAny = true;
+        }
+      } else if (!quotes.SENSEX && /\bSENSEX\b/i.test(text)) {
+        var sNum = extractIndexPrice(text, 50000, 150000);
+        if (sNum) {
+          quotes.SENSEX = { symbol: 'SENSEX', name: 'BSE SENSEX', price: sNum.price, change: sNum.change, changePercent: sNum.changePercent, fetchedAt: Date.now(), source: 'dom' };
+          foundAny = true;
+        }
+      }
+    }
+
+    return foundAny ? quotes : null;
+  }
+
   var api = {
     REJECT_WORDS: REJECT_WORDS,
     PENDING_WORDS: PENDING_WORDS,
@@ -575,6 +671,8 @@
     isChartingPage: isChartingPage,
     parseNum: parseNum,
     parseQty: parseQty,
+    extractIndexPrice: extractIndexPrice,
+    scanMarketQuotes: scanMarketQuotes,
     statusOf: statusOf,
     norm: norm,
     bestColumn: bestColumn,

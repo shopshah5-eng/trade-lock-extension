@@ -745,13 +745,38 @@
         <label class="field">
           <span class="k">Data Source</span>
           <select id="marketSource">
-            <option value="live" selected>Live Exchange Feed (Fyers API v3 Backend)</option>
+            <option value="broker" selected>Active Broker Tab (Auto-Sync from Kite, Upstox, Fyers, Dhan)</option>
+            <option value="live">Fyers API v3 Cloud/Local Backend</option>
           </select>
         </label>
       </div>
 
       <!-- Truthful Live Provider Setup & Disconnected State Card -->
       <div id="liveMarketSetupCard" class="live-setup-card" style="display:none;margin-bottom:16px;"></div>
+
+      <!-- Active Broker Live Watchlist Ticker (Approach B) -->
+      <div id="brokerTickerStrip" class="grid4" style="margin-bottom:16px;display:none;">
+        <div class="stat-card" style="border-left:3px solid #38bdf8">
+          <span class="stat-lbl" style="display:flex;justify-content:space-between">NIFTY 50 <span id="tickerNiftySrc" class="badge pro" style="font-size:9px">LIVE</span></span>
+          <span class="stat-val" id="tickerNiftyPrice">—</span>
+          <span class="stat-sub" id="tickerNiftyChg">—</span>
+        </div>
+        <div class="stat-card" style="border-left:3px solid #a855f7">
+          <span class="stat-lbl" style="display:flex;justify-content:space-between">BANK NIFTY <span id="tickerBankSrc" class="badge pro" style="font-size:9px">LIVE</span></span>
+          <span class="stat-val" id="tickerBankPrice">—</span>
+          <span class="stat-sub" id="tickerBankChg">—</span>
+        </div>
+        <div class="stat-card" style="border-left:3px solid #10b981">
+          <span class="stat-lbl" style="display:flex;justify-content:space-between">FIN NIFTY <span id="tickerFinSrc" class="badge pro" style="font-size:9px">LIVE</span></span>
+          <span class="stat-val" id="tickerFinPrice">—</span>
+          <span class="stat-sub" id="tickerFinChg">—</span>
+        </div>
+        <div class="stat-card" style="border-left:3px solid #f59e0b">
+          <span class="stat-lbl" style="display:flex;justify-content:space-between">BSE SENSEX <span id="tickerSensexSrc" class="badge pro" style="font-size:9px">LIVE</span></span>
+          <span class="stat-val" id="tickerSensexPrice">—</span>
+          <span class="stat-sub" id="tickerSensexChg">—</span>
+        </div>
+      </div>
 
       <div class="actions" style="margin-bottom:16px">
         <button id="marketBtn" class="primary">Compute &amp; Refresh Market &amp; Chart</button>

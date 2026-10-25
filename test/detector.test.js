@@ -366,3 +366,48 @@ test('OPEN/CLOSED status text cannot hide nonzero Net qty position evidence', ()
   assert.strictEqual(found.positions.length, 2);
   assert.strictEqual(D.resolveOpenTrades(found), 1);
 });
+
+test('extractIndexPrice extracts price, points change and percentage correctly', () => {
+  const res = D.extractIndexPrice('NIFTY 50 24,850.50 +125.40 +0.51%', 15000, 60000);
+  assert.ok(res);
+  assert.strictEqual(res.price, 24850.5);
+  assert.strictEqual(res.change, 125.4);
+  assert.strictEqual(res.changePercent, 0.51);
+
+  // Boundary rejection
+  assert.strictEqual(D.extractIndexPrice('NIFTY 50 5,000.00', 15000, 60000), null);
+  assert.strictEqual(D.extractIndexPrice('BANK NIFTY 150,000.00', 30000, 100000), null);
+});
+
+test('scanMarketQuotes extracts indices from document title and DOM watchlist', () => {
+  if (!linkedom) return;
+  // 1. From title
+  const docWithTitle = linkedom.parseHTML('<!DOCTYPE html><html><head><title>NIFTY 50: 24,920.15 | Kite Zerodha</title></head><body></body></html>').document;
+  const fromTitle = D.scanMarketQuotes(docWithTitle);
+  assert.ok(fromTitle && fromTitle.NIFTY);
+  assert.strictEqual(fromTitle.NIFTY.price, 24920.15);
+  assert.strictEqual(fromTitle.NIFTY.source, 'title');
+
+  // 2. From DOM elements
+  const docWithDom = linkedom.parseHTML(`
+    <html>
+      <head><title>Trading Dashboard</title></head>
+      <body>
+        <div class="indices">
+          <div class="item">NIFTY 50 24,950.00 +50.00 +0.20%</div>
+          <div class="item">BANK NIFTY 51,200.50 -120.00 -0.23%</div>
+          <div class="item">FIN NIFTY 23,400.00 +15.00 +0.06%</div>
+          <div class="item">SENSEX 81,500.00 +210.00 +0.26%</div>
+        </div>
+      </body>
+    </html>
+  `).document;
+
+  const quotes = D.scanMarketQuotes(docWithDom);
+  assert.ok(quotes);
+  assert.strictEqual(quotes.NIFTY.price, 24950);
+  assert.strictEqual(quotes.BANKNIFTY.price, 51200.5);
+  assert.strictEqual(quotes.FINNIFTY.price, 23400);
+  assert.strictEqual(quotes.SENSEX.price, 81500);
+});
+
