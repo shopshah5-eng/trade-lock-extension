@@ -532,8 +532,6 @@
           setOptionsPromise = chrome.sidePanel.setOptions({
             path: 'options/options.html#' + tabKey,
             enabled: true
-          }).catch(function (e) {
-            console.warn('Side Panel setOptions error:', e);
           });
         }
         setOptionsPromise.then(function () {
@@ -543,6 +541,7 @@
           setTimeout(function () { notifyTabSwitch(tabKey); }, 150);
           window.close();
         }).catch(function (err) {
+          console.warn('Side Panel open or setOptions failed:', err);
           // Fall back to background open helper
           chrome.runtime.sendMessage({ type: 'TL_OPEN_SIDE_PANEL', tab: tabKey }, function (resp) {
             if (chrome.runtime.lastError || !resp || !resp.ok) {

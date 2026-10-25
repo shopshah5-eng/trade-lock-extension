@@ -651,12 +651,12 @@
       <label class="field" style="margin-bottom:14px">
         <span class="k">Enforcement Mode Policy</span>
         <select id="enforcementMode">
-          <option value="warning" selected>Mode A: Full-Screen Discipline Lock (Recommended Default — Opaque lock screen covers terminal; broker terminal protected until unlock)</option>
-          <option value="order_restrict">Mode B: Verified New-Order Restriction (Intercepts order placement on verified brokers, keeps exits accessible)</option>
-          <option value="full_site">Mode C: Full Trading-Site Restriction (Redirects broker tab to lock page — may prevent closing open positions)</option>
+          <option value="warning" selected>Mode A: Full-Screen Discipline Lock (Recommended Default — Opaque screen overlay covers terminal in Chrome; prevents impulsive manual trades)</option>
+          <option value="order_restrict">Mode B: DOM New-Order Interception (Suppresses order submit buttons on supported web terminals, keeps emergency exits accessible)</option>
+          <option value="full_site">Mode C: Full-Site URL Blocking (Redirects broker domain via declarativeNetRequest — warning: may block manual position exits)</option>
           <option value="chart_only">Mode D: Charting-Site Restriction (Restricts charting websites only)</option>
         </select>
-        <span class="h">Mode A blocks the terminal screen, including keyboard access. Mode B uses new-order interception only where explicitly marked restriction-tested; otherwise it falls back to the same full-screen overlay.</span>
+        <span class="h">Trade Lock reinforces discipline locally inside Google Chrome on this computer. It does not control backend broker servers, API orders, or mobile apps on other devices.</span>
       </label>
 
       <div id="fullSiteAckBox" style="display:none;margin-bottom:14px" class="callout danger">
@@ -1083,7 +1083,7 @@
   <div class="tab-content" id="tab-ai">
     <div class="card">
       <h2>AI Trading Assistant <span class="badge pro">Context-Grounded</span></h2>
-      <p class="desc">Ask questions about market levels, options structure, your trading session, or discipline tilt. Strictly grounded in mathematical data.</p>
+      <p class="desc">Rule-based trading discipline coach and session auditor. Evaluates your trading session, computed pivot levels, and psychological discipline. (Real-time cloud LLM responses require Gemini or OpenRouter API keys configured on the backend server).</p>
       
       <div class="prompt-chips">
         <button class="prompt-chip" data-prompt="Analyze the current market structure and key support/resistance levels.">📊 Market Structure</button>
