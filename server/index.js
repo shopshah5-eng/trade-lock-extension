@@ -561,7 +561,35 @@ const server = http.createServer(async (req, res) => {
         hint: lic ? lic.hint : null,
         proPlus: Boolean(plan && plan.proPlus),
         billingModel: plan ? plan.billingModel : null,
+        cancelAtPeriodEnd: Boolean(lic && lic.cancelAtPeriodEnd),
+        cancelledAt: (lic && lic.cancelledAt) || null,
         devicesUsed, maxDevices,
+      }, req);
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/subscription/cancel') {
+      if (isRateLimited(req, 10, 60000)) return json(res, 429, { error: 'rate_limited', detail: 'Too many requests' }, req);
+      const { key, reason } = await readJson(req);
+      if (!key) return json(res, 400, { error: 'key_required' }, req);
+      const hash = L.hashKey(key);
+      let lic = store.licenses[hash];
+      if (supabase.isConfigured()) {
+        lic = cacheLicense(await supabase.fetchLicense(hash));
+      }
+      if (!lic) return json(res, 404, { error: 'license_not_found' }, req);
+      lic.cancelAtPeriodEnd = true;
+      lic.cancelledAt = Date.now();
+      lic.cancelReason = String(reason || 'user_requested').slice(0, 100);
+      if (supabase.isConfigured()) {
+        const synced = await supabase.syncLicense(lic);
+        if (!synced.ok) return json(res, 500, { error: 'persistence_error' }, req);
+      }
+      store.saveSync();
+      return json(res, 200, {
+        ok: true,
+        cancelAtPeriodEnd: true,
+        expiresAt: lic.expiresAt,
+        message: 'Auto-renewal cancelled successfully. Plan access remains active until the end of your billing cycle.'
       }, req);
     }
 

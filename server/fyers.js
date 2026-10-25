@@ -81,6 +81,13 @@ function createClient({ appId, accessToken }, fetchImpl) {
     if (!r.ok || data.s === 'error') throw new Error('Fyers ' + path + ': ' + JSON.stringify(data).slice(0, 200));
     return data;
   }
+  async function callTrade(path, params) {
+    const url = AUTH_BASE + path + (params ? '?' + new URLSearchParams(params).toString() : '');
+    const r = await f(url, { headers: { Authorization: appId + ':' + accessToken } });
+    const data = await r.json();
+    if (!r.ok || data.s === 'error') throw new Error('Fyers ' + path + ': ' + JSON.stringify(data).slice(0, 200));
+    return data;
+  }
   return {
     quotes: (symbols) => call('/quotes', { symbols: Array.isArray(symbols) ? symbols.join(',') : symbols }),
     history: ({ symbol, resolution, rangeFrom, rangeTo, dateFormat }) =>
@@ -89,7 +96,10 @@ function createClient({ appId, accessToken }, fetchImpl) {
     optionChain: ({ symbol, strikeCount, greeks }) =>
       call('/options-chain-v3', { symbol, strikecount: strikeCount || 10 }).catch(() =>
         call('/options-chain', { symbol, strikecount: strikeCount || 10, timestamp: '', greeks: greeks ? '1' : '' })
-      )
+      ),
+    orders: () => callTrade('/orders'),
+    tradebook: () => callTrade('/tradebook'),
+    positions: () => callTrade('/positions')
   };
 }
 
@@ -97,6 +107,31 @@ function createClient({ appId, accessToken }, fetchImpl) {
 function normalizeHistory(data) {
   const rows = (data && data.candles) || [];
   return rows.map((c) => ({ t: c[0] * 1000, o: c[1], h: c[2], l: c[3], c: c[4], v: c[5] }));
+}
+
+/** Fyers tradebook executions -> canonical trade ledger records. */
+function normalizeTradebook(data) {
+  const list = (data && (data.tradeBook || data.tradebook)) || [];
+  return list.map((tr) => {
+    const side = tr.side === 1 ? 'BUY' : 'SELL';
+    const qty = Number(tr.tradedQty || tr.qty || 1);
+    const tradePrice = Number(tr.tradePrice || tr.tradedPrice || 0);
+    return {
+      brokerTradeId: String(tr.tradeNumber || tr.id || tr.orderNumber || ''),
+      orderId: String(tr.orderNumber || ''),
+      symbol: String(tr.symbol || '').replace(/^NSE:|^BSE:/, ''),
+      side: side,
+      direction: side === 'SELL' ? 'SHORT' : 'LONG',
+      qty: qty,
+      entry: tradePrice,
+      exit: 0,
+      pnl: 0,
+      charges: 0,
+      source: 'auto',
+      provenance: 'broker-imported',
+      at: tr.orderDateTime ? new Date(tr.orderDateTime).getTime() : Date.now()
+    };
+  });
 }
 
 /** Fyers option-chain payload -> [{strike, callOi, putOi, ...}] */
@@ -118,4 +153,8 @@ function normalizeOptionChain(data) {
   return Object.values(byStrike).sort((a, b) => a.strike - b.strike);
 }
 
-module.exports = { buildAuthUrl, exchangeAuthCode, createClient, normalizeHistory, normalizeOptionChain, appIdHash, AUTH_BASE, DATA_BASE };
+module.exports = {
+  buildAuthUrl, exchangeAuthCode, createClient,
+  normalizeHistory, normalizeOptionChain, normalizeTradebook,
+  appIdHash, AUTH_BASE, DATA_BASE
+};

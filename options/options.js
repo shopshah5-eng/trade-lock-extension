@@ -16,6 +16,7 @@
   var currentState = null;
   var currentSettings = {};
   var currentLicense = null;
+  var currentProfile = { name: 'Trader' };
   var revalidateTried = false;
   var currentJournal = [];
 
@@ -310,7 +311,8 @@
 
     var hour = Math.floor(R.istMinutesOfDay(now) / 60);
     var greeting = hour < 12 ? 'Good morning' : (hour < 17 ? 'Good afternoon' : 'Good evening');
-    setText('overviewGreeting', greeting + ', Trader 👋');
+    var pName = (currentProfile && currentProfile.name && currentProfile.name.trim()) ? currentProfile.name.trim() : 'Trader';
+    setText('overviewGreeting', greeting + ', ' + pName + ' 👋');
     setText('headerDate', new Date(now).toLocaleDateString('en-IN', {
       weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata'
     }));
@@ -486,6 +488,29 @@
       : 'Market intelligence, options analytics and discipline coaching.');
     setText('sideUpgradeBtn', plan.proPlus ? 'Manage your plan →' : (plan.pro ? 'Explore Pro+ AI ↗' : 'View upgrade options ↗'));
     setText('sideUserPlan', (plan.proPlus ? 'Pro+ AI' : (plan.pro ? 'Pro' : 'Free plan')) + ' · local & private');
+    setText('sideUserPlanLabel', plan.proPlus ? 'Pro+ AI Active' : (plan.pro ? 'Pro Active' : 'Free Tier'));
+    var pNameSide = (currentProfile && currentProfile.name && currentProfile.name.trim()) ? currentProfile.name.trim() : 'Trader';
+    setText('sideUserName', pNameSide);
+    setText('sideUserAvatar', pNameSide.charAt(0).toUpperCase() || 'T');
+
+    var subManageCard = el('subManageCard');
+    if (subManageCard) {
+      if (plan.pro && lic && lic.expiresAt) {
+        subManageCard.style.display = 'block';
+        setText('subRenewalDate', R.istLabel(lic.expiresAt));
+        var cancelBtn = el('cancelSubBtn');
+        if (lic.cancelAtPeriodEnd) {
+          setText('subRenewalInfo', 'Subscription renewal is cancelled. Full access remains active until: ' + R.istLabel(lic.expiresAt));
+          if (cancelBtn) cancelBtn.style.display = 'none';
+        } else {
+          setText('subRenewalInfo', 'Next billing renewal: ' + R.istLabel(lic.expiresAt));
+          if (cancelBtn) cancelBtn.style.display = 'inline-block';
+        }
+      } else {
+        subManageCard.style.display = 'none';
+      }
+    }
+
     var box = el('licStatus');
     if (!box) return;
     var pro = plan.pro;
@@ -761,6 +786,76 @@
     switchTab('license');
   });
 
+  if (el('saveProfileBtn')) {
+    el('saveProfileBtn').addEventListener('click', function () {
+      var input = el('userDisplayNameInput');
+      var newName = (input ? input.value : '').trim() || 'Trader';
+      var prof = { name: newName, updatedAt: Date.now() };
+      chrome.storage.local.set({ tlProfile: prof }, function () {
+        currentProfile = prof;
+        setText('sideUserName', newName);
+        setText('sideUserAvatar', newName.charAt(0).toUpperCase() || 'T');
+        if (currentState) renderOverview(currentState, currentSettings);
+        var st = el('saveProfileStatus');
+        if (st) {
+          st.style.display = 'block';
+          setTimeout(function () { if (st) st.style.display = 'none'; }, 2500);
+        }
+      });
+    });
+  }
+
+  if (el('cancelSubBtn')) {
+    el('cancelSubBtn').addEventListener('click', function () {
+      if (!currentLicense || !currentLicense.key) {
+        alert('No active subscription license found to cancel.');
+        return;
+      }
+      if (!confirm('Are you sure you want to cancel automatic subscription renewals?\n\nYour access will remain fully active until the end of the paid billing period, but you will not be charged again.')) {
+        return;
+      }
+      var api = (el('licApi').value.trim() || R.DEFAULT_SETTINGS.licenseApiBase).replace(/\/+$/, '');
+      var statusBox = el('subCancelStatus');
+      if (statusBox) {
+        statusBox.style.display = 'block';
+        statusBox.textContent = 'Contacting license server to stop recurring renewals…';
+      }
+      fetch(api + '/api/subscription/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: currentLicense.key, reason: 'user_requested_cancellation' })
+      })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (data.ok) {
+          currentLicense.cancelAtPeriodEnd = true;
+          currentLicense.cancelledAt = Date.now();
+          chrome.storage.local.set({ tlLicense: currentLicense }, function () {
+            if (statusBox) {
+              statusBox.style.display = 'block';
+              statusBox.style.background = 'rgba(16,185,129,0.12)';
+              statusBox.style.color = '#34d399';
+              statusBox.style.borderColor = 'rgba(16,185,129,0.25)';
+              statusBox.textContent = '✓ Recurring renewals cancelled. Your plan features remain unlocked until ' + R.istLabel(currentLicense.expiresAt) + '.';
+            }
+            renderLicense(currentLicense, currentSettings);
+          });
+        } else {
+          if (statusBox) {
+            statusBox.style.display = 'block';
+            statusBox.textContent = 'Cancellation notice: ' + (data.error || 'Server error. Please contact support.');
+          }
+        }
+      })
+      .catch(function (err) {
+        if (statusBox) {
+          statusBox.style.display = 'block';
+          statusBox.textContent = 'Cancellation offline: Unable to reach billing server (' + err.message + ').';
+        }
+      });
+    });
+  }
+
   function maybeRevalidate(lic, settings) {
     if (revalidateTried || !lic || !lic.key || !globalThis.TLLicense) return;
     var stale = !lic.validatedAt || (Date.now() - lic.validatedAt > 24 * 3600 * 1000);
@@ -801,7 +896,14 @@
 
   function loadAll() {
     if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
-    chrome.storage.local.get(['tlSettings', 'tlState', 'tlLicense', 'tlJournal', 'tlUserEmail', 'tlDailyFocus'], function (res) {
+    chrome.storage.local.get(['tlSettings', 'tlState', 'tlLicense', 'tlJournal', 'tlUserEmail', 'tlDailyFocus', 'tlProfile'], function (res) {
+      if (res.tlProfile) currentProfile = res.tlProfile;
+      var profName = (currentProfile && currentProfile.name && currentProfile.name.trim()) ? currentProfile.name.trim() : 'Trader';
+      setText('sideUserName', profName);
+      setText('sideUserAvatar', profName.charAt(0).toUpperCase() || 'T');
+      if (el('userDisplayNameInput') && !el('userDisplayNameInput').value) {
+        el('userDisplayNameInput').value = profName;
+      }
       if (res.tlUserEmail && el('checkoutEmail') && !el('checkoutEmail').value) {
         el('checkoutEmail').value = res.tlUserEmail;
       }

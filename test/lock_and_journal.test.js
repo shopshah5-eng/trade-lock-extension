@@ -930,4 +930,202 @@ test('Behavioral Lock: Weekend and exchange-holiday carry-through', () => {
   assert.strictEqual(state.lock.active, false, 'Lock must release at Monday market open');
 });
 
+// ---------------------------------------- 15. Corrected Product Definition & Canonical Ledger Tests ----
+
+test('Product Definition: Developer personal name "Taj" is completely removed from all files', () => {
+  const optionsHtml = fs.readFileSync(path.join(rootDir, 'options/options.html'), 'utf8');
+  const optionsJs = fs.readFileSync(path.join(rootDir, 'options/options.js'), 'utf8');
+  const popupHtml = fs.readFileSync(path.join(rootDir, 'popup/popup.html'), 'utf8');
+
+  assert.strictEqual(optionsHtml.includes('Taj'), false, 'options.html must not contain Taj');
+  assert.strictEqual(optionsJs.includes('Taj'), false, 'options.js must not contain Taj');
+  assert.strictEqual(popupHtml.includes('Taj'), false, 'popup.html must not contain Taj');
+
+  // Verify neutral defaults
+  assert.ok(optionsHtml.includes('id="sideUserName">Trader</strong>'), 'Sidebar user name must default to Trader');
+  assert.ok(optionsHtml.includes('id="sideUserAvatar">T</span>'), 'Sidebar avatar initial must default to T');
+  assert.ok(optionsHtml.includes('id="sideUserPlanLabel">Free Tier</small>'), 'Sidebar plan badge must default to Free Tier');
+  assert.ok(optionsHtml.includes('id="userDisplayNameInput"'), 'Options must provide userDisplayNameInput');
+  assert.ok(optionsHtml.includes('id="saveProfileBtn"'), 'Options must provide saveProfileBtn');
+});
+
+test('Risk Engine: Trade limit is enforced independently of profit target and risk capacity', () => {
+  const settings = Object.assign({}, R.DEFAULT_SETTINGS, {
+    maxTradesPerDay: 5,
+    maxDailyLoss: 5000,
+    profitTarget: 0 // Optional / disabled by default
+  });
+
+  const now = Date.now();
+  const state = R.defaultState(now);
+
+  // Log 4 winning trades
+  for (let i = 1; i <= 4; i++) {
+    R.logTrade(state, settings, {
+      id: 'trade_' + i,
+      symbol: 'NIFTY',
+      side: 'BUY',
+      qty: 50,
+      entry: 25000,
+      exit: 25050,
+      pnl: 2500,
+      charges: 50,
+      netPnl: 2450
+    }, now + i * 1000);
+    const tickRes = R.tick(state, settings, now + i * 1000);
+    assert.strictEqual(tickRes.violation, null, `Trade ${i} must not violate trade cap`);
+    assert.strictEqual(state.lock.active, false, `Lock must remain inactive at trade ${i}`);
+  }
+
+  assert.strictEqual(state.session.trades, 4);
+  assert.strictEqual(state.session.pnl, 9800); // 4 * 2450
+
+  // Log 5th trade: reaches limit of 5
+  R.logTrade(state, settings, {
+    id: 'trade_5',
+    symbol: 'NIFTY',
+    side: 'BUY',
+    qty: 50,
+    entry: 25000,
+    exit: 25020,
+    pnl: 1000,
+    charges: 50,
+    netPnl: 950
+  }, now + 5000);
+
+  const tickFinal = R.tick(state, settings, now + 5000);
+  assert.ok(tickFinal.violation, 'Trade 5 must trigger violation');
+  assert.strictEqual(tickFinal.violation.rule, 'maxTradesPerDay', 'Rule must be maxTradesPerDay');
+  assert.strictEqual(state.lock.active, true, 'Discipline lock must activate at trade 5 independently');
+  assert.strictEqual(state.lock.reason, 'maxTradesPerDay');
+});
+
+test('Risk Engine: Optional profit target is 0 by default and never triggers when not configured', () => {
+  assert.strictEqual(R.DEFAULT_SETTINGS.profitTarget, 0, 'DEFAULT_SETTINGS.profitTarget must be 0 (disabled)');
+
+  const settings = Object.assign({}, R.DEFAULT_SETTINGS, {
+    maxTradesPerDay: 10,
+    maxDailyLoss: 10000,
+    profitTarget: 0
+  });
+
+  const now = Date.now();
+  const state = R.defaultState(now);
+
+  // Log a massive profitable trade
+  R.logTrade(state, settings, {
+    id: 'big_win_1',
+    symbol: 'BANKNIFTY',
+    side: 'BUY',
+    qty: 100,
+    entry: 50000,
+    exit: 50200,
+    pnl: 20000,
+    charges: 100,
+    netPnl: 19900
+  }, now);
+
+  const tickRes = R.tick(state, settings, now);
+  assert.strictEqual(tickRes.violation, null, 'Profit must not trigger lock when profitTarget is 0');
+  assert.strictEqual(state.lock.active, false, 'Lock must remain inactive when profitTarget is 0');
+});
+
+test('Canonical Ledger: Deterministic fixtures (+100, -50 = +50 P&L before charges)', () => {
+  const settings = Object.assign({}, R.DEFAULT_SETTINGS, { maxTradesPerDay: 10 });
+  const now = Date.now();
+  const state = R.defaultState(now);
+
+  // Trade 1: Long entry ₹100, exit ₹110, quantity 10 = +₹100 before charges
+  R.logTrade(state, settings, {
+    id: 'fix_1',
+    symbol: 'TATASTEEL',
+    side: 'BUY',
+    qty: 10,
+    entry: 100,
+    exit: 110,
+    pnl: 100,
+    charges: 0,
+    netPnl: 100
+  }, now);
+
+  // Trade 2: Long entry ₹200, exit ₹190, quantity 5 = −₹50 before charges
+  R.logTrade(state, settings, {
+    id: 'fix_2',
+    symbol: 'RELIANCE',
+    side: 'BUY',
+    qty: 5,
+    entry: 200,
+    exit: 190,
+    pnl: -50,
+    charges: 0,
+    netPnl: -50
+  }, now + 1000);
+
+  // Combined P&L = +₹50
+  assert.strictEqual(state.session.trades, 2, 'Must record exactly 2 trades');
+  assert.strictEqual(state.session.pnl, 50, 'Combined P&L must be exactly +₹50');
+  assert.strictEqual(state.log.length, 2);
+  assert.strictEqual(state.log[0].pnl, 100);
+  assert.strictEqual(state.log[1].pnl, -50);
+});
+
+test('Canonical Ledger: Idempotent deduplication prevents double-counting duplicate fills', () => {
+  const settings = Object.assign({}, R.DEFAULT_SETTINGS, { maxTradesPerDay: 10 });
+  const now = Date.now();
+  const state = R.defaultState(now);
+
+  // 1. Initial confirmed fill from broker
+  R.logTrade(state, settings, {
+    id: 'broker_exec_999',
+    brokerTradeId: 'FYERS_TR_999',
+    symbol: 'NIFTY',
+    side: 'BUY',
+    qty: 50,
+    entry: 25000,
+    exit: 25050,
+    pnl: 2500,
+    charges: 50,
+    netPnl: 2450,
+    source: 'auto',
+    provenance: 'broker-imported'
+  }, now);
+
+  assert.strictEqual(state.session.trades, 1);
+  assert.strictEqual(state.session.pnl, 2450);
+
+  // 2. Duplicate arrival with same brokerTradeId
+  R.logTrade(state, settings, {
+    id: 'another_id_same_fill',
+    brokerTradeId: 'FYERS_TR_999',
+    symbol: 'NIFTY',
+    side: 'BUY',
+    qty: 50,
+    entry: 25000,
+    exit: 25050,
+    pnl: 2500,
+    charges: 50,
+    netPnl: 2450,
+    source: 'auto'
+  }, now + 100);
+
+  assert.strictEqual(state.session.trades, 1, 'Duplicate brokerTradeId must not increment trades');
+  assert.strictEqual(state.session.pnl, 2450, 'Duplicate brokerTradeId must not add to P&L');
+
+  // 3. Duplicate manual entry attempt within 2 minutes for the same execution
+  R.logTrade(state, settings, {
+    symbol: 'NIFTY',
+    side: 'BUY',
+    qty: 50,
+    entry: 25000,
+    exit: 25050,
+    pnl: 2500,
+    charges: 50,
+    netPnl: 2450,
+    source: 'manual'
+  }, now + 2000);
+
+  assert.strictEqual(state.session.trades, 1, 'Duplicate manual entry signature must be reconciled without double counting');
+  assert.strictEqual(state.session.pnl, 2450);
+});
+
 
