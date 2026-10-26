@@ -228,7 +228,14 @@ test('Section C: Truthful Live Market Feed vs Disconnected Setup State', () => {
   assert.ok(bgJs.includes('/api/market/live?symbol='), 'background.js must probe /api/market/live');
   // The provider is dynamic now (Upstox or Fyers), so it must be echoed from the
   // server response rather than hardcoded.
-  assert.ok(bgJs.includes('provider: result.body.provider'), 'background.js must echo the server provider');
+  // Both refresh paths must share one snapshot builder, and that builder must
+  // echo the server's provider rather than assume one.
+  assert.ok(bgJs.includes('function buildLiveSnapshot('), 'background.js needs one snapshot shape');
+  assert.ok(bgJs.includes('provider: body.provider'),
+    'the snapshot builder must echo the server provider');
+  const liveSnapshots = bgJs.match(/source: 'live'/g) || [];
+  assert.strictEqual(liveSnapshots.length, 1,
+    'there must be exactly one place that builds a live snapshot');
   assert.strictEqual(bgJs.includes("provider: 'Fyers API v3'"), false, 'provider must not be hardcoded');
 
   // options.html must contain setup cards for market and options

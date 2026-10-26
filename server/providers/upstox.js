@@ -35,11 +35,49 @@ const INSTRUMENT_KEYS = {
   INDIAVIX: 'NSE_INDEX|India VIX',
 };
 
+/*
+ * Symbols arrive in several dialects: the app's own ('NIFTY'), Upstox keys
+ * ('NSE_INDEX|Nifty 50'), and Fyers wire symbols ('NSE:BANKNIFTY-INDEX').
+ *
+ * This used to fall back to NIFTY for anything unrecognised, which meant
+ * asking for Bank Nifty returned Nifty 50 candles labelled as Bank Nifty -
+ * confidently wrong data, worse than an error. Unknown symbols now return null
+ * and the caller reports unknown_symbol.
+ */
 function instrumentKeyFor(symbol) {
   const raw = String(symbol || 'NIFTY').trim();
   if (raw.includes('|')) return raw;
-  const bare = raw.toUpperCase().replace(/^NSE:|^BSE:/, '').replace(/[\s-]/g, '');
-  return INSTRUMENT_KEYS[bare] || INSTRUMENT_KEYS.NIFTY;
+
+  const exchange = /^BSE:/i.test(raw) ? 'BSE' : 'NSE';
+  const bare = raw
+    .toUpperCase()
+    .replace(/^(NSE|BSE):/, '')
+    .replace(/-INDEX$/, '')
+    .replace(/[\s_-]/g, '');
+
+  // Fyers writes NIFTY 50 as NIFTY50-INDEX; the app calls it NIFTY.
+  const aliases = {
+    NIFTY50: 'NIFTY', NIFTYBANK: 'BANKNIFTY', NIFTYFINANCE: 'FINNIFTY',
+    NIFTYFINSERVICE: 'FINNIFTY', NIFTYMIDSELECT: 'MIDCPNIFTY',
+  };
+  const name = aliases[bare] || bare;
+  if (INSTRUMENT_KEYS[name]) {
+    // A BSE prefix only makes sense for the BSE-only indices.
+    if (exchange === 'BSE' && name !== 'SENSEX' && name !== 'BANKEX') return null;
+    return INSTRUMENT_KEYS[name];
+  }
+  return null;
+}
+
+/** Same as instrumentKeyFor, but throws a labelled error for unknown symbols. */
+function requireInstrumentKey(symbol) {
+  const key = instrumentKeyFor(symbol);
+  if (!key) {
+    const error = new Error('unknown_symbol: ' + String(symbol) + ' is not a supported index');
+    error.code = 'unknown_symbol';
+    throw error;
+  }
+  return key;
 }
 
 /**
@@ -169,7 +207,7 @@ function createClient({ accessToken }, fetchImpl, base) {
   return {
     /** Historical candles, newest last. Returns [] rather than throwing when empty. */
     async history({ instrumentKey, resolution, fromDate, toDate }) {
-      const key = encodeURIComponent(instrumentKeyFor(instrumentKey));
+      const key = encodeURIComponent(requireInstrumentKey(instrumentKey));
       const { unit, interval } = parseResolution(resolution);
       const to = toDate || istDate(new Date());
       const from = fromDate || istDate(new Date(Date.now() - 10 * 86400000));
@@ -185,7 +223,7 @@ function createClient({ accessToken }, fetchImpl, base) {
 
     /** Current trading day's candles. */
     async intraday({ instrumentKey, resolution }) {
-      const key = encodeURIComponent(instrumentKeyFor(instrumentKey));
+      const key = encodeURIComponent(requireInstrumentKey(instrumentKey));
       const { unit, interval, minutes } = parseResolution(resolution);
       try {
         return normalizeCandles(await get(`/v3/historical-candle/intraday/${key}/${unit}/${interval}`));
@@ -198,7 +236,7 @@ function createClient({ accessToken }, fetchImpl, base) {
 
     /** Put/call chain for one expiry. Falls back to the nearest weekly expiry keyword. */
     async optionChain({ instrumentKey, expiry }) {
-      const key = instrumentKeyFor(instrumentKey);
+      const key = requireInstrumentKey(instrumentKey);
       const data = await get('/v2/option/chain', {
         instrument_key: key,
         expiry_date: expiry || 'current_week',
@@ -208,7 +246,7 @@ function createClient({ accessToken }, fetchImpl, base) {
 
     /** Last price + previous close for one instrument (used for India VIX). */
     async quote({ instrumentKey }) {
-      const data = await get('/v2/market-quote/quotes', { instrument_key: instrumentKeyFor(instrumentKey) });
+      const data = await get('/v2/market-quote/quotes', { instrument_key: requireInstrumentKey(instrumentKey) });
       const rows = (data && data.data) || {};
       const first = Object.values(rows)[0];
       if (!first) return null;
@@ -224,7 +262,7 @@ function createClient({ accessToken }, fetchImpl, base) {
 
     /** Last traded price — also used as a cheap token liveness check. */
     async ltp({ instrumentKey }) {
-      const data = await get('/v2/market-quote/ltp', { instrument_key: instrumentKeyFor(instrumentKey) });
+      const data = await get('/v2/market-quote/ltp', { instrument_key: requireInstrumentKey(instrumentKey) });
       const rows = (data && data.data) || {};
       const first = Object.values(rows)[0];
       return first ? Number(first.last_price) || null : null;
@@ -255,6 +293,7 @@ async function verifyToken(accessToken, fetchImpl, base) {
 module.exports = {
   INSTRUMENT_KEYS,
   instrumentKeyFor,
+  requireInstrumentKey,
   parseResolution,
   normalizeCandles,
   normalizeOptionChain,

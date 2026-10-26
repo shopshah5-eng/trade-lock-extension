@@ -37,8 +37,18 @@ test('Upstox: app symbols map to the documented instrument keys', () => {
   assert.strictEqual(upstox.instrumentKeyFor('BANK-NIFTY'), 'NSE_INDEX|Nifty Bank');
   // A raw instrument key passes through untouched (e.g. a single stock)
   assert.strictEqual(upstox.instrumentKeyFor('NSE_EQ|INE002A01018'), 'NSE_EQ|INE002A01018');
-  // Unknown symbols fall back to NIFTY rather than requesting a bogus key
-  assert.strictEqual(upstox.instrumentKeyFor('NONSENSE'), 'NSE_INDEX|Nifty 50');
+  // Fyers wire symbols must resolve to the right index, not silently to NIFTY.
+  assert.strictEqual(upstox.instrumentKeyFor('NSE:NIFTY50-INDEX'), 'NSE_INDEX|Nifty 50');
+  assert.strictEqual(upstox.instrumentKeyFor('NSE:BANKNIFTY-INDEX'), 'NSE_INDEX|Nifty Bank');
+  assert.strictEqual(upstox.instrumentKeyFor('NSE:FINNIFTY-INDEX'), 'NSE_INDEX|Nifty Fin Service');
+  assert.strictEqual(upstox.instrumentKeyFor('BSE:SENSEX-INDEX'), 'BSE_INDEX|SENSEX');
+  // A BSE-prefixed NSE index is a contradiction, not something to guess at.
+  assert.strictEqual(upstox.instrumentKeyFor('BSE:BANKNIFTY-INDEX'), null);
+  // Unknown symbols return null. Defaulting to NIFTY meant a user who picked
+  // Bank Nifty could be served Nifty 50 candles labelled as Bank Nifty.
+  assert.strictEqual(upstox.instrumentKeyFor('NONSENSE'), null);
+  assert.throws(() => upstox.requireInstrumentKey('NONSENSE'), /unknown_symbol/);
+  // An absent symbol is the documented default, not an error.
   assert.strictEqual(upstox.instrumentKeyFor(undefined), 'NSE_INDEX|Nifty 50');
 });
 

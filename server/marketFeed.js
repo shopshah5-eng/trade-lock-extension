@@ -155,6 +155,18 @@ async function fetchMarket({
     stats.errors += 1;
     const status = e.status || 0;
     const expired = status === 401 || status === 403;
+    // An unsupported index is a caller mistake, not an upstream fault, and it
+    // must never be answered with another index's candles.
+    if (e.code === 'unknown_symbol') {
+      return {
+        ok: false,
+        error: 'unknown_symbol',
+        provider: p.id,
+        status: 400,
+        message: e.message,
+        detail: 'Supported indices: ' + Object.keys(require('./providers/upstox').INSTRUMENT_KEYS).join(', '),
+      };
+    }
     return {
       ok: false,
       error: expired ? 'provider_token_expired' : 'provider_error',

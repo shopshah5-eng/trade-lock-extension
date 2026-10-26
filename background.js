@@ -194,13 +194,33 @@ function marketUrl(settings) {
   var base = String(settings.licenseApiBase || 'https://trade-lock-app.netlify.app').replace(/\/+$/, '');
   var symbol = settings.marketSymbol || 'NIFTY';
   if (settings.marketSource === 'live') {
-    var fyersSymbol = symbol === 'NIFTY' ? 'NSE:NIFTY50-INDEX' : 'NSE:' + symbol + '-INDEX';
-    return base + '/api/market/live?symbol=' + encodeURIComponent(fyersSymbol);
+    // Send the app's own symbol name. Converting to a provider dialect here was
+    // what let 'NSE:BANKNIFTY-INDEX' fall through to Nifty 50 server-side.
+    return base + '/api/market/live?symbol=' + encodeURIComponent(symbol);
   }
   // 'broker' (Approach B) reads quotes synced from an open broker tab in
   // chrome.storage.local (tlBrokerMarket). It never calls any market API —
   // certainly not the public /api/market/demo endpoint.
   return null;
+}
+
+/**
+ * The single shape of a live snapshot. Every field the UI reads comes from the
+ * server response; nothing is defaulted to a plausible-looking value.
+ */
+function buildLiveSnapshot(body, fallbackSymbol) {
+  return {
+    fetchedAt: Date.now(),
+    source: 'live',
+    symbol: body.symbol || fallbackSymbol || 'NIFTY',
+    provider: body.provider || 'market feed',
+    analysis: body.analysis,
+    brief: body.brief || null,
+    candles: body.candles || 0,
+    spot: typeof body.spot === 'number' ? body.spot : null,
+    vix: body.vix || null,
+    optionChain: Array.isArray(body.optionChain) ? body.optionChain : null
+  };
 }
 
 /** Fetch a market snapshot and cache it for the HUD/popup (tlMarket). */
@@ -242,8 +262,10 @@ function fetchMarket() {
         .then(function (r) { return r.json(); })
         .then(function (data) {
           if (!data || !data.analysis) return null;
-          var snap = { fetchedAt: Date.now(), source: 'live',
-                       symbol: settings.marketSymbol || 'NIFTY', analysis: data.analysis, brief: data.brief || null };
+          // Same shape as the on-demand path below. These two used to differ,
+          // so the ticker, VIX panel and option chain appeared or vanished
+          // depending on which code path happened to refresh last.
+          var snap = buildLiveSnapshot(data, settings.marketSymbol || 'NIFTY');
           return chrome.storage.local.set({ tlMarket: snap }).then(function () { return snap; });
         })
         .catch(function () { return null; }); // server offline: HUD just shows no market line
@@ -1035,18 +1057,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         });
       }).then(function (result) {
         if (result.ok && result.body && result.body.analysis) {
-          var snap = {
-            fetchedAt: Date.now(),
-            source: 'live',
-            symbol: symbol,
-            provider: result.body.provider || 'market feed',
-            analysis: result.body.analysis,
-            brief: result.body.brief || null,
-            candles: result.body.candles || 0,
-            spot: typeof result.body.spot === 'number' ? result.body.spot : null,
-            vix: result.body.vix || null,
-            optionChain: Array.isArray(result.body.optionChain) ? result.body.optionChain : null
-          };
+          var snap = buildLiveSnapshot(result.body, symbol);
           return chrome.storage.local.set({ tlMarket: snap }).then(function () {
             sendResponse({
               ok: true,

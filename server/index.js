@@ -851,8 +851,11 @@ const server = http.createServer(async (req, res) => {
 
       if (!feed.ok) {
         // 503 = credentials missing/expired (operator action); 502 = upstream fault.
-        const status = feed.error === 'market_feed_not_configured' || feed.error === 'provider_token_expired'
-          ? 503 : 502;
+        // 400 for a bad request from the client, 503 for operator action,
+        // 502 for an upstream fault.
+        const status = feed.error === 'unknown_symbol' ? 400
+          : feed.error === 'market_feed_not_configured' || feed.error === 'provider_token_expired' ? 503
+            : 502;
         return json(res, status, {
           error: feed.error,
           provider: feed.provider || null,
