@@ -87,7 +87,8 @@ The package builder uses an allowlist and emits only extension runtime files. Se
 
 The Node server in `server/` provides the pricing page, Razorpay order/signature verification, idempotent fulfillment, webhook recovery, Resend email handoff, hash-only server-side license storage, device registration, support reissue, and Fyers/AI market routes.
 
-- **Serverless production payments require Supabase.** Netlify/Vercel payments fail closed if durable storage is not configured.
+- **Shortest path to real money:** run the server as one long-lived Node process with only `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET` set. Orders persist to the local JSON store; no database is required. The extension, the checkout page and `npm run doctor` all agree on this.
+- **Serverless production payments require Supabase.** Netlify/Vercel payments fail closed if durable storage is not configured — `npm run doctor` only blocks on `supabase`/`schema` when it detects a serverless host.
 - A single-process, long-running Node deployment can use its local JSON store. Do not run multiple writers on that file; use Supabase for backups, serverless, and multiple instances.
 - Plain license keys are not stored by the server. The extension must retain the activated key locally for revalidation.
 - Email success means the provider accepted the request, not that inbox delivery is guaranteed.

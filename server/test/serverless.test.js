@@ -201,6 +201,7 @@ test('serverless payments fail closed without Supabase and recover through remot
   const noDb = await request(port, 'POST', '/api/create-order', { plan: 'pro_monthly', email: 'remote@example.com' });
   assert.strictEqual(noDb.status, 503);
   assert.strictEqual(noDb.body.error, 'payment_persistence_not_configured');
+  assert.match(noDb.body.detail, /SUPABASE_URL/, 'the 503 must name the env var the owner has to set');
   assert.strictEqual(orderSequence, 0, 'must not create a Razorpay order before durable storage is available');
 
   process.env.SUPABASE_URL = 'https://supabase.mock';

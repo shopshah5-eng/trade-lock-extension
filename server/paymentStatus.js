@@ -103,6 +103,7 @@ async function collect() {
   const { url, key } = supabaseCreds();
   const rzp = razorpayConfigured();
   const sb = supabase.isConfigured();
+  const serverless = isServerless();
 
   const checks = {
     razorpay: {
@@ -119,17 +120,24 @@ async function collect() {
     },
     supabase: {
       ok: sb,
+      // Only a serverless host genuinely needs Supabase. A long-lived process
+      // persists to its JSON store (see paymentPersistenceReady), so failing
+      // this check there would contradict the server and stall a launch that
+      // is actually ready.
+      advisory: !serverless,
       detail: sb
         ? 'SUPABASE_URL + SUPABASE_SERVICE_KEY present'
-        : 'Set SUPABASE_URL and SUPABASE_SERVICE_KEY (service role key, not anon)',
+        : serverless
+          ? 'Required on serverless: set SUPABASE_URL and SUPABASE_SERVICE_KEY (service role key, not anon)'
+          : 'Optional here: the local JSON store is used. Set SUPABASE_URL + SUPABASE_SERVICE_KEY for backups or multiple instances',
     },
     platform: {
       ok: paymentPersistenceReady(),
-      detail: isServerless()
+      detail: serverless
         ? 'Serverless host: Supabase is REQUIRED for payments to persist'
         : 'Long-lived host: the local JSON store is also usable',
     },
-    schema: await checkSchema(url, key),
+    schema: Object.assign(await checkSchema(url, key), { advisory: !serverless && !sb }),
   };
 
   // Checkout also needs an admin token to protect the diagnostic endpoints, and
@@ -150,7 +158,10 @@ async function collect() {
       : 'Recommended on a custom domain: set PUBLIC_BASE_URL, e.g. https://your-domain.com',
   };
 
-  const blocking = ['razorpay', 'webhookSecret', 'supabase', 'schema', 'adminToken'];
+  // Mirrors server/index.js: on a long-lived host the JSON store satisfies
+  // payment persistence, so the Supabase pair must not block checkout there.
+  const blocking = ['razorpay', 'webhookSecret', 'adminToken']
+    .concat(serverless ? ['supabase', 'schema'] : []);
   const ready = blocking.every((k) => checks[k].ok);
 
   return {

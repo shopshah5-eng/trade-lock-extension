@@ -116,6 +116,31 @@ test('collect reports every blocker when nothing is configured', async () => {
       assert.ok(report.checks[key].detail.length > 10, `${key} must explain how to fix it`);
     }
     assert.strictEqual(report.demoCheckout, false);
+
+    // A long-lived host stores orders in its JSON file, so Supabase is optional
+    // there. Blocking on it would contradict /api/create-order, which accepts
+    // payments in exactly this configuration.
+    assert.deepStrictEqual(report.blocking, ['razorpay', 'webhookSecret', 'adminToken']);
+    assert.strictEqual(report.checks.supabase.advisory, true);
+    assert.strictEqual(report.checks.schema.advisory, true);
+    assert.match(report.checks.supabase.detail, /optional/i);
+  });
+});
+
+test('a serverless host is blocked until Supabase is configured', async () => {
+  await withEnv(Object.assign({}, CLEAR, {
+    NETLIFY: 'true',
+    RAZORPAY_KEY_ID: 'rzp_test_1',
+    RAZORPAY_KEY_SECRET: 'secret',
+    RAZORPAY_WEBHOOK_SECRET: 'whsec',
+    FYERS_ADMIN_TOKEN: 'admin',
+  }), async () => {
+    const report = await collect();
+    assert.deepStrictEqual(report.blocking, ['razorpay', 'webhookSecret', 'adminToken', 'supabase', 'schema']);
+    assert.strictEqual(report.checks.supabase.advisory, false);
+    assert.match(report.checks.supabase.detail, /required on serverless/i);
+    assert.strictEqual(report.ok, false, 'Netlify without Supabase cannot persist an order');
+    assert.strictEqual(report.paymentPersistenceReady, false);
   });
 });
 

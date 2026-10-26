@@ -372,7 +372,10 @@ const server = http.createServer(async (req, res) => {
           detail: 'This plan is not open for purchase yet. Pro+ market data requires a licensed redistributable feed and is not sold at this time.',
         }, req);
       }
-      if (!paymentPersistenceReady()) return json(res, 503, { error: 'payment_persistence_not_configured', detail: 'Configure Supabase before accepting serverless payments' }, req);
+      if (!paymentPersistenceReady()) return json(res, 503, {
+        error: 'payment_persistence_not_configured',
+        detail: 'Serverless deployments must set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY so an order survives between the checkout request and the Razorpay webhook. Locally the file store is used and this is not required.',
+      }, req);
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || '')) return json(res, 400, { error: 'valid_email_required' }, req);
 
       const normalizedEmail = String(email).toLowerCase().trim();
@@ -390,7 +393,10 @@ const server = http.createServer(async (req, res) => {
         await persistOrder(orderId, store.orders[orderId]);
         return json(res, 200, { demo: true, orderId, amount: plan.amount, currency: plan.currency, plan: plan.id }, req);
       }
-      if (!razorpayConfigured()) return json(res, 503, { error: 'payments_not_configured' }, req);
+      if (!razorpayConfigured()) return json(res, 503, {
+        error: 'payments_not_configured',
+        detail: 'Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET on the licence server to take payments.',
+      }, req);
 
       const order = await razorpayCreateOrder(plan, normalizedEmail);
       store.orders[order.id] = {

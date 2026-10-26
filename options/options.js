@@ -738,6 +738,21 @@
           } else {
             window.open(checkoutUrl, '_blank');
           }
+        } else if (data.error === 'payment_persistence_not_configured') {
+          notice.style.background = 'rgba(245,158,11,0.12)';
+          notice.style.border = '1px solid rgba(245,158,11,0.3)';
+          notice.style.color = '#fcd34d';
+          notice.innerHTML = '⚠️ <b>Billing storage not configured:</b> this server has no Supabase credentials, so it cannot keep an order before taking payment. No charges were made.';
+        } else if (data.error === 'plan_not_available') {
+          notice.style.background = 'rgba(245,158,11,0.12)';
+          notice.style.border = '1px solid rgba(245,158,11,0.3)';
+          notice.style.color = '#fcd34d';
+          notice.innerHTML = '⚠️ <b>This plan is not on sale:</b> ' + escapeHtml(data.detail || 'it is temporarily withdrawn.') + ' No charges were made.';
+        } else if (data.error === 'valid_email_required') {
+          notice.style.background = 'rgba(245,158,11,0.12)';
+          notice.style.border = '1px solid rgba(245,158,11,0.3)';
+          notice.style.color = '#fcd34d';
+          notice.innerHTML = '⚠️ <b>Enter a valid email</b> — your licence is tied to it.';
         } else if (data.error) {
           notice.style.background = 'rgba(239,68,68,0.12)';
           notice.style.border = '1px solid rgba(239,68,68,0.3)';

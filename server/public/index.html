@@ -217,6 +217,15 @@ async function buy(planId, btn) {
       showKey(vd.licenseKey, vd.emailSent); btn.textContent = 'Done ✓'; return;
     }
 
+    // Without a publishable key Razorpay either fails to load or opens a modal
+    // that cannot take a payment. Say so plainly instead of throwing "Razorpay
+    // is not defined" at the buyer.
+    if (!CONFIG.keyId || typeof Razorpay === 'undefined') {
+      showErr('Card payments are not switched on yet. Nothing was charged. ' +
+        'The owner needs to set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET on the licence server.');
+      btn.disabled = false; btn.textContent = 'Buy'; return;
+    }
+
     const rzp = new Razorpay({
       key: CONFIG.keyId, order_id: order.orderId, amount: order.amount, currency: order.currency,
       name: 'Trade Lock', description: planId, prefill: { email }, theme: { color: '#e5484d' },
