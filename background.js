@@ -197,29 +197,57 @@ function marketUrl(settings) {
     var fyersSymbol = symbol === 'NIFTY' ? 'NSE:NIFTY50-INDEX' : 'NSE:' + symbol + '-INDEX';
     return base + '/api/market/live?symbol=' + encodeURIComponent(fyersSymbol);
   }
-  return base + '/api/market/demo?symbol=' + encodeURIComponent(symbol);
+  // 'broker' (Approach B) reads quotes synced from an open broker tab in
+  // chrome.storage.local (tlBrokerMarket). It never calls any market API —
+  // certainly not the public /api/market/demo endpoint.
+  return null;
 }
 
 /** Fetch a market snapshot and cache it for the HUD/popup (tlMarket). */
 function fetchMarket() {
   return getSettings().then(function (settings) {
     if (settings.marketEnabled === false) return null;
+
+    // Approach B: live broker-tab tap. Quotes arrive in tlBrokerMarket whenever
+    // an open broker tab shows index prices — no API keys and no server call.
+    if (settings.marketSource === 'broker') {
+      return chrome.storage.local.get('tlBrokerMarket').then(function (res) {
+        var bm = res && res.tlBrokerMarket;
+        if (!bm || !bm.quotes || Object.keys(bm.quotes).length === 0) return null;
+        var primary = bm.quotes.NIFTY || bm.quotes.BANKNIFTY || Object.values(bm.quotes)[0];
+        var snap = {
+          fetchedAt: bm.lastUpdated || Date.now(),
+          source: 'broker',
+          symbol: primary ? primary.symbol : settings.marketSymbol || 'NIFTY',
+          provider: 'Active Broker Tab (' + (bm.brokerName || 'Broker Tab') + ')',
+          quotes: bm.quotes,
+          price: primary ? primary.price : null,
+          change: primary ? primary.change : 0,
+          changePercent: primary ? primary.changePercent : 0
+        };
+        return chrome.storage.local.set({ tlMarket: snap }).then(function () { return snap; });
+      });
+    }
+
+    // Approach C: live Fyers API v3 via the backend server (Pro+ only).
     return chrome.storage.local.get('tlLicense').then(function (licRes) {
       var lic = licRes.tlLicense;
       var headers = {};
       if (settings.marketSource === 'live' && lic && lic.key && TLRules.isProPlus(lic, Date.now())) {
         headers.Authorization = 'Bearer ' + lic.key;
       }
-      return fetch(marketUrl(settings), { headers: headers });
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (!data || !data.analysis) return null;
-        var snap = { fetchedAt: Date.now(), source: settings.marketSource || 'demo',
-                     symbol: settings.marketSymbol || 'NIFTY', analysis: data.analysis, brief: data.brief || null };
-        return chrome.storage.local.set({ tlMarket: snap }).then(function () { return snap; });
-      })
-      .catch(function () { return null; }); // server offline: HUD just shows no market line
+      var url = marketUrl(settings);
+      if (!url) return null;
+      return fetch(url, { headers: headers })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data || !data.analysis) return null;
+          var snap = { fetchedAt: Date.now(), source: 'live',
+                       symbol: settings.marketSymbol || 'NIFTY', analysis: data.analysis, brief: data.brief || null };
+          return chrome.storage.local.set({ tlMarket: snap }).then(function () { return snap; });
+        })
+        .catch(function () { return null; }); // server offline: HUD just shows no market line
+    });
   });
 }
 
@@ -980,9 +1008,6 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         var probeEndpoint = function (endpointBase) {
           var targetUrl = endpointBase + '/api/market/live?symbol=' + encodeURIComponent(fyersSymbol) + '&resolution=' + encodeURIComponent(resolution);
           var probeHeaders = Object.assign({}, headers);
-          if (endpointBase === 'http://localhost:8787' && !probeHeaders.Authorization) {
-            probeHeaders['x-admin-token'] = 'tl_admin_secret_2026';
-          }
           var controller = new AbortController();
           var timer = setTimeout(function () { controller.abort(); }, 8000);
           return fetch(targetUrl, { headers: probeHeaders, signal: controller.signal })

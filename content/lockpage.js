@@ -94,7 +94,7 @@ var R = null;
 
   function ask() {
     if (STANDALONE) { fromStorage(); return; }
-    try { parent.postMessage({ tl: 'getState' }, '*'); } catch (err) {}
+    try { parent.postMessage({ tl: 'getState' }, location.origin); } catch (err) {}
   }
   setInterval(function () {
     if (R && R.lock && R.lock.until) {

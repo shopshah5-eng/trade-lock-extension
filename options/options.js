@@ -2491,7 +2491,7 @@
     var symbol = el('optionsSymbol') ? el('optionsSymbol').value : 'NIFTY';
     var expiry = el('optionsExpiry') ? el('optionsExpiry').value : 'current';
     var filter = el('optMoneynessFilter') ? el('optMoneynessFilter').value : 'near';
-    var source = (el('marketSource') && el('marketSource').value) || (currentSettings && currentSettings.marketSource) || 'demo';
+    var source = (el('marketSource') && el('marketSource').value) || (currentSettings && currentSettings.marketSource) || 'broker';
 
     var setupCard = el('liveOptionsSetupCard');
     var simCallout = el('optionsSimulatedCallout');
