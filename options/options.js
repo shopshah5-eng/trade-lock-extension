@@ -2236,7 +2236,8 @@
 
   /** PCR / max-pain cards on the Market tab. Pure presentation, easy to test. */
   function renderMarketOiCards(oi) {
-    if (!oi || oi.pcr == null) {
+    var noOi = oi && (oi.totalCallOi === 0 || oi.totalPutOi === 0);
+    if (!oi || oi.pcr == null || noOi) {
       if (el('marketPcrVal')) el('marketPcrVal').textContent = '—';
       if (el('marketPcrBias')) el('marketPcrBias').textContent = 'No option chain';
       if (el('marketMaxPainVal')) el('marketMaxPainVal').textContent = '—';
@@ -2704,6 +2705,46 @@
 
   // -------------------------------------------------- options analytics ----
 
+  /*
+   * One option-chain table row, as HTML. Kept pure so it can be tested without a
+   * live page: the table previously read callPrice/putPrice/callVol, which the
+   * provider never produced, so every real row threw. Missing values render as
+   * an em-dash, never as 0.00 or "undefined".
+   */
+  function chainRowHtml(r, spot, step) {
+    var isNum = function (v) { return v != null && isFinite(Number(v)); };
+    var intCell = function (v) { return isNum(v) ? Number(v).toLocaleString('en-IN') : '—'; };
+    var signedCell = function (v) {
+      if (!isNum(v)) return '—';
+      var n = Number(v);
+      return (n >= 0 ? '+' : '') + n.toLocaleString('en-IN');
+    };
+    var priceCell = function (v) { return isNum(v) ? '₹' + Number(v).toFixed(2) : '—'; };
+    var thetaCell = function (v) { return isNum(v) ? '₹' + Number(v).toFixed(1) : '—'; };
+    var ivCell = function (v) { return isNum(v) ? Number(v).toFixed(2) + '%' : '—'; };
+
+    var strike = Number(r.strike);
+    var isAtm = spot != null && step > 0 && Math.abs(strike - spot) < step;
+    var isCallItm = spot != null && strike < spot;
+    var isPutItm = spot != null && strike > spot;
+    var callCls = 'call-col ' + (isCallItm ? 'call-itm' : '');
+    var putCls = 'put-col ' + (isPutItm ? 'put-itm' : '');
+
+    return '<td class="' + callCls + '">' + intCell(r.callOi) + '</td>' +
+      '<td class="' + callCls + '">' + signedCell(r.callOiChange) + '</td>' +
+      '<td class="' + callCls + '">' + intCell(r.callVol) + '</td>' +
+      '<td class="' + callCls + '">' + ivCell(r.callIv) + '</td>' +
+      '<td class="' + callCls + '" style="color:#f59e0b;font-size:11px">' + thetaCell(r.callTheta) + '</td>' +
+      '<td class="' + callCls + '" style="font-weight:700;border-right:1px solid var(--line)">' + priceCell(r.callLtp) + '</td>' +
+      '<td class="strike">' + intCell(r.strike) + (isAtm ? ' <span class="badge" style="background:#fbbf24;color:#000;font-size:9px;padding:1px 4px">ATM</span>' : '') + '</td>' +
+      '<td class="' + putCls + '" style="font-weight:700;border-left:1px solid var(--line)">' + priceCell(r.putLtp) + '</td>' +
+      '<td class="' + putCls + '" style="color:#f59e0b;font-size:11px">' + thetaCell(r.putTheta) + '</td>' +
+      '<td class="' + putCls + '">' + ivCell(r.putIv) + '</td>' +
+      '<td class="' + putCls + '">' + intCell(r.putVol) + '</td>' +
+      '<td class="' + putCls + '">' + signedCell(r.putOiChange) + '</td>' +
+      '<td class="' + putCls + '">' + intCell(r.putOi) + '</td>';
+  }
+
   function renderOptionsChainView() {
     var symbol = el('optionsSymbol') ? el('optionsSymbol').value : 'NIFTY';
     var expiry = el('optionsExpiry') ? el('optionsExpiry').value : 'current';
@@ -2829,10 +2870,13 @@
         if (d < bestDist) { bestDist = d; atm = rows[ai]; }
       }
     }
-    var atmCallTheta = atm ? Math.abs(Number(atm.callTheta) || 0) : null;
-    var atmPutTheta = atm ? Math.abs(Number(atm.putTheta) || 0) : null;
-    var atmCallPrice = atm ? Number(atm.callLtp) || 0 : 0;
-    var atmPutPrice = atm ? Number(atm.putLtp) || 0 : 0;
+    // A missing greek must stay null. `Number(x) || 0` made an absent theta
+    // render as "₹0.00 / d", i.e. a real-looking number we never received.
+    var atmLive = function (v) { return v != null && isFinite(Number(v)) ? Math.abs(Number(v)) : null; };
+    var atmCallTheta = atm ? atmLive(atm.callTheta) : null;
+    var atmPutTheta = atm ? atmLive(atm.putTheta) : null;
+    var atmCallPrice = atm ? atmLive(atm.callLtp) : null;
+    var atmPutPrice = atm ? atmLive(atm.putLtp) : null;
     var dte = '—';
 
     // Telemetry straight from the provider's greeks. No decay is estimated.
@@ -2862,7 +2906,9 @@
 
     if (M && M.oiSummary) {
       var summary = M.oiSummary(rows, spot);
-      if (summary) {
+      // With no OI on either side the ratio is meaningless; a bare 0 would be
+      // displayed as an extremely bearish reading.
+      if (summary && (summary.totalCallOi > 0 || summary.totalPutOi > 0)) {
         if (el('optPcrVal')) el('optPcrVal').textContent = summary.pcr;
         if (el('optPcrBias')) {
           el('optPcrBias').textContent = summary.pcr > 1.2 ? 'Bullish Sentiment' : summary.pcr < 0.8 ? 'Bearish Sentiment' : 'Neutral Range';
@@ -2889,25 +2935,9 @@
 
     rows.forEach(function (r) {
       var isAtm = spot != null && step > 0 && Math.abs(r.strike - spot) < step;
-      var isCallItm = spot != null && r.strike < spot;
-      var isPutItm = spot != null && r.strike > spot;
-
       var tr = document.createElement('tr');
       if (isAtm) tr.className = 'atm';
-      tr.innerHTML =
-        '<td class="call-col ' + (isCallItm ? 'call-itm' : '') + '">' + r.callOi.toLocaleString('en-IN') + '</td>' +
-        '<td class="call-col ' + (isCallItm ? 'call-itm' : '') + '">' + (r.callOiChange >= 0 ? '+' : '') + r.callOiChange.toLocaleString('en-IN') + '</td>' +
-        '<td class="call-col ' + (isCallItm ? 'call-itm' : '') + '">' + r.callVol.toLocaleString('en-IN') + '</td>' +
-        '<td class="call-col ' + (isCallItm ? 'call-itm' : '') + '">' + r.callIv + '%</td>' +
-        '<td class="call-col ' + (isCallItm ? 'call-itm' : '') + '" style="color:#f59e0b;font-size:11px">₹' + r.callTheta.toFixed(1) + '</td>' +
-        '<td class="call-col ' + (isCallItm ? 'call-itm' : '') + '" style="font-weight:700;border-right:1px solid var(--line)">₹' + r.callPrice.toFixed(2) + '</td>' +
-        '<td class="strike">' + r.strike.toLocaleString('en-IN') + (isAtm ? ' <span class="badge" style="background:#fbbf24;color:#000;font-size:9px;padding:1px 4px">ATM</span>' : '') + '</td>' +
-        '<td class="put-col ' + (isPutItm ? 'put-itm' : '') + '" style="font-weight:700;border-left:1px solid var(--line)">₹' + r.putPrice.toFixed(2) + '</td>' +
-        '<td class="put-col ' + (isPutItm ? 'put-itm' : '') + '" style="color:#f59e0b;font-size:11px">₹' + r.putTheta.toFixed(1) + '</td>' +
-        '<td class="put-col ' + (isPutItm ? 'put-itm' : '') + '">' + r.putIv + '%</td>' +
-        '<td class="put-col ' + (isPutItm ? 'put-itm' : '') + '">' + r.putVol.toLocaleString('en-IN') + '</td>' +
-        '<td class="put-col ' + (isPutItm ? 'put-itm' : '') + '">' + (r.putOiChange >= 0 ? '+' : '') + r.putOiChange.toLocaleString('en-IN') + '</td>' +
-        '<td class="put-col ' + (isPutItm ? 'put-itm' : '') + '">' + r.putOi.toLocaleString('en-IN') + '</td>';
+      tr.innerHTML = chainRowHtml(r, spot, step);
       tbody.appendChild(tr);
     });
   }

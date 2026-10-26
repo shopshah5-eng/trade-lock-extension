@@ -79,11 +79,12 @@ function harness() {
     extract('renderVolatilityPanel'),
     extract('renderBrokerSupport'),
     extract('renderMarketOiCards'),
+    extract('chainRowHtml'),
   ].join('\n');
 
   const factory = new Function(
     'el', 'escapeHtml', 'globalThis', 'isFinite', 'Number', 'Boolean', 'M', 'chartState',
-    `${code}\nreturn { renderTickerStrip, renderVolatilityPanel, renderBrokerSupport, renderMarketOiCards };`
+    `${code}\nreturn { renderTickerStrip, renderVolatilityPanel, renderBrokerSupport, renderMarketOiCards, chainRowHtml };`
   );
 
   const fns = factory(
@@ -307,4 +308,43 @@ test('Market-tab PCR admits when there is no chain', () => {
   assert.strictEqual(ui.nodes.marketPcrVal.textContent, '—');
   assert.strictEqual(ui.nodes.marketPcrBias.textContent, 'No option chain');
   assert.strictEqual(ui.nodes.marketMaxPainVal.textContent, '—');
+});
+
+test('Chain rows render from the fields the provider actually produces', () => {
+  const ui = harness();
+  // A row exactly as server/providers/upstox.js emits it.
+  const row = {
+    strike: 24600, spot: 24653,
+    callOi: 5000, putOi: 7000, callOiChange: 1000, putOiChange: -500,
+    callLtp: 120, putLtp: 88, callVol: 900, putVol: 800,
+    callTheta: -12.5, putTheta: -9.1, callIv: 14.2, putIv: 13.8,
+  };
+  const html = ui.chainRowHtml(row, 24653, 100);
+
+  assert.strictEqual((html.match(/<td/g) || []).length, 13, 'a row has 13 cells');
+  assert.ok(!html.includes('undefined'), 'no cell may fall back to undefined');
+  assert.ok(!html.includes('NaN'), 'no cell may print NaN');
+  assert.ok(html.includes('5,000'), 'call OI is shown');
+  assert.ok(html.includes('+1,000'), 'a positive OI change keeps its sign');
+  assert.ok(html.includes('-500'), 'a negative OI change keeps its sign');
+  assert.ok(html.includes('₹120.00'), 'call premium comes from callLtp');
+  assert.ok(html.includes('14.20%'), 'call IV is formatted');
+  assert.ok(html.includes('₹-12.5'), 'theta is shown');
+  // strike 24600 sits right on spot 24653 with step 100, so it is the ATM row.
+  assert.ok(html.includes('ATM'));
+});
+
+test('Chain rows show em-dashes for greeks the feed did not send', () => {
+  const ui = harness();
+  const row = { strike: 24700, callOi: 3000, putOi: null, callOiChange: null,
+    putOiChange: null, callLtp: null, putLtp: null, callVol: null, putVol: null,
+    callTheta: null, putTheta: null, callIv: null, putIv: null };
+  const html = ui.chainRowHtml(row, 24653, 100);
+
+  assert.ok(!html.includes('undefined'));
+  assert.ok(!html.includes('₹0.00'), 'a missing premium must not look like a real 0');
+  assert.ok(!html.includes('0.00%'), 'a missing IV must not look like a real 0');
+  // Only the strike and the call OI are real; the other 11 cells are unknown.
+  assert.strictEqual((html.match(/—/g) || []).length, 11);
+  assert.ok(html.includes('3,000'), 'the OI we did receive is still shown');
 });

@@ -155,21 +155,29 @@ function normalizeOptionChain(payload) {
       const pm = put.market_data || {};
       const cg = call.option_greeks || {};
       const pg = put.option_greeks || {};
-      const coi = Number(cm.oi) || 0;
-      const poi = Number(pm.oi) || 0;
+      // `Number(x) || 0` turns a missing greek into a real-looking zero, which
+      // the UI then prints as "₹0.00 / d". Absent values stay null so the table
+      // can show an em-dash instead of inventing a number.
+      const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : null; };
+      const coi = num(cm.oi);
+      const poi = num(pm.oi);
+      const prevCoi = num(cm.prev_oi);
+      const prevPoi = num(pm.prev_oi);
       return {
         strike: Number(r.strike_price),
-        spot: Number(r.underlying_spot_price) || 0,
+        spot: num(r.underlying_spot_price),
         callOi: coi,
         putOi: poi,
-        callOiChange: coi - (Number(cm.prev_oi) || coi),
-        putOiChange: poi - (Number(pm.prev_oi) || poi),
-        callLtp: Number(cm.ltp) || 0,
-        putLtp: Number(pm.ltp) || 0,
-        callTheta: Number(cg.theta) || 0,
-        putTheta: Number(pg.theta) || 0,
-        callIv: Number(cg.iv) || 0,
-        putIv: Number(pg.iv) || 0,
+        callOiChange: (coi != null && prevCoi != null) ? coi - prevCoi : null,
+        putOiChange: (poi != null && prevPoi != null) ? poi - prevPoi : null,
+        callLtp: num(cm.ltp),
+        putLtp: num(pm.ltp),
+        callVol: num(cm.volume),
+        putVol: num(pm.volume),
+        callTheta: num(cg.theta),
+        putTheta: num(pg.theta),
+        callIv: num(cg.iv),
+        putIv: num(pg.iv),
       };
     })
     .sort((a, b) => a.strike - b.strike);
