@@ -181,10 +181,10 @@ test('mocked live checkout, entitlements, cold starts and webhook recovery remai
   assert.strictEqual(plusMarket.status, 503); // entitlement passed; no market credential is configured
   assert.strictEqual(plusMarket.body.error, 'market_feed_not_configured');
 
+  // The fabricated-candle demo endpoint is gone for good.
   const demo = await request(port, 'GET', '/api/market/demo?symbol=NIFTY');
-  assert.strictEqual(demo.status, 200);
-  assert.strictEqual(demo.body.brief.source, 'local');
-  assert.ok(!providerCalls.some(u => /generativelanguage|openrouter/.test(u)), 'public demo must not invoke paid AI');
+  assert.strictEqual(demo.status, 404, 'demo endpoint must not exist');
+  assert.ok(!providerCalls.some(u => /generativelanguage|openrouter/.test(u)), 'no paid AI for unauthenticated callers');
 
   const recovery = await request(port, 'POST', '/api/restore-subscription', { email: 'plus@example.com' });
   assert.strictEqual(recovery.status, 200);

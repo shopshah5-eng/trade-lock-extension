@@ -422,6 +422,8 @@
   }
 
   function buildHud() {
+    // Never inject UI into a broker page unless the user explicitly enabled it.
+    if (!settings || settings.showHud !== true) return;
     if (hud && hud.isConnected) return;
     try { if (sessionStorage.getItem('tl-hud-closed') === '1') return; } catch (e) {}
     hudCss();
@@ -534,7 +536,7 @@
         mEl.style.background = 'rgba(76,141,255,.10)';
         mEl.style.borderColor = 'rgba(76,141,255,.35)';
         mEl.style.color = '#b9d2ff';
-        mEl.textContent = '\u{1F4CA} ' + (marketSnap.source === 'demo' ? 'DEMO · ' : '') + (marketSnap.symbol || '') + ' ' + marketSnap.analysis.price +
+        mEl.textContent = '\u{1F4CA} ' +  + (marketSnap.symbol || '') + ' ' + marketSnap.analysis.price +
           ' · ' + marketSnap.analysis.trend + ' · VWAP ' + marketSnap.analysis.vwap;
       } else {
         mEl.style.display = 'none';

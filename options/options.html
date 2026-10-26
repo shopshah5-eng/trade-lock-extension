@@ -356,7 +356,7 @@
         </div>
 
         <div class="overview-chart-foot">
-          <span id="overviewChartSource">Deterministic demo data · Not a live market feed</span>
+          <span id="overviewChartSource">Waiting for a real market feed</span>
           <button class="overview-text-btn overview-action" data-tab="market" type="button">Open Market &amp; OI<svg class="tl-icon" aria-hidden="true"><use href="#i-arrow"></use></svg></button>
         </div>
       </section>
@@ -630,6 +630,12 @@
         <span class="txt"><span class="t">Count detected risk toward daily risk budget</span>
         <span class="s">Reads broker P&amp;L column or calculates quantity × price.</span></span>
       </label>
+      <label class="switch">
+        <input type="checkbox" id="showHud">
+        <span class="track"></span>
+        <span class="txt"><span class="t">Show the floating on-page widget on broker tabs</span>
+        <span class="s">Off by default — Trade Lock draws nothing on a broker page unless you turn this on. The lock overlay is separate and always works.</span></span>
+      </label>
       <div class="grid2" style="margin-top:12px">
         <label class="field">
           <span class="k">Detection poll interval (ms)</span>
@@ -689,8 +695,8 @@
   <!-- ======================================================== TAB: MARKET & OI -->
   <div class="tab-content" id="tab-market">
     <div class="callout warn" id="marketSimulatedTopCallout" style="display:none;margin-bottom:14px;border-left:4px solid #f59e0b;background:rgba(245,158,11,0.08);color:#fef3c7;">
-      ⚠️ <b>SIMULATED DEMO DATA — NOT LIVE MARKET FEED:</b>
-      No verified live options-chain broker feed is currently connected. All spot prices, open interest numbers, changes in OI, and technical pivots shown below are calculated by the deterministic model for layout and strategy demonstration.
+      ⚠️ <b>NO MARKET FEED CONNECTED:</b>
+      No verified live options-chain broker feed is currently connected. Spot prices, open interest, changes in OI and pivots remain blank until a real feed is available — nothing below is simulated.
     </div>
 
     <div class="card">
@@ -699,10 +705,10 @@
           <h2 style="margin:0">Market &amp; Open Interest (OI) Intelligence <span class="badge pro" id="marketModelBadge">Active Broker Feed</span></h2>
           <p class="desc" id="marketSubtitleDesc" style="margin:2px 0 0">Open interest distribution, Call/Put walls, Put-Call Ratio (PCR), and multi-timeframe price structure for Indian indices.</p>
         </div>
-        <span class="badge" id="marketTimestampBadge" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399;font-size:11px">Source: Active Broker Tab · <span id="marketUpdatedTimestamp">Demo Render Time: Just now</span></span>
+        <span class="badge" id="marketTimestampBadge" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399;font-size:11px">Source: Active Broker Tab · <span id="marketUpdatedTimestamp">Awaiting feed</span></span>
       </div>
       <div class="callout" id="marketSimulatedSubCallout" style="display:none;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;margin-bottom:14px;font-size:12px">
-        ⚠️ <b>SIMULATED DEMO DATA — NOT LIVE MARKET FEED:</b> All market statistics, charts, and OI levels are computed via deterministic mathematical simulation models for interface testing. Live NSE quotes and Greeks require an active broker API connection.
+        ⚠️ <b>NO MARKET FEED CONNECTED:</b> Open interest, charts and Greeks stay blank until a real feed is available. Trade Lock does not simulate market numbers.
       </div>
 
       <div class="grid4" style="margin-bottom:14px">
@@ -814,7 +820,7 @@
         </div>
         <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10.5px;color:var(--muted)">
           <span>Drag or use ←/→ to Pan · Scroll or +/− to Zoom · Home resets</span>
-          <span id="chartTimestampRange">Source: Deterministic Model</span>
+          <span id="chartTimestampRange">No candle source connected</span>
         </div>
       </div>
 
@@ -847,7 +853,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
           <div>
             <h3 style="margin:0;font-size:13px;font-weight:750">India VIX &amp; Volatility Regime</h3>
-            <p class="desc" style="margin:2px 0 0">Deterministic demo volatility benchmark and spike detection (not a live India VIX feed).</p>
+            <p class="desc" style="margin:2px 0 0">Volatility regime and spike detection. Requires a real India VIX feed — nothing is benchmarked locally.</p>
           </div>
           <span id="vixRegimeBadge" class="badge" style="background:rgba(16,185,129,0.18);color:#34d399;border:1px solid rgba(16,185,129,0.3)">Regime: Normal (13.85)</span>
         </div>
@@ -860,7 +866,7 @@
           <div class="stat-card">
             <span class="stat-lbl">IV Rank / Percentile</span>
             <span class="stat-val" id="vixRank">48% / 52%</span>
-            <span class="stat-sub">Illustrative 7-sample demo range</span>
+            <span class="stat-sub">Awaiting a real VIX feed</span>
           </div>
           <div class="stat-card">
             <span class="stat-lbl">Call IV vs Put IV</span>
@@ -870,7 +876,7 @@
           <div class="stat-card">
             <span class="stat-lbl">Spike Alert Status</span>
             <span class="stat-val" id="vixAlertStatus" style="color:#34d399">Normal</span>
-            <span class="stat-sub">Demo alert: ≥10% change or VIX ≥20</span>
+            <span class="stat-sub">Alert: ≥10% change or VIX ≥20</span>
           </div>
         </div>
       </div>
@@ -937,7 +943,7 @@
       </div>
 
       <div class="callout" id="chartsCalloutBanner" style="display:none !important;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.22);color:#93c5fd;margin-bottom:16px;font-size:12px">
-        ℹ️ <b>SIMULATED DEMO DATA — NOT LIVE MARKET DATA:</b> Candlestick sequences and volume profiles are rendered algorithmically for technical layout preview and strategy discipline training.
+        ℹ️ <b>NO CANDLE FEED CONNECTED:</b> Candlesticks and volume profiles render only from a real exchange feed. Nothing is drawn algorithmically.
       </div>
 
       <div class="overview-chart-card glass-panel" style="padding:18px;margin-bottom:16px">
@@ -1005,7 +1011,7 @@
       <div id="liveOptionsSetupCard" class="live-setup-card" style="display:none;margin-bottom:14px;"></div>
 
       <div id="optionsSimulatedCallout" class="callout" style="display:none !important;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;margin-bottom:14px;font-size:12px">
-        ⚠️ <b>SIMULATED DEMO DATA — NOT LIVE MARKET FEED:</b> This chain is generated via deterministic mathematical models strictly for testing user experience and interface functionality. Live NSE tick data requires a configured broker API feed. Do NOT place real orders based on simulated strikes.
+        ⚠️ <b>NO OPTION CHAIN CONNECTED:</b> Strikes, OI and Greeks stay empty until a real feed is available. Trade Lock never generates a synthetic chain — never size a position off invented numbers.
       </div>
 
       <div class="grid4" style="margin-bottom:14px">
@@ -1425,7 +1431,7 @@
             <label class="field" style="margin:0">
               <span class="k">License Server API URL</span>
               <input type="text" id="licApi" placeholder="https://trade-lock-app.netlify.app">
-              <span class="h">Default: Production HTTPS endpoint (https://trade-lock-app.netlify.app). Local dev: http://localhost:3000.</span>
+              <span class="h">Your own server URL. Leave blank to use the hosted default (https://trade-lock-app.netlify.app). Local dev: http://localhost:8787. Chrome will ask you to allow the new origin the first time you activate a key.</span>
             </label>
           </div>
         </details>

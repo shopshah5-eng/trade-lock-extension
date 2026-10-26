@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const crypto = require('node:crypto');
 const fyers = require('../fyers');
 const ai = require('../ai');
-const mock = require('../mockData');
+const mock = require('./fixtures/mockData');
 
 test('appIdHash is sha256 of appId:secret', () => {
   const expected = crypto.createHash('sha256').update('APP-100:sekret').digest('hex');

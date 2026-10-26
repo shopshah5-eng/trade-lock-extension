@@ -445,11 +445,15 @@ test('AI Grounding: options.js refuses unverified live market figures and promin
 
   // Must refuse unverified live market feeds and declare live data unavailable
   assert.ok(optionsJs.includes('LIVE MARKET DATA UNAVAILABLE'), 'Must refuse unverified live market requests');
-  assert.ok(optionsJs.includes('SIMULATED DEMO DATA — NOT LIVE MARKET FEED'), 'Must prominently label demo data when requested');
   assert.ok(optionsJs.includes('Authoritative trading locks are executed strictly by the rules engine and cannot be altered by AI'), 'Must declare risk engine separation');
 
-  // Options tab in options.html must display prominent simulated demo data warning
-  assert.ok(optionsHtml.includes('SIMULATED DEMO DATA — NOT LIVE MARKET FEED'), 'Options tab must show prominent warning callout');
+  // No demo/simulated market data may exist anywhere in the shipped UI.
+  assert.strictEqual(/SIMULATED DEMO DATA/i.test(optionsJs + optionsHtml), false, 'demo data must be fully removed');
+  assert.strictEqual(/Deterministic (Model|demo|demonstration)/i.test(optionsJs + optionsHtml), false, 'deterministic demo model must be removed');
+
+  // The Options tab must still warn clearly that there is no feed.
+  assert.ok(optionsHtml.includes('NO OPTION CHAIN CONNECTED'), 'Options tab must show a no-feed callout');
+  assert.ok(optionsHtml.includes('NO MARKET FEED CONNECTED'), 'Market tab must show a no-feed callout');
 });
 
 // ---------------------------------------- 10. Lock UX & Sahi Capability Consistency ----
@@ -566,13 +570,16 @@ test('Build 11: Market & OI is honestly labeled as Simulated Demo Data without f
   const optionsHtml = fs.readFileSync(path.join(rootDir, 'options/options.html'), 'utf8');
   const optionsJs = fs.readFileSync(path.join(rootDir, 'options/options.js'), 'utf8');
 
-  // Must include prominent demo data warning in market section
-  assert.ok(optionsHtml.includes('SIMULATED DEMO DATA — NOT LIVE MARKET FEED'), 'options.html must clearly display simulated demo data warning');
-  assert.strictEqual(optionsHtml.includes('Real-time open interest distribution'), false, 'options.html must NOT claim real-time open interest distribution for deterministic model');
+  // The market section must state plainly that no feed is connected.
+  assert.ok(optionsHtml.includes('NO MARKET FEED CONNECTED'), 'options.html must clearly display a no-feed warning');
+  assert.strictEqual(optionsHtml.includes('Real-time open interest distribution'), false, 'options.html must NOT claim real-time data without a feed');
 
-  // options.js must clarify deterministic demo data
-  assert.ok(optionsJs.includes('Deterministic Model (Simulated Demo Data)'), 'options.js must label market note as deterministic demo');
+  // options.js must render an explicit offline state instead of simulated numbers.
+  assert.ok(optionsJs.includes("renderDisconnectedMarketState(symbol, 'no_feed'"), 'options.js must render an offline state');
+  assert.strictEqual(optionsJs.includes('generateSampleCandles'), false, 'sample candle generator must be deleted');
   assert.ok(optionsJs.includes('Live exchange WebSocket feed is not connected'), 'options.js must warn when unconnected live source is selected');
+  // The offline path must clear any stale candles rather than reuse them.
+  assert.ok(optionsJs.includes('chartState.candles = [];'), 'offline state must clear candles');
 });
 
 test('Build 11: Preview lock cannot overwrite or cancel an active real trading lock', () => {
@@ -626,19 +633,19 @@ test('Build 11 RC: Everyday shortcuts route through Side Panel and activate requ
   assert.ok(optionsJs.includes("res.tlActiveTab"), 'options.js must check stored tlActiveTab on load');
 });
 
-test('Build 11 RC: Expiry selection dynamically scales calculations and timestamp specifies Demo Render Time', () => {
+test('Build 11 RC: Expiry selection is wired through and no Demo Render Time label survives', () => {
   const optionsJs = fs.readFileSync(path.join(rootDir, 'options/options.js'), 'utf8');
   const optionsHtml = fs.readFileSync(path.join(rootDir, 'options/options.html'), 'utf8');
 
   // Expiry selection must affect DTE, theta and premiums
   assert.ok(optionsJs.includes("var expiry = el('marketExpiry') ? el('marketExpiry').value : 'current'"), 'marketExpiry must be read');
   assert.ok(optionsJs.includes("var expiry = el('optionsExpiry') ? el('optionsExpiry').value : 'current'"), 'optionsExpiry must be read');
-  assert.ok(optionsJs.includes("expiry === 'monthly' ? 23 : (expiry === 'next' ? 9 : 2)"), 'DTE must scale with selected expiry');
-  assert.ok(optionsJs.includes('dteFactor'), 'Option prices must scale with dteFactor');
+  // Locally modelled DTE/premium scaling is gone: every price must come from a feed.
+  assert.strictEqual(optionsJs.includes('dteFactor'), false, 'simulated DTE scaling must be removed');
 
-  // Timestamp must clearly state Demo Render Time
-  assert.ok(optionsJs.includes("'Demo Render Time: ' + timeStr"), 'options.js must label timestamp as Demo Render Time');
-  assert.ok(optionsHtml.includes('Demo Render Time:'), 'options.html must display Demo Render Time');
+  // The fake "Demo Render Time" stamp must be gone.
+  assert.strictEqual(optionsJs.includes('Demo Render Time'), false, 'options.js must not claim a demo render time');
+  assert.strictEqual(optionsHtml.includes('Demo Render Time'), false, 'options.html must not claim a demo render time');
 });
 
 test('Build 11 RC: exportLogBtn label does not claim Pro and emergencyOverride is not exposed in production', () => {

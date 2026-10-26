@@ -40,6 +40,10 @@
     "https://*.myespresso.com/*",
     "https://*.motilaloswal.com/*"
   ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://localhost/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },

@@ -10,7 +10,7 @@
              'maxRiskPerTrade', 'maxDailyRisk', 'minLockMinutes', 'detectIntervalMs', 'riskPerUnit',
              'totalCapital', 'dailyRiskPercent', 'perTradeRiskPercent'];
   var BOOL = ['skipWeekends', 'skipHolidays', 'autoDetect', 'countAutoTrades',
-              'countAutoRisk', 'reloadOnTamper', 'fullSiteAcknowledged'];
+              'countAutoRisk', 'reloadOnTamper', 'fullSiteAcknowledged', 'showHud'];
 
   var dirty = false;
   var currentState = null;
@@ -233,7 +233,7 @@
     toggleFullSiteAckBox(s.enforcementMode || 'warning');
     if (el('marketOpen')) el('marketOpen').value = minutesToHHMM(s.marketOpenMin);
     if (el('marketSymbol') && s.marketSymbol) el('marketSymbol').value = s.marketSymbol;
-    if (s.marketSource === 'demo' || !s.marketSource) s.marketSource = 'broker';
+    if (!s.marketSource || s.marketSource === 'demo') s.marketSource = 'broker';
     if (el('marketSource') && s.marketSource) el('marketSource').value = s.marketSource;
     if (el('planTradesMirror')) el('planTradesMirror').value = s.maxTradesPerDay || '';
     updatePlanSummary();
@@ -798,18 +798,42 @@
     });
   }
 
+  /*
+   * A self-hosted server lives on a different origin than the bundled default.
+   * Chrome only allows the fetch if the origin is granted, so ask for it here —
+   * from a real click, which is what chrome.permissions requires.
+   */
+  function ensureApiPermission(apiBase) {
+    var origin;
+    try { origin = new URL(apiBase).origin + '/*'; } catch (e) { return Promise.resolve(true); }
+    if (!chrome.permissions || !chrome.permissions.request) return Promise.resolve(true);
+    return chrome.permissions.contains({ origins: [origin] }).then(function (has) {
+      if (has) return true;
+      return chrome.permissions.request({ origins: [origin] }).catch(function () { return false; });
+    }).catch(function () { return false; });
+  }
+
   if (el('licActivate')) el('licActivate').addEventListener('click', function () {
     var key = el('licKey').value.trim();
     var api = el('licApi').value.trim() || R.DEFAULT_SETTINGS.licenseApiBase;
     if (!key) { if (el('licNote')) el('licNote').textContent = 'paste a license key first'; return; }
     if (el('licNote')) el('licNote').textContent = 'validating…';
-    globalThis.TLLicense.activate(api, key).then(function (lic) {
+    ensureApiPermission(api).then(function (granted) {
+      if (!granted) throw new Error('permission_denied');
+      return globalThis.TLLicense.activate(api, key);
+    }).then(function (lic) {
       if (el('licNote')) {
         el('licNote').textContent = lic.active
           ? 'activated ✓ — remember to Save rules'
           : 'not active: ' + (lic.reason || 'unknown');
       }
       loadAll();
+    }).catch(function (e) {
+      if (el('licNote')) {
+        el('licNote').textContent = e && e.message === 'permission_denied'
+          ? 'Chrome blocked access to ' + api + ' — allow it, then retry'
+          : 'could not reach ' + api;
+      }
     });
   });
 
@@ -941,7 +965,7 @@
       currentLicense = res.tlLicense || null;
       setText('overviewFocusText', res.tlDailyFocus || 'Stick strictly to predefined setups. Never revenge trade.');
       var s = R.effectiveSettings(res.tlSettings, currentLicense, Date.now());
-      if (s.marketSource === 'demo' || !s.marketSource) {
+      if (!s.marketSource || s.marketSource === 'demo') {
         s.marketSource = 'broker';
       }
       currentSettings = s;
@@ -1121,10 +1145,6 @@
     return map[sym] || map.NIFTY;
   }
 
-  function generateSampleCandles() {
-    // Synthetic math generation purged. Only real candles from live exchange feed are rendered.
-    return [];
-  }
   function round(n) { return Math.round(n * 100) / 100; }
 
   // Lightweight overview chart. Uses the same deterministic series as Market & OI.
@@ -1198,8 +1218,8 @@
     var areaPath = 'M' + points[0].x.toFixed(2) + ',' + baseY + ' ' +
       points.map(function (p) { return 'L' + p.x.toFixed(2) + ',' + p.y.toFixed(2); }).join(' ') +
       ' L' + points[points.length - 1].x.toFixed(2) + ',' + baseY + ' Z';
-    var html = '<title>Simulated ' + escapeHtml(cfg.name) + ' overview — not live market data</title>' +
-      '<desc>Deterministic demonstration series. Last simulated value ' + Number(last.c).toFixed(2) +
+    var html = '<title>' + escapeHtml(cfg.name) + ' overview — live market feed</title>' +
+      '<desc>Last ' + Number(last.c).toFixed(2) +
       ', change ' + change.toFixed(2) + ' (' + changePct.toFixed(2) + ' percent).</desc>' +
       '<defs><linearGradient id="overviewAreaGradient" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0%" stop-color="#6366f1" stop-opacity=".32"/><stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>' +
@@ -2300,110 +2320,43 @@
       return;
     }
 
-    // Demo Mode
+    // ---------------------------------------------------------------- offline ----
+    // No verified feed is connected. Render an explicit offline state and stop:
+    // no spot price, no candles, no OI, no theta, no modelled numbers.
+    // Every number on this screen must come from a real provider.
     if (setupCard) setupCard.style.display = 'none';
     if (el('marketSimulatedTopCallout')) el('marketSimulatedTopCallout').style.display = 'none';
     if (el('marketSimulatedSubCallout')) el('marketSimulatedSubCallout').style.display = 'none';
     if (el('marketModelBadge')) {
-      el('marketModelBadge').textContent = 'Broker Market Mode';
-      el('marketModelBadge').className = 'badge pro';
+      el('marketModelBadge').textContent = 'No Feed';
+      el('marketModelBadge').className = 'badge danger';
       el('marketModelBadge').style.cssText = '';
     }
     if (el('marketSubtitleDesc')) {
-      el('marketSubtitleDesc').textContent = 'Open interest distribution, Call/Put walls, Put-Call Ratio (PCR), and multi-timeframe price structure for Indian indices.';
+      el('marketSubtitleDesc').textContent = 'Open a supported broker tab, or connect a market feed on the server, to see live open interest, PCR and price structure.';
     }
     if (badgeEl) {
-      badgeEl.className = 'badge';
-      badgeEl.style.cssText = 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-size:11px';
-      badgeEl.innerHTML = 'Source: Deterministic Model · <span id="marketUpdatedTimestamp">Demo Render Time: Just now</span>';
+      badgeEl.className = 'badge danger';
+      badgeEl.style.cssText = 'background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;font-size:11px';
+      badgeEl.innerHTML = '○ NO MARKET FEED CONNECTED · nothing simulated';
     }
+    if (timeEl) timeEl.textContent = '';
     if (noteEl) noteEl.textContent = '';
 
-    var cfg = getInstrumentConfig(symbol);
-    var spot = cfg.basePrice;
-    var step = cfg.step;
-
-    var dte = expiry === 'monthly' ? 23 : (expiry === 'next' ? 9 : 2);
-    var dteFactor = Math.sqrt(dte / 2);
-    var decayRate = expiry === 'monthly' ? '~3.2% / day' : (expiry === 'next' ? '~7.5% / day' : '~18% / day');
-    var baseStraddle = Math.round((spot * 0.01) * dteFactor);
-    if (el('marketThetaVal')) {
-      el('marketThetaVal').textContent = '₹' + baseStraddle + ' · ' + decayRate;
+    var offlineCfg = getInstrumentConfig(symbol);
+    if (el('marketSpotVal')) el('marketSpotVal').textContent = '—';
+    if (el('marketExchangeSub')) {
+      el('marketExchangeSub').textContent = offlineCfg.exchange + ' ' + offlineCfg.name;
     }
+    if (el('marketThetaVal')) el('marketThetaVal').textContent = '—';
 
-    if (el('marketSpotVal')) el('marketSpotVal').textContent = '₹' + spot.toLocaleString('en-IN') + '.00';
-    if (el('marketExchangeSub')) el('marketExchangeSub').textContent = cfg.exchange + ' ' + cfg.name + ' [DEMO]';
-
-    // Option strikes arrive from live exchange feed; synthetic math is purged.
-    var rows = Array.isArray(chartState.optionRows) ? chartState.optionRows : [];
-    var maxOi = 1;
-    rows.forEach(function (r) {
-      if (r.callOi > maxOi) maxOi = r.callOi;
-      if (r.putOi > maxOi) maxOi = r.putOi;
-    });
-
-    var summary = (rows.length && M && M.oiSummary) ? M.oiSummary(rows, spot) : null;
-    if (summary) {
-      if (el('marketPcrVal')) el('marketPcrVal').textContent = summary.pcr;
-      if (el('marketPcrBias')) {
-        el('marketPcrBias').innerHTML = summary.pcr > 1.2
-          ? '<span class="badge pro" style="font-size:10.5px">Bullish Bias</span>'
-          : summary.pcr < 0.8
-            ? '<span class="badge danger" style="font-size:10.5px">Bearish Bias</span>'
-            : '<span class="badge" style="background:rgba(255,255,255,0.08);color:var(--muted);font-size:10.5px">Neutral Range</span>';
-      }
-      if (el('marketMaxPainVal')) {
-        var dist = summary.maxPain ? (summary.maxPain - spot) : 0;
-        el('marketMaxPainVal').textContent = (summary.maxPain ? summary.maxPain.toLocaleString('en-IN') : '—') +
-          (dist ? ' (' + (dist > 0 ? '+' : '') + dist + ')' : '');
-      }
-    } else {
-      if (el('marketPcrVal')) el('marketPcrVal').textContent = '—';
-      if (el('marketPcrBias')) el('marketPcrBias').innerHTML = '<span class="badge" style="background:rgba(255,255,255,0.08);color:var(--muted);font-size:10.5px">Awaiting Live Feed</span>';
-      if (el('marketMaxPainVal')) el('marketMaxPainVal').textContent = '—';
-    }
-
-    // Render Dual-Bar Visual Chart
-    var container = el('oiBarsContainer');
-    if (container) {
-      container.innerHTML = '';
-      if (!rows.length) {
-        container.innerHTML = '<div style="padding:32px 16px;text-align:center;color:#94a3b8;font-size:12px;background:rgba(255,255,255,0.02);border:1px dashed var(--line);border-radius:8px">No live option chain data available. Connect live broker WebSocket feed to stream strikes and OI walls.</div>';
-      } else {
-      rows.forEach(function (r) {
-        var isAtm = Math.abs(r.strike - spot) < step;
-        var isCallWall = summary && r.strike === summary.maxCallOiStrike;
-        var isPutWall = summary && r.strike === summary.maxPutOiStrike;
-
-        var callPct = Math.max(3, Math.min(100, Math.round((r.callOi / maxOi) * 100)));
-        var putPct = Math.max(3, Math.min(100, Math.round((r.putOi / maxOi) * 100)));
-
-        var rowDiv = document.createElement('div');
-        rowDiv.className = 'oi-bar-row' + (isAtm ? ' atm-row' : '');
-        rowDiv.innerHTML =
-          '<div class="oi-call-bar-wrap">' +
-            (isCallWall ? '<span class="wall-tag call">Call Wall</span>' : '') +
-            '<span style="color:#6ee7b7;font-weight:600">' + r.callOi.toLocaleString('en-IN') + '</span>' +
-            '<div class="oi-bar call" style="width:' + callPct + '%"></div>' +
-          '</div>' +
-          '<div style="text-align:center">' +
-            '<span class="oi-strike-badge' + (isAtm ? ' atm' : '') + '">' + r.strike.toLocaleString('en-IN') + (isAtm ? ' ★' : '') + '</span>' +
-          '</div>' +
-          '<div class="oi-put-bar-wrap">' +
-            '<div class="oi-bar put" style="width:' + putPct + '%"></div>' +
-            '<span style="color:#fca5a5;font-weight:600">' + r.putOi.toLocaleString('en-IN') + '</span>' +
-            (isPutWall ? '<span class="wall-tag put">Put Wall</span>' : '') +
-          '</div>';
-        container.appendChild(rowDiv);
-      });
-      }
-    }
-
-    // Compute Technical Candles, Indicators, and VIX Analytics
-    computeLocalMarket(symbol, tf);
-
-    var timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' IST';
-    if (el('marketUpdatedTimestamp')) el('marketUpdatedTimestamp').textContent = 'Demo Render Time: ' + timeStr;
+    chartState.candles = [];
+    chartState.optionRows = [];
+    chartState.symbol = symbol;
+    chartState.timeframe = tf;
+    chartState.panOffset = 0;
+    renderOverviewChart();
+    renderDisconnectedMarketState(symbol, 'no_feed', 'Connect a market feed to load real quotes.');
   }
 
   if (el('marketBtn')) {
@@ -2461,64 +2414,6 @@
     });
   }
 
-  function computeLocalMarket(symbol, tf) {
-    var cfg = getInstrumentConfig(symbol);
-    var candles = generateSampleCandles(cfg.basePrice, 60, tf, symbol);
-    chartState.candles = candles;
-    chartState.panOffset = 0;
-    chartState.symbol = symbol;
-    chartState.timeframe = tf;
-
-    if (el('chartHeaderSymbol')) el('chartHeaderSymbol').textContent = cfg.name + ' (' + cfg.exchange + ') [DEMO]';
-    if (el('chartIntervalBadge')) el('chartIntervalBadge').textContent = tf + ' · SIMULATED';
-    if (el('chartCandleCount')) el('chartCandleCount').textContent = candles.length + ' simulated candles';
-    if (el('chartTimestampRange')) el('chartTimestampRange').textContent = 'Source: Deterministic Model (Simulated Demo Data)';
-
-    renderOverviewChart();
-    initChartCanvasEvents();
-
-    if (!M) {
-      if (el('marketNote')) el('marketNote').textContent = 'Engine not loaded';
-      return;
-    }
-
-    var analysis = M.analyze(candles, { symbol: symbol, timeframe: tf });
-    chartState.analysis = analysis;
-    drawMarketCandleChart();
-
-    // VIX Analytics & Regime Computation
-    if (M.vixAnalytics) {
-      var vix = M.vixAnalytics(13.85, 13.43);
-      if (el('vixVal')) el('vixVal').textContent = vix.value;
-      if (el('vixChg')) {
-        el('vixChg').textContent = (vix.change >= 0 ? '+' : '') + vix.change + ' (' + (vix.changePct >= 0 ? '+' : '') + vix.changePct + '%)';
-        el('vixChg').style.color = vix.change >= 0 ? '#10b981' : '#f87171';
-      }
-      if (el('vixRank')) el('vixRank').textContent = vix.ivRank + '% / ' + vix.ivPercentile + '%';
-      if (el('vixRegimeBadge')) {
-        el('vixRegimeBadge').textContent = 'Regime: ' + vix.status + ' (' + vix.value + ')';
-        el('vixRegimeBadge').style.background = vix.isSpike ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.18)';
-        el('vixRegimeBadge').style.color = vix.isSpike ? '#f87171' : '#34d399';
-      }
-      if (el('vixAlertStatus')) {
-        el('vixAlertStatus').textContent = vix.isSpike ? '⚠️ Spike Alert Triggered' : 'Normal';
-        el('vixAlertStatus').style.color = vix.isSpike ? '#f87171' : '#34d399';
-      }
-    }
-
-    if (el('marketNote')) el('marketNote').textContent = 'Deterministic Model (Simulated Demo Data) · ' + tf;
-    var primaryRes = ((analysis.nearestResistance || [])[0] && (analysis.nearestResistance || [])[0].price) || '—';
-    var primarySup = ((analysis.nearestSupport || [])[0] && (analysis.nearestSupport || [])[0].price) || '—';
-    renderMarketData({
-      analysis: analysis,
-      brief: {
-        text: cfg.name + ' is in a ' + (analysis.trend || 'sideways') + ' market structure with RSI at ' + (analysis.rsi14 || '—') +
-              '. Primary resistance rests at ' + primaryRes +
-              ' and support at ' + primarySup + '.'
-      }
-    });
-  }
-
   // -------------------------------------------------- options analytics ----
 
   function renderOptionsChainView() {
@@ -2551,17 +2446,7 @@
                 'Live strike-by-strike options require a configured broker data API with options entitlements. ' +
                 'To prevent trading on unreliable data, Trade Lock refuses to fabricate live strikes.' +
               '</div>' +
-              '<div class="live-setup-actions">' +
-                '<button type="button" id="optSwitchDemoBtn" class="primary" style="padding:6px 14px;font-size:12px">Switch to Simulated Demo Model</button>' +
-              '</div>';
-            var sbtn = el('optSwitchDemoBtn');
-            if (sbtn) {
-              sbtn.addEventListener('click', function () {
-                if (el('marketSource')) el('marketSource').value = 'demo';
-                renderMarketAndOiDashboard();
-                renderOptionsChainView();
-              });
-            }
+            '</div>';
           }
           if (simCallout) simCallout.style.display = 'none';
           if (modeBadge) {
@@ -2752,14 +2637,13 @@
           resp = 'Discipline Audit · ' + timeStr + ':\nInsufficient trade data for discipline audit (0 trades recorded today).';
         }
       } else if (query.indexOf('option') !== -1 || query.indexOf('pcr') !== -1 || query.indexOf('oi') !== -1) {
-        var isDemoRequested = query.indexOf('demo') !== -1 || query.indexOf('sample') !== -1;
         var optSymbol = (el('optionsSymbol') && el('optionsSymbol').value) || 'NIFTY';
 
         resp = '⚠️ LIVE MARKET DATA UNAVAILABLE\n\n' +
-               '[SIMULATED DEMO DATA — NOT LIVE MARKET FEED]\n' +
-               'Synthetic mathematical generators have been purged. No verified live exchange feed is currently connected (e.g. Fyers API or broker WebSocket).\n\n' +
-               'To protect your capital and maintain strict discipline, Trade Lock refuses to fabricate artificial PCR, open interest walls, or max pain levels.\n\n' +
-               '• Connect an authenticated broker API (Fyers API v3) to stream real contracts and Greeks.\n\n' +
+               'No verified exchange feed is connected, so there is no option chain to analyse.\n\n' +
+               'Trade Lock will not fabricate PCR, open interest walls, or max pain levels.\n\n' +
+               '• Pro+ users: connect a market feed on the server (Upstox Analytics Token or Fyers).\n' +
+               '• Free/Pro users: open a supported broker tab to read live quotes from your own session.\n\n' +
                '🛡️ Risk Policy: Authoritative trading locks are executed strictly by the rules engine and cannot be altered by AI.';
       } else if (query.indexOf('support') !== -1 || query.indexOf('resistance') !== -1 || query.indexOf('structure') !== -1 || query.indexOf('pivot') !== -1) {
         resp = '⚠️ LIVE MARKET DATA UNAVAILABLE\n\n' +

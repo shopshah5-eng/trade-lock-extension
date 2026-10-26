@@ -36,3 +36,16 @@ test('Vercel adapter is callable, disables body parsing, and serves the real app
   assert.strictEqual(body.demoMode, true);
   assert.strictEqual(body.paymentPersistenceReady, true);
 });
+
+test('Deployment: server/lib copies never drift from the canonical lib/', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..', '..');
+  // Netlify builds with base="server", so functions cannot require ../lib.
+  // server/lib is a mirrored copy and must stay byte-identical.
+  for (const file of ['rules.js', 'market.js', 'license.js', 'insights.js', 'detector.js']) {
+    const canonical = fs.readFileSync(path.join(root, 'lib', file), 'utf8');
+    const mirrored = fs.readFileSync(path.join(root, 'server', 'lib', file), 'utf8');
+    assert.strictEqual(mirrored, canonical, `server/lib/${file} has drifted from lib/${file}`);
+  }
+});

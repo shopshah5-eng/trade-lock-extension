@@ -27,13 +27,24 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: key, deviceId: dev })
       }).then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data && !data.active && data.reason === 'device_registry_unavailable') {
+            // Fallback: validate license key integrity directly
+            return fetch(base + '/api/validate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ key: key })
+            }).then(function (r2) { return r2.json(); });
+          }
+          return data;
+        })
         .catch(function () { return { active: false, reason: 'network' }; });
     });
   }
 
   /** Validate and persist the outcome. Resolves the stored license object. */
   function activate(apiBase, key) {
-    var normKey = String(key || '').trim().toUpperCase();
+    var normKey = String(key || '').trim().toUpperCase().replace(/\s+/g, '');
     return new Promise(function (resolveGet) {
       chrome.storage.local.get('tlLicense', function (data) {
         resolveGet(data && data.tlLicense);
@@ -50,6 +61,9 @@
           key: normKey,
           active: !!res.active, plan: res.plan || null,
           expiresAt: res.expiresAt || null, reason: res.reason || null,
+          proPlus: !!res.proPlus, billingModel: res.billingModel || null,
+          cancelAtPeriodEnd: !!res.cancelAtPeriodEnd, cancelledAt: res.cancelledAt || null,
+          devicesUsed: res.devicesUsed || 0, maxDevices: res.maxDevices || null,
           validatedAt: Date.now()
         };
         return new Promise(function (resolve) {

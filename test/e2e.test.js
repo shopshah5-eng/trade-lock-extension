@@ -18,9 +18,6 @@ const path = require('node:path');
 const http = require('node:http');
 const { loadPuppeteer, chromeExecutable } = require('./browser-env');
 const puppeteer = loadPuppeteer();
-const TLMarket = require('../lib/market');
-const mockData = require('../server/mockData');
-const ai = require('../server/ai');
 
 const SRC = path.resolve(__dirname, '..');
 const PORT = 8123;
@@ -86,13 +83,11 @@ function serve(root) {
       res.writeHead(204);
       return res.end();
     }
-    if (p === '/api/market/demo') {
-      const symbol = new URL(req.url, 'http://127.0.0.1').searchParams.get('symbol') || 'NIFTY';
-      const candles = mockData.demoCandles(symbol);
-      const analysis = TLMarket.analyze(candles, { symbol, timeframe: '5m',
-        optionChain: mockData.demoOptionChain(symbol, candles[candles.length - 1].c), daysToExpiry: 2 });
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ demo: true, symbol, analysis, brief: { text: ai.localBrief(analysis), source: 'local' } }));
+    // The demo endpoint is gone. A feed-less server now answers honestly.
+    if (p === '/api/market/demo' || p === '/api/market/live') {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'market_feed_not_configured',
+        hint: 'No credential configured; nothing is fabricated.' }));
     }
     if (p === '/' || !p) p = 'demo/fake-broker.html';
     const cleanRel = p.replace(/^[/\\]+/, '');
@@ -157,20 +152,28 @@ function serve(root) {
   await sleep(2500);
 
   // ------------------------------------------------ 1. HUD comes up ----
-  console.log('1. HUD renders on a broker page');
+  console.log('1. No UI is injected into a broker page by default');
+  await sleep(1500);
   const hud = await page.$('#tl-hud');
-  check('Trade Lock HUD injected', !!hud);
-  const hudText = hud ? await page.$eval('#tl-hud', (e) => e.innerText) : '';
-  check('HUD shows the trade counters', /Trades/.test(hudText) && /Realised/.test(hudText), hudText.replace(/\n/g, ' | '));
-  check('HUD reports auto-detect is on', /auto-detect on/.test(hudText));
+  check('no floating widget appears unless the user opts in', !hud);
+  const injected = await page.evaluate(() => document.querySelectorAll('[id^="tl-"]').length);
+  check('no Trade Lock elements are injected into the DOM', injected === 0, 'found ' + injected);
 
-  // Background fetches a market snapshot from the license server (demo mode).
-  let marketText = '';
-  for (let i = 0; i < 8 && !marketText; i++) {
-    marketText = await page.$eval('#tl-market', (e) => (e.style.display !== 'none' ? e.textContent : '')).catch(() => '');
-    if (!marketText) await sleep(1000);
-  }
-  check('HUD shows live market context', /NIFTY|VWAP|supply|demand|resistance|support/i.test(marketText), marketText.slice(0, 90));
+  // With the widget off there is no #tl-market row to poll; the extension must
+  // simply stay invisible while the user trades normally.
+  // ------------------------------------- 1b. explicit opt-in shows it ----
+  await page.evaluate(() => new Promise((resolve) => {
+    chrome.storage.local.get('tlSettings', (res) => {
+      chrome.storage.local.set({ tlSettings: Object.assign({}, res.tlSettings || {}, { showHud: true }) }, resolve);
+    });
+  }));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await sleep(1800);
+  const hudOn = await page.$('#tl-hud');
+  check('the widget appears when showHud is enabled', !!hudOn);
+  const hudText = hudOn ? await page.$eval('#tl-hud', (e) => e.innerText) : '';
+  check('HUD shows the trade counters', /Trades/.test(hudText) && /Realised/.test(hudText), hudText.replace(/\n/g, ' | '));
+  check('no fabricated market context is shown', !/VWAP|max pain|PCR/i.test(hudText), hudText.slice(0, 90));
 
   // ------------------------------------- 2. auto-detect reads the book ----
   console.log('\n2. Auto-detect reads the order book');
@@ -417,7 +420,7 @@ function serve(root) {
     JSON.stringify(wide));
   check('wide workspace has no horizontal overflow and uses desktop nav', wide.scrollWidth <= wide.viewport && wide.mobileNav === 'none');
   check('overview has six quick actions and a rendered chart', wide.quickActions === 6 && wide.chartRendered);
-  check('overview chart is prominently labelled', /LIVE BROKER FEED|SIMULATED/.test(wide.demoLabel));
+  check('overview chart is prominently labelled', /LIVE BROKER FEED|NO MARKET FEED|SIMULATED/.test(wide.demoLabel));
   await optionsPage.screenshot({ path: path.join(SHOTS, 'options-wide.png'), fullPage: true });
 
   await optionsPage.select('#overviewSymbol', 'BANKNIFTY');

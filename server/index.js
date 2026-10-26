@@ -25,7 +25,6 @@ const upstoxProvider = require('./providers/upstox');
 const TLMarket = fs.existsSync(path.join(__dirname, 'lib', 'market.js'))
   ? require('./lib/market')
   : require('../lib/market');
-const mockData = require('./mockData');
 const fyers = require('./fyers');
 const ai = require('./ai');
 
@@ -638,15 +637,6 @@ const server = http.createServer(async (req, res) => {
 
 
     // ------------------------------------------------ market intelligence ----
-    if (req.method === 'GET' && url.pathname === '/api/market/demo') {
-      if (isRateLimited(req, 30, 60000)) return json(res, 429, { error: 'rate_limited' }, req);
-      const symbol = (url.searchParams.get('symbol') || 'NIFTY').toUpperCase();
-      const candles = mockData.demoCandles(symbol);
-      const analysis = TLMarket.analyze(candles, { symbol, timeframe: '5m', optionChain: mockData.demoOptionChain(symbol, candles[candles.length - 1].c), daysToExpiry: 2 });
-      const brief = await ai.summarize({ apiKey: OPENROUTER_API_KEY, geminiApiKey: GEMINI_API_KEY, analysis, allowRemote: false }, providerFetch);
-      return json(res, 200, { demo: true, symbol, candles: candles.length, analysis, brief }, req);
-    }
-
     if (req.method === 'POST' && url.pathname === '/api/market/analyze') {
       if (!await requireProPlus(req)) return json(res, 403, { error: 'pro_plus_required' }, req);
       if (isRateLimited(req, 30, 60000)) return json(res, 429, { error: 'rate_limited', detail: 'Analysis rate limit reached' }, req);
