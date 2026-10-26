@@ -1019,6 +1019,7 @@
       renderMonthlyJournal();
       renderOverviewJournalSummary(currentState, currentJournal);
       renderTickerStrip(res.tlMarket);
+      renderBrokerSupport();
     });
   }
 
@@ -1100,7 +1101,75 @@
     }
   }
 
+  /*
+   * Broker support matrix, built from the shipped adapter profiles so it can
+   * never drift from what the code actually does. Status is derived with the
+   * same rules the detector uses, and nothing here is hand-written hopeful copy.
+   */
+  function renderBrokerSupport() {
+    var tbody = el('brokerSupportTbody');
+    var profiles = globalThis.TLDetect && globalThis.TLDetect.BROKER_PROFILES;
+    if (!tbody || !profiles) return;
+
+    function badge(ok, okText, badText) {
+      return ok
+        ? '<span class="badge" style="background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3)">' + okText + '</span>'
+        : '<span class="badge" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3)">' + badText + '</span>';
+    }
+
+    var seen = {};
+    var names = Object.keys(profiles).filter(function (host) {
+      // The synthetic test broker ships for the adapter tests, not for users.
+      if (host === 'fake-broker.local' || (profiles[host] || {}).synthetic) return false;
+      // Sahi is registered under several hosts; show each product once.
+      var root = host.split('.').slice(-2).join('.');
+      if (seen[root]) return false;
+      seen[root] = true;
+      return true;
+    }).sort(function (a, b) {
+      var pa = profiles[a] || {}, pb = profiles[b] || {};
+      var va = pa.detectionStatus === 'DETECTION_VERIFIED' ? 0 : 1;
+      var vb = pb.detectionStatus === 'DETECTION_VERIFIED' ? 0 : 1;
+      if (va !== vb) return va - vb;
+      return String(pa.name || a).localeCompare(String(pb.name || b));
+    });
+
+    tbody.innerHTML = names.map(function (host) {
+      var p = profiles[host] || {};
+      // Same predicate the detector uses for order-level enforcement.
+      var restrictionVerified = Boolean(p.newOrderRestrictionTested && p.riskReducingActionBehaviorTested);
+      var detectionVerified = p.detectionStatus === 'DETECTION_VERIFIED';
+      return '<tr>' +
+        '<td style="font-weight:600">' + escapeHtml(p.name || host) +
+          '<div style="font-size:10.5px;color:var(--muted);font-weight:400">' + escapeHtml(host) + '</div></td>' +
+        '<td>' + badge(detectionVerified, 'Verified', 'Not verified') + '</td>' +
+        '<td>' + badge(restrictionVerified, 'Verified', 'Full-screen lock') + '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  /** Dashboard "feed" badge. Never claims LIVE unless data actually arrived. */
+  function renderOverviewFeedBadge(snap) {
+    var badge = el('overviewLiveBadge');
+    if (!badge) return;
+    var hasQuotes = Boolean(snap && snap.quotes && Object.keys(snap.quotes).length);
+    var isLive = Boolean(snap && snap.source === 'live' && (snap.spot != null || (snap.analysis && snap.analysis.ok)));
+
+    if (hasQuotes || isLive) {
+      var label = isLive ? 'LIVE FEED' : 'BROKER FEED';
+      badge.innerHTML = '<span class="live-pulse-dot" style="background:#10b981"></span> ' + label;
+      badge.className = 'demo-badge-green demo-badge';
+      badge.title = (snap && snap.provider) || '';
+    } else {
+      badge.innerHTML = '<span class="live-pulse-dot" style="background:#94a3b8"></span> NO FEED';
+      badge.className = 'demo-badge';
+      badge.style.cssText = 'background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25)';
+      badge.title = 'Open a supported broker tab, or connect a market feed on the server.';
+    }
+  }
+
   function renderTickerStrip(snap) {
+    renderOverviewFeedBadge(snap);
     var quotes = (snap && snap.quotes) || null;
     // A Pro+ snapshot carries analysis only, so fall back to its spot price.
     var livePx = snap && snap.source === 'live' && snap.spot != null
@@ -1311,7 +1380,7 @@
       setText('overviewChartSymbol', 'Awaiting live feed');
       setText('overviewChartPrice', '—');
       setText('overviewChartChange', '—');
-      setText('overviewChartSource', 'Live feed disconnected · Connect Fyers API v3 backend credentials');
+      setText('overviewChartSource', 'Live feed disconnected · connect a market feed on the server');
       return;
     }
     var candles = chartState.candles.slice(-42).filter(function (c) {
@@ -1713,7 +1782,7 @@
           modeBadge.innerHTML = '<span class="badge-dot-live" style="background:#10b981"></span> VERIFIED LIVE FEED';
           modeBadge.style.color = '#34d399';
         }
-        if (statusText) statusText.textContent = 'Provider: Fyers API v3 · ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
+        if (statusText) statusText.textContent = 'Provider: ' + (snap.provider || 'market feed') + ' · ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
 
         if (snap.analysis && snap.analysis.candles) {
           drawDedicatedSvgChart(svg, chartState.candles || []);
@@ -2440,14 +2509,14 @@
             setupCard.innerHTML =
               '<div class="live-setup-head">' +
                 '<span class="live-setup-title">🔴 Live Exchange Feed: Disconnected / Setup Required</span>' +
-                '<span class="badge danger" style="font-size:10px">Provider: Fyers API v3</span>' +
+                '<span class="badge danger" style="font-size:10px">Provider: server market feed</span>' +
               '</div>' +
               '<div class="live-setup-body">' +
                 'Live exchange WebSocket feed is not connected. Live market tick data requires verified broker API access. ' + escapeHtml(hint) +
                 ' To protect trading discipline, Trade Lock refuses to fabricate live ticks.' +
               '</div>' +
               '<div class="live-setup-meta">' +
-                '<span><b>Provider:</b> Fyers API v3</span>' +
+                '<span><b>Provider:</b> server market feed</span>' +
                 '<span><b>Endpoint:</b> /api/market/live</span>' +
                 '<span><b>Status:</b> ' + escapeHtml(String(err).toUpperCase()) + '</span>' +
                 '<span><b>Last Checked:</b> ' + new Date().toLocaleTimeString('en-IN') + ' IST</span>' +
@@ -2483,8 +2552,8 @@
             ? 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-size:11px'
             : 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399;font-size:11px';
           badgeEl.innerHTML = isStale
-            ? '⚠️ STALE FEED (>60s) · Fyers API v3'
-            : '🟢 LIVE FEED CONNECTED · Fyers API v3';
+            ? '⚠️ STALE FEED (>60s) · ' + escapeHtml(snap.provider || 'market feed')
+            : '🟢 LIVE FEED CONNECTED · ' + escapeHtml(snap.provider || 'market feed');
         }
         if (timeEl) timeEl.textContent = 'Tick Time: ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
         if (noteEl) noteEl.textContent = 'Live feed active';
@@ -2707,7 +2776,7 @@
       if (tbody) {
         tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:48px 16px;color:#94a3b8;font-size:13px;line-height:1.6">' +
           '<div style="font-size:15px;font-weight:600;margin-bottom:6px;color:#e2e8f0">🔴 Live Option Chain Disconnected</div>' +
-          '<div>Real-time option strikes, Greeks, Open Interest, and volume require an authenticated broker feed (Fyers API v3). Trade Lock does not fabricate simulated strikes.</div>' +
+          '<div>Real-time option strikes, Greeks, Open Interest and volume require a connected market feed (Upstox Analytics Token or Fyers). Nothing here is simulated.</div>' +
           '</td></tr>';
       }
       return;

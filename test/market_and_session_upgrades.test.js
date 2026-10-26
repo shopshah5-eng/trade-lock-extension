@@ -237,7 +237,9 @@ test('Section C: Truthful Live Market Feed vs Disconnected Setup State', () => {
 
   // options.js must display setup cards when feed is disconnected without alert popup
   assert.ok(optionsJs.includes('live-setup-card'), 'options.js must use live-setup-card');
-  assert.ok(optionsJs.includes('Fyers API v3'), 'options.js must reference Fyers API v3 provider truthfully');
+  // The provider is Upstox or Fyers now, so the UI must not hardcode either.
+  assert.ok(optionsJs.includes('snap.provider'), 'options.js must show the actual provider');
+  assert.ok(optionsJs.includes('Upstox Analytics Token'), 'options.js must name the recommended feed');
   assert.strictEqual(optionsJs.includes("alert('Live exchange WebSocket feed is not connected"), false, 'options.js must NOT show disruptive alert');
 });
 

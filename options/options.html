@@ -302,8 +302,8 @@
               <svg class="tl-icon" aria-hidden="true"><use href="#i-chart"></use></svg>
             </button>
           </div>
-          <span class="demo-badge-green demo-badge" id="overviewLiveBadge">
-            <span class="live-pulse-dot" style="background:#10b981"></span> LIVE BROKER FEED
+          <span class="demo-badge" id="overviewLiveBadge" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25)" title="Open a supported broker tab, or connect a market feed on the server.">
+            <span class="live-pulse-dot" style="background:#94a3b8"></span> NO FEED
           </span>
           <span id="overviewChartTitle" style="display:none">Market Overview</span>
           <span id="overviewChartSymbol" style="display:none">NIFTY 50 · NSE</span>
@@ -630,6 +630,25 @@
         <span class="txt"><span class="t">Count detected risk toward daily risk budget</span>
         <span class="s">Reads broker P&amp;L column or calculates quantity × price.</span></span>
       </label>
+      <div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,0.02)">
+        <div style="font-size:12.5px;font-weight:700;margin-bottom:4px">Which brokers are verified for auto-detection?</div>
+        <p class="desc" style="margin:0 0 10px">Trade Lock reads the broker's own order and position tables — it never places orders. Below is what has actually been tested, generated from the shipped adapter profiles rather than marketing copy. Automatic detection is a Pro feature; on Free you log each trade yourself.</p>
+        <div style="overflow-x:auto">
+          <table class="comparison-table" id="brokerSupportTable">
+            <thead>
+              <tr>
+                <th style="width:34%">Broker</th>
+                <th style="width:33%">Trade detection</th>
+                <th style="width:33%">Order restriction</th>
+              </tr>
+            </thead>
+            <tbody id="brokerSupportTbody">
+              <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:14px">Loading adapter profiles…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="desc" style="margin:10px 0 0"><b>Detection</b> means fills are read correctly from the broker's tables. <b>Order restriction</b> means new-order interception is implemented and tested. Where restriction is unavailable, the full-screen discipline lock is used instead — enforcement still works, it is simply not order-level.</p>
+      </div>
       <label class="switch">
         <input type="checkbox" id="showHud">
         <span class="track"></span>
@@ -752,7 +771,7 @@
           <span class="k">Data Source</span>
           <select id="marketSource">
             <option value="broker" selected>Active Broker Tab (Auto-Sync from Kite, Upstox, Fyers, Dhan)</option>
-            <option value="live">Fyers API v3 Cloud/Local Backend</option>
+            <option value="live">Server Market Feed (Upstox / Fyers)</option>
           </select>
         </label>
       </div>
@@ -921,7 +940,7 @@
           <p class="desc" style="margin:4px 0 0">Multi-timeframe candlestick &amp; volume analysis. Real-time OHLC inspection, intraday indicators, and support/resistance zones.</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <span class="demo-badge" id="chartsModeBadge" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399"><span class="badge-dot-live" style="background:#10b981"></span> LIVE BROKER FEED</span>
+          <span class="demo-badge" id="chartsModeBadge" style="background:rgba(148,163,184,0.12);border:1px solid rgba(148,163,184,0.25);color:#94a3b8"><span class="badge-dot-live" style="background:#94a3b8"></span> NO FEED</span>
         </div>
       </div>
 
