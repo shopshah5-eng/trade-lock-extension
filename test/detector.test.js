@@ -388,6 +388,27 @@ test('scanMarketQuotes extracts indices from document title and DOM watchlist', 
   assert.strictEqual(fromTitle.NIFTY.price, 24920.15);
   assert.strictEqual(fromTitle.NIFTY.source, 'title');
 
+  // 1b. From Fyers Web title (e.g. 22597.25 (-0.01%) NIFTY50)
+  const fyersDoc = linkedom.parseHTML('<!DOCTYPE html><html><head><title>22597.25 (-0.01%) NIFTY50</title></head><body></body></html>').document;
+  const fromFyers = D.scanMarketQuotes(fyersDoc);
+  assert.ok(fromFyers && fromFyers.NIFTY);
+  assert.strictEqual(fromFyers.NIFTY.price, 22597.25);
+  assert.strictEqual(fromFyers.NIFTY.changePercent, -0.01);
+  assert.strictEqual(fromFyers.NIFTY.source, 'title');
+
+  // 1c. From Fyers Bank Nifty title
+  const fyersBankDoc = linkedom.parseHTML('<!DOCTYPE html><html><head><title>48200.50 (+0.12%) BANKNIFTY</title></head><body></body></html>').document;
+  const fromFyersBank = D.scanMarketQuotes(fyersBankDoc);
+  assert.ok(fromFyersBank && fromFyersBank.BANKNIFTY);
+  assert.strictEqual(fromFyersBank.BANKNIFTY.price, 48200.5);
+  assert.strictEqual(fromFyersBank.BANKNIFTY.changePercent, 0.12);
+
+  // 1d. From Upstox title
+  const upstoxDoc = linkedom.parseHTML('<!DOCTYPE html><html><head><title>22,597.25 | NIFTY 50 - Upstox</title></head><body></body></html>').document;
+  const fromUpstox = D.scanMarketQuotes(upstoxDoc);
+  assert.ok(fromUpstox && fromUpstox.NIFTY);
+  assert.strictEqual(fromUpstox.NIFTY.price, 22597.25);
+
   // 2. From DOM elements
   const docWithDom = linkedom.parseHTML(`
     <html>

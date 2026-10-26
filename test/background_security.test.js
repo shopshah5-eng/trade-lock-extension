@@ -58,7 +58,7 @@ function createBackground(initial = {}) {
     },
   };
   const context = {
-    chrome, TLRules, console, URL, Date, Math, Promise, JSON, Number, String, Boolean,
+    chrome, TLRules, TLDetect: require('../lib/detector.js'), console, URL, Date, Math, Promise, JSON, Number, String, Boolean,
     setInterval() { return 1; }, clearInterval() {}, setTimeout,
     importScripts() {}, fetch: () => Promise.resolve({ json: () => Promise.resolve({}) }),
   };

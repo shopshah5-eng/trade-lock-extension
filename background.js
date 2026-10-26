@@ -14,8 +14,13 @@ var RELEASE_ALARM = 'tl-release';
 var TICK_ALARM = 'tl-tick';
 var BLOCK_RULE_ID = 91001;
 
+var D = (typeof TLDetect !== 'undefined' ? TLDetect : (typeof globalThis !== 'undefined' ? globalThis.TLDetect : null));
 if (typeof importScripts === 'function') {
-  try { importScripts('lib/rules.js'); } catch (e) {}
+  try { importScripts('lib/rules.js', 'lib/detector.js'); } catch (e) {}
+  if (!D && typeof TLDetect !== 'undefined') D = TLDetect;
+}
+if (!D && typeof require === 'function') {
+  try { D = require('./lib/detector.js'); } catch (e) {}
 }
 
 var NSE_HOLIDAYS_FALLBACK = {
@@ -254,6 +259,81 @@ function enforceLockOnBrokerTabs() {
   });
 }
 
+function probeOpenBrokerTabs() {
+  if (!chrome.tabs || !chrome.tabs.query) return Promise.resolve(null);
+  return chrome.tabs.query({}).then(function (tabs) {
+    if (!tabs || !tabs.length) return null;
+    var quotesFound = {};
+    var detectedBroker = null;
+    var detectedUrl = null;
+
+    for (var i = 0; i < tabs.length; i++) {
+      var tab = tabs[i];
+      var rawTitle = tab.title || '';
+      var rawUrl = tab.url || tab.pendingUrl || '';
+
+      var isBroker = isBrokerUrl(rawUrl);
+      var brokerName = 'Broker Tab';
+      if (rawUrl) {
+        try {
+          var host = new URL(rawUrl).hostname.toLowerCase();
+          if (host.includes('fyers')) brokerName = 'Fyers Web';
+          else if (host.includes('zerodha') || host.includes('kite')) brokerName = 'Zerodha Kite';
+          else if (host.includes('upstox')) brokerName = 'Upstox';
+          else if (host.includes('angelone') || host.includes('angelbroking')) brokerName = 'Angel One';
+          else if (host.includes('dhan')) brokerName = 'Dhan';
+          else if (host.includes('groww')) brokerName = 'Groww';
+          else if (host.includes('5paisa')) brokerName = '5paisa';
+          else if (host.includes('kotak')) brokerName = 'Kotak Neo';
+          else if (host.includes('icicidirect')) brokerName = 'ICICI Direct';
+          else if (host.includes('shoonya') || host.includes('finvasia')) brokerName = 'Shoonya';
+          else if (isBroker) brokerName = host;
+        } catch (e) {}
+      }
+
+      if (rawTitle && D && D.scanMarketQuotes) {
+        var scanned = D.scanMarketQuotes({ title: rawTitle });
+        if (scanned && Object.keys(scanned).length > 0) {
+          Object.assign(quotesFound, scanned);
+          if (rawTitle.toUpperCase().includes('FYERS') || (rawUrl && rawUrl.includes('fyers'))) {
+            brokerName = 'Fyers Web';
+          }
+          if (!detectedBroker || detectedBroker === 'Broker Tab') {
+            detectedBroker = brokerName;
+            detectedUrl = rawUrl;
+          }
+        }
+      }
+    }
+
+    if (Object.keys(quotesFound).length > 0) {
+      var payload = {
+        quotes: quotesFound,
+        brokerName: detectedBroker || 'Broker Tab',
+        brokerUrl: detectedUrl || '',
+        lastUpdated: Date.now()
+      };
+      var primaryQuote = quotesFound.NIFTY || quotesFound.BANKNIFTY || Object.values(quotesFound)[0];
+      var snap = {
+        fetchedAt: Date.now(),
+        source: 'broker',
+        symbol: primaryQuote ? primaryQuote.symbol : 'NIFTY',
+        provider: 'Active Broker Tab (' + (detectedBroker || 'Broker Tab') + ')',
+        quotes: quotesFound,
+        price: primaryQuote ? primaryQuote.price : null,
+        change: primaryQuote ? primaryQuote.change : 0,
+        changePercent: primaryQuote ? primaryQuote.changePercent : 0
+      };
+      return chrome.storage.local.set({ tlBrokerMarket: payload, tlMarket: snap }).then(function () {
+        return payload;
+      });
+    }
+    return null;
+  }).catch(function () {
+    return null;
+  });
+}
+
 function refresh() {
   return Promise.all([getState(), getSettings()]).then(function (r) {
     var state = r[0], settings = r[1];
@@ -449,7 +529,57 @@ chrome.alarms.onAlarm.addListener(function (alarm) {
 });
 
 chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
-  if (tab && tab.url && isBrokerUrl(tab.url)) {
+  var titleToScan = (changeInfo && changeInfo.title) || (tab && tab.title);
+  var rawUrl = (tab && (tab.url || tab.pendingUrl)) || '';
+
+  if (titleToScan && D && D.scanMarketQuotes) {
+    try {
+      var quotes = D.scanMarketQuotes({ title: titleToScan });
+      if (quotes && Object.keys(quotes).length > 0) {
+        var brokerName = 'Broker Tab';
+        if (rawUrl) {
+          try {
+            var host = new URL(rawUrl).hostname.toLowerCase();
+            if (host.includes('fyers')) brokerName = 'Fyers Web';
+            else if (host.includes('zerodha') || host.includes('kite')) brokerName = 'Zerodha Kite';
+            else if (host.includes('upstox')) brokerName = 'Upstox';
+            else if (host.includes('dhan')) brokerName = 'Dhan';
+            else if (host.includes('angelone') || host.includes('angelbroking')) brokerName = 'Angel One';
+            else if (host.includes('groww')) brokerName = 'Groww';
+          } catch (e) {}
+        }
+        if (titleToScan.toUpperCase().includes('FYERS')) brokerName = 'Fyers Web';
+
+        chrome.storage.local.get(['tlBrokerMarket', 'tlSettings'], function (res) {
+          var prev = (res && res.tlBrokerMarket && res.tlBrokerMarket.quotes) || {};
+          var merged = Object.assign({}, prev, quotes);
+          var payload = {
+            quotes: merged,
+            brokerName: brokerName,
+            brokerUrl: rawUrl,
+            lastUpdated: Date.now()
+          };
+          var toSet = { tlBrokerMarket: payload };
+          var primaryQuote = merged.NIFTY || merged.BANKNIFTY || Object.values(merged)[0];
+          if (primaryQuote) {
+            toSet.tlMarket = {
+              fetchedAt: Date.now(),
+              source: 'broker',
+              symbol: primaryQuote.symbol,
+              provider: 'Active Broker Tab (' + brokerName + ')',
+              quotes: merged,
+              price: primaryQuote.price,
+              change: primaryQuote.change,
+              changePercent: primaryQuote.changePercent
+            };
+          }
+          chrome.storage.local.set(toSet);
+        });
+      }
+    } catch (e) {}
+  }
+
+  if (rawUrl && isBrokerUrl(rawUrl)) {
     getState().then(function (state) {
       if (state && state.lock && state.lock.active && state.lock.until > Date.now()) {
         enforceLockOnBrokerTabs();
@@ -750,13 +880,18 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         } else {
           chrome.runtime.openOptionsPage();
         }
+        sendResponse({ ok: true });
       });
+      return true;
     } else if (chrome.tabs && chrome.tabs.create) {
       chrome.tabs.create({ url: targetUrl });
+      sendResponse({ ok: true });
+      return;
     } else {
       chrome.runtime.openOptionsPage();
+      sendResponse({ ok: true });
+      return;
     }
-    return;
   }
   if (msg.type === 'TL_REFRESH') {
     refresh().then(function (r) { sendResponse({ ok: true, locked: r.active }); });
@@ -781,13 +916,13 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         return chrome.storage.local.get('tlBrokerMarket').then(function (res) {
           var bm = res && res.tlBrokerMarket;
           var isRecent = bm && bm.quotes && (Date.now() - (bm.lastUpdated || 0) < 60 * 60 * 1000);
-          if (isRecent && Object.keys(bm.quotes).length > 0) {
-            var selectedQuote = bm.quotes[symbol] || bm.quotes.NIFTY || Object.values(bm.quotes)[0];
+          var handleFoundQuotes = function (payload) {
+            var selectedQuote = payload.quotes[symbol] || payload.quotes.NIFTY || Object.values(payload.quotes)[0];
             var snap = {
-              fetchedAt: bm.lastUpdated,
+              fetchedAt: payload.lastUpdated,
               source: 'broker',
-              provider: 'Active Broker Tab (' + (bm.brokerName || 'Broker') + ')',
-              quotes: bm.quotes,
+              provider: 'Active Broker Tab (' + (payload.brokerName || 'Broker') + ')',
+              quotes: payload.quotes,
               symbol: symbol,
               price: selectedQuote ? selectedQuote.price : null,
               change: selectedQuote ? selectedQuote.change : 0,
@@ -800,19 +935,33 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
                 source: 'broker',
                 provider: snap.provider,
                 fetchedAt: snap.fetchedAt,
-                quotes: bm.quotes,
+                quotes: payload.quotes,
                 data: snap
               });
             });
+          };
+
+          if (isRecent && Object.keys(bm.quotes).length > 0) {
+            return handleFoundQuotes(bm);
           }
-          sendResponse({
-            ok: false,
-            connected: false,
-            source: 'broker',
-            provider: 'Active Broker Tab',
-            error: 'no_broker_tab',
-            hint: 'No active broker tab detected. Keep your broker tab (Zerodha Kite, Fyers, Upstox, Dhan, Angel One) open in Chrome to stream live quotes automatically without API keys.'
+
+          return probeOpenBrokerTabs().then(function (probed) {
+            if (probed && probed.quotes && Object.keys(probed.quotes).length > 0) {
+              return handleFoundQuotes(probed);
+            }
+            sendResponse({
+              ok: false,
+              connected: false,
+              source: 'broker',
+              provider: 'Active Broker Tab',
+              error: 'no_broker_tab',
+              hint: 'No active broker tab detected. Keep your broker tab (Zerodha Kite, Fyers, Upstox, Dhan, Angel One) open in Chrome to stream live quotes automatically without API keys.'
+            });
+          }).catch(function (err) {
+            sendResponse({ ok: false, connected: false, error: err ? err.message : 'probe_failed' });
           });
+        }).catch(function (err) {
+          sendResponse({ ok: false, connected: false, error: err ? err.message : 'storage_failed' });
         });
       }
 
@@ -902,3 +1051,4 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
 // A safety net in case the SW was asleep when the lock expired.
 setInterval(function () { releaseIfDue(); }, 60 * 1000);
 refresh();
+probeOpenBrokerTabs();

@@ -10,15 +10,15 @@ const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
 function localBrief(a, coach) {
   if (!a || !a.ok) return 'Not enough market data for a brief yet.';
-  const res = a.nearestResistance[0], sup = a.nearestSupport[0];
+  const res = (a.nearestResistance || [])[0], sup = (a.nearestSupport || [])[0];
   const lines = [];
   lines.push(`${a.symbol || 'Instrument'} at ${a.price} — ${a.trend}, VWAP ${a.vwap}, RSI ${a.rsi14}.`);
   if (res) lines.push(`Nearest resistance ${res.price}${res.source === 'oi' ? ' (OI wall)' : ''}; nearest support ${sup ? sup.price : '—'}.`);
-  const dz = a.demandZones.filter((z) => !z.mitigated).slice(-1)[0];
-  const sz = a.supplyZones.filter((z) => !z.mitigated).slice(-1)[0];
+  const dz = (a.demandZones || []).filter((z) => !z.mitigated).slice(-1)[0];
+  const sz = (a.supplyZones || []).filter((z) => !z.mitigated).slice(-1)[0];
   if (sz && a.price < sz.high) lines.push(`Supply overhead ${sz.low}–${sz.high}: avoid chasing longs into it.`);
   if (dz) lines.push(`Demand below ${dz.low}–${dz.high}${dz.fresh ? ' (fresh, untested)' : ''}.`);
-  const fvg = a.fvgs.filter((g) => !g.mitigated).slice(-1)[0];
+  const fvg = (a.fvgs || []).filter((g) => !g.mitigated).slice(-1)[0];
   if (fvg) lines.push(`Unfilled ${fvg.type} FVG ${fvg.low}–${fvg.high} can act as a magnet.`);
   if (a.oi) lines.push(`Option OI: PCR ${a.oi.pcr}, call wall ${a.oi.maxCallOiStrike}, put wall ${a.oi.maxPutOiStrike}, max pain ${a.oi.maxPain}.`);
   if (a.theta) lines.push('Time decay: ' + a.theta.verdict);

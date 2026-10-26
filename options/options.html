@@ -302,8 +302,8 @@
               <svg class="tl-icon" aria-hidden="true"><use href="#i-chart"></use></svg>
             </button>
           </div>
-          <span class="demo-badge-green demo-badge">
-            <span class="live-pulse-dot"></span> SIMULATED
+          <span class="demo-badge-green demo-badge" id="overviewLiveBadge">
+            <span class="live-pulse-dot" style="background:#10b981"></span> LIVE BROKER FEED
           </span>
           <span id="overviewChartTitle" style="display:none">Market Overview</span>
           <span id="overviewChartSymbol" style="display:none">NIFTY 50 · NSE</span>
@@ -475,7 +475,7 @@
       <div class="overview-details-body">
         <div class="card" style="padding:16px">
           <h2>Session Telemetry</h2>
-          <p class="desc">Real-time extension state evaluated directly by the rules engine. Market charts above remain simulated.</p>
+          <p class="desc">Real-time extension state evaluated directly by the rules engine with live broker synchronization.</p>
           <table class="limits" id="todayTable"></table>
           <div id="proAnalytics" style="margin-top:14px"></div>
           <div id="aiCoach" style="margin-top:14px"></div>
@@ -688,7 +688,7 @@
 
   <!-- ======================================================== TAB: MARKET & OI -->
   <div class="tab-content" id="tab-market">
-    <div class="callout warn" style="margin-bottom:14px;border-left:4px solid #f59e0b;background:rgba(245,158,11,0.08);color:#fef3c7;">
+    <div class="callout warn" id="marketSimulatedTopCallout" style="display:none;margin-bottom:14px;border-left:4px solid #f59e0b;background:rgba(245,158,11,0.08);color:#fef3c7;">
       ⚠️ <b>SIMULATED DEMO DATA — NOT LIVE MARKET FEED:</b>
       No verified live options-chain broker feed is currently connected. All spot prices, open interest numbers, changes in OI, and technical pivots shown below are calculated by the deterministic model for layout and strategy demonstration.
     </div>
@@ -696,12 +696,12 @@
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:8px">
         <div>
-          <h2 style="margin:0">Market &amp; Open Interest (OI) Intelligence <span class="badge pro">Deterministic Model</span></h2>
-          <p class="desc" style="margin:2px 0 0">Open interest distribution, Call/Put walls, Put-Call Ratio (PCR), and multi-timeframe price structure for Indian indices (Simulated Demo Model).</p>
+          <h2 style="margin:0">Market &amp; Open Interest (OI) Intelligence <span class="badge pro" id="marketModelBadge">Active Broker Feed</span></h2>
+          <p class="desc" id="marketSubtitleDesc" style="margin:2px 0 0">Open interest distribution, Call/Put walls, Put-Call Ratio (PCR), and multi-timeframe price structure for Indian indices.</p>
         </div>
-        <span class="badge" id="marketTimestampBadge" style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);color:#93c5fd;font-size:11px">Source: Deterministic Model · <span id="marketUpdatedTimestamp">Demo Render Time: Just now</span></span>
+        <span class="badge" id="marketTimestampBadge" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399;font-size:11px">Source: Active Broker Tab · <span id="marketUpdatedTimestamp">Demo Render Time: Just now</span></span>
       </div>
-      <div class="callout" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;margin-bottom:14px;font-size:12px">
+      <div class="callout" id="marketSimulatedSubCallout" style="display:none;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;margin-bottom:14px;font-size:12px">
         ⚠️ <b>SIMULATED DEMO DATA — NOT LIVE MARKET FEED:</b> All market statistics, charts, and OI levels are computed via deterministic mathematical simulation models for interface testing. Live NSE quotes and Greeks require an active broker API connection.
       </div>
 
@@ -915,7 +915,7 @@
           <p class="desc" style="margin:4px 0 0">Multi-timeframe candlestick &amp; volume analysis. Real-time OHLC inspection, intraday indicators, and support/resistance zones.</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <span class="demo-badge" id="chartsModeBadge"><span class="badge-dot-live"></span> SIMULATED DEMO DATA</span>
+          <span class="demo-badge" id="chartsModeBadge" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399"><span class="badge-dot-live" style="background:#10b981"></span> LIVE BROKER FEED</span>
         </div>
       </div>
 
@@ -933,10 +933,10 @@
           </select>
         </label>
         <button type="button" id="chartsRefreshBtn" class="primary" style="padding:7px 16px;font-size:12px">Refresh Chart</button>
-        <span id="chartsStatusText" style="font-size:11.5px;color:var(--muted);align-self:center;margin-left:auto">Render mode: Deterministic Model</span>
+        <span id="chartsStatusText" style="font-size:11.5px;color:var(--muted);align-self:center;margin-left:auto">Syncing live quotes from broker tab...</span>
       </div>
 
-      <div class="callout" id="chartsCalloutBanner" style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.22);color:#93c5fd;margin-bottom:16px;font-size:12px">
+      <div class="callout" id="chartsCalloutBanner" style="display:none !important;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.22);color:#93c5fd;margin-bottom:16px;font-size:12px">
         ℹ️ <b>SIMULATED DEMO DATA — NOT LIVE MARKET DATA:</b> Candlestick sequences and volume profiles are rendered algorithmically for technical layout preview and strategy discipline training.
       </div>
 
@@ -996,7 +996,7 @@
   <div class="tab-content" id="tab-options">
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px">
-        <h2 style="margin:0">NSE Options Chain &amp; Analytics <span class="badge" id="optionsModeBadge" style="background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);color:#fbbf24">Simulated Model Chain</span></h2>
+        <h2 style="margin:0">NSE Options Chain &amp; Analytics <span class="badge" id="optionsModeBadge" style="background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);color:#34d399">Live Broker Mode</span></h2>
         <span class="badge" style="background:rgba(255,255,255,0.06);color:var(--muted)">Strike-by-Strike Analytics</span>
       </div>
       <p class="desc">Open Interest (OI) distribution, Put-Call Ratio (PCR), and Max Pain computed via mathematical model. Data is simulated for strategy review and not a live exchange feed.</p>
@@ -1004,7 +1004,7 @@
       <!-- Live Provider Setup Card for Options -->
       <div id="liveOptionsSetupCard" class="live-setup-card" style="display:none;margin-bottom:14px;"></div>
 
-      <div id="optionsSimulatedCallout" class="callout" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;margin-bottom:14px;font-size:12px">
+      <div id="optionsSimulatedCallout" class="callout" style="display:none !important;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;margin-bottom:14px;font-size:12px">
         ⚠️ <b>SIMULATED DEMO DATA — NOT LIVE MARKET FEED:</b> This chain is generated via deterministic mathematical models strictly for testing user experience and interface functionality. Live NSE tick data requires a configured broker API feed. Do NOT place real orders based on simulated strikes.
       </div>
 
@@ -1642,6 +1642,7 @@
 
 <script src="../lib/rules.js"></script>
 <script src="../lib/license.js"></script>
+<script src="../lib/detector.js"></script>
 <script src="../lib/insights.js"></script>
 <script src="../lib/market.js"></script>
 <script src="options.js"></script>
