@@ -1044,6 +1044,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
             brief: result.body.brief || null,
             candles: result.body.candles || 0,
             spot: typeof result.body.spot === 'number' ? result.body.spot : null,
+            vix: result.body.vix || null,
             optionChain: Array.isArray(result.body.optionChain) ? result.body.optionChain : null
           };
           return chrome.storage.local.set({ tlMarket: snap }).then(function () {

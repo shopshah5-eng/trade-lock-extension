@@ -104,6 +104,7 @@ async function fetchMarket({
   try {
     let candles = [];
     let chain = null;
+    let vix = null;
 
     if (p.id === 'upstox') {
       const client = upstox.createClient({ accessToken: process.env.UPSTOX_ANALYTICS_TOKEN }, fetchImpl);
@@ -117,6 +118,9 @@ async function fetchMarket({
       candles = Array.from(byTime.values()).sort((a, b) => a.t - b.t);
       chain = await client.optionChain({ instrumentKey: symbol, expiry: expiry || defaultExpiryFor() })
         .catch(() => null);
+      // India VIX powers the volatility panel. Optional: a failure here must not
+      // take down the candles the user actually paid for.
+      vix = await client.quote({ instrumentKey: 'INDIAVIX' }).catch(() => null);
     } else {
       const fyers = require('./fyers');
       const client = fyers.createClient(
@@ -144,7 +148,7 @@ async function fetchMarket({
     // instead of being recomputed (or worse, invented) in the extension.
     const spot = candles.length ? Number(candles[candles.length - 1].c) : null;
     const value = { ok: true, provider: p.id, symbol, resolution, candles,
-      optionChain: chain, spot, fetchedAt: Date.now() };
+      optionChain: chain, spot, vix, fetchedAt: Date.now() };
     cacheSet(key, value, CACHE_TTL_MS);
     return value;
   } catch (e) {

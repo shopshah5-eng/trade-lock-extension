@@ -32,6 +32,7 @@ const INSTRUMENT_KEYS = {
   MIDCPNIFTY: 'NSE_INDEX|NIFTY MID SELECT',
   SENSEX: 'BSE_INDEX|SENSEX',
   BANKEX: 'BSE_INDEX|BANKEX',
+  INDIAVIX: 'NSE_INDEX|India VIX',
 };
 
 function instrumentKeyFor(symbol) {
@@ -203,6 +204,22 @@ function createClient({ accessToken }, fetchImpl, base) {
         expiry_date: expiry || 'current_week',
       });
       return normalizeOptionChain(data);
+    },
+
+    /** Last price + previous close for one instrument (used for India VIX). */
+    async quote({ instrumentKey }) {
+      const data = await get('/v2/market-quote/quotes', { instrument_key: instrumentKeyFor(instrumentKey) });
+      const rows = (data && data.data) || {};
+      const first = Object.values(rows)[0];
+      if (!first) return null;
+      const last = Number(first.last_price);
+      const prev = Number(first.close_price);
+      if (!Number.isFinite(last)) return null;
+      return {
+        value: last,
+        prevClose: Number.isFinite(prev) ? prev : null,
+        change: Number(first.net_change) || (Number.isFinite(prev) ? last - prev : null),
+      };
     },
 
     /** Last traded price — also used as a cheap token liveness check. */

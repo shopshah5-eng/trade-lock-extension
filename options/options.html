@@ -763,22 +763,22 @@
       <!-- Active Broker Live Watchlist Ticker (Approach B) -->
       <div id="brokerTickerStrip" class="grid4" style="margin-bottom:16px;display:none;">
         <div class="stat-card" style="border-left:3px solid #38bdf8">
-          <span class="stat-lbl" style="display:flex;justify-content:space-between">NIFTY 50 <span id="tickerNiftySrc" class="badge pro" style="font-size:9px">LIVE</span></span>
+          <span class="stat-lbl" style="display:flex;justify-content:space-between">NIFTY 50 <span id="tickerNiftySrc" class="badge" style="font-size:9px">NO FEED</span></span>
           <span class="stat-val" id="tickerNiftyPrice">—</span>
           <span class="stat-sub" id="tickerNiftyChg">—</span>
         </div>
         <div class="stat-card" style="border-left:3px solid #a855f7">
-          <span class="stat-lbl" style="display:flex;justify-content:space-between">BANK NIFTY <span id="tickerBankSrc" class="badge pro" style="font-size:9px">LIVE</span></span>
+          <span class="stat-lbl" style="display:flex;justify-content:space-between">BANK NIFTY <span id="tickerBankSrc" class="badge" style="font-size:9px">NO FEED</span></span>
           <span class="stat-val" id="tickerBankPrice">—</span>
           <span class="stat-sub" id="tickerBankChg">—</span>
         </div>
         <div class="stat-card" style="border-left:3px solid #10b981">
-          <span class="stat-lbl" style="display:flex;justify-content:space-between">FIN NIFTY <span id="tickerFinSrc" class="badge pro" style="font-size:9px">LIVE</span></span>
+          <span class="stat-lbl" style="display:flex;justify-content:space-between">FIN NIFTY <span id="tickerFinSrc" class="badge" style="font-size:9px">NO FEED</span></span>
           <span class="stat-val" id="tickerFinPrice">—</span>
           <span class="stat-sub" id="tickerFinChg">—</span>
         </div>
         <div class="stat-card" style="border-left:3px solid #f59e0b">
-          <span class="stat-lbl" style="display:flex;justify-content:space-between">BSE SENSEX <span id="tickerSensexSrc" class="badge pro" style="font-size:9px">LIVE</span></span>
+          <span class="stat-lbl" style="display:flex;justify-content:space-between">BSE SENSEX <span id="tickerSensexSrc" class="badge" style="font-size:9px">NO FEED</span></span>
           <span class="stat-val" id="tickerSensexPrice">—</span>
           <span class="stat-sub" id="tickerSensexChg">—</span>
         </div>
@@ -833,12 +833,12 @@
         </div>
         <div class="stat-card">
           <span class="stat-lbl">Put-Call Ratio (PCR)</span>
-          <span class="stat-val" id="marketPcrVal">1.08</span>
-          <span class="stat-sub" id="marketPcrBias">Mild Bullish Sentiment</span>
+          <span class="stat-val" id="marketPcrVal">—</span>
+          <span class="stat-sub" id="marketPcrBias">—</span>
         </div>
         <div class="stat-card">
           <span class="stat-lbl">Max Pain Strike</span>
-          <span class="stat-val" id="marketMaxPainVal">24,500</span>
+          <span class="stat-val" id="marketMaxPainVal">—</span>
           <span class="stat-sub">Lowest option payout</span>
         </div>
         <div class="stat-card">
@@ -870,8 +870,8 @@
           </div>
           <div class="stat-card">
             <span class="stat-lbl">Call IV vs Put IV</span>
-            <span class="stat-val" id="vixSkew">13.4% / 14.2%</span>
-            <span class="stat-sub">ATM Put Skew (+0.80%)</span>
+            <span class="stat-val" id="vixSkew">—</span>
+            <span class="stat-sub">From live option greeks</span>
           </div>
           <div class="stat-card">
             <span class="stat-lbl">Spike Alert Status</span>
@@ -1058,18 +1058,28 @@
         </div>
         <div class="stat-card">
           <span class="stat-lbl">Call Theta (ATM CE)</span>
-          <span class="stat-val" id="optCallThetaVal" style="color:#34d399">₹-18.40 / d</span>
-          <span class="stat-sub" id="optCallThetaSub">~13.2% decay / day</span>
+          <span class="stat-val" id="optCallThetaVal" style="color:#34d399">—</span>
+          <span class="stat-sub" id="optCallThetaSub">Awaiting live greeks</span>
         </div>
         <div class="stat-card">
           <span class="stat-lbl">Put Theta (ATM PE)</span>
-          <span class="stat-val" id="optPutThetaVal" style="color:#f87171">₹-16.10 / d</span>
-          <span class="stat-sub" id="optPutThetaSub">~11.8% decay / day</span>
+          <span class="stat-val" id="optPutThetaVal" style="color:#f87171">—</span>
+          <span class="stat-sub" id="optPutThetaSub">Awaiting live greeks</span>
         </div>
         <div class="stat-card">
           <span class="stat-lbl">Estimated Decay (1 Hour)</span>
-          <span class="stat-val" id="optHourlyDecay">₹-2.75 / lot</span>
-          <span class="stat-sub">Black-Scholes model estimate</span>
+          <span class="stat-val" id="optHourlyDecay">—</span>
+          <span class="stat-sub">Half of combined ATM theta</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">Put-Call Ratio (PCR)</span>
+          <span class="stat-val" id="optPcrVal">—</span>
+          <span class="stat-sub" id="optPcrBias">Awaiting live feed</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-lbl">Max Pain Strike</span>
+          <span class="stat-val" id="optMaxPain">—</span>
+          <span class="stat-sub">Strike with lowest total payout</span>
         </div>
       </div>
 

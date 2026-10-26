@@ -93,7 +93,7 @@ The Node server in `server/` provides the pricing page, Razorpay order/signature
 - Email success means the provider accepted the request, not that inbox delivery is guaranteed.
 - Email-only recovery does not disclose subscription metadata or reissue a key. Verified support uses the admin reissue flow.
 
-See **[RAZORPAY_SETUP.md](RAZORPAY_SETUP.md)** for local demo, Supabase SQL, deployment, webhook, provider, and support procedures. See **[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)** for verified versus externally required checks.
+See **[SUPABASE_SETUP.md](SUPABASE_SETUP.md)** for the end-to-end payment setup (Supabase project, schema, env vars, webhook, self-test). See **[RAZORPAY_SETUP.md](RAZORPAY_SETUP.md)** for local demo, deployment, provider, and support procedures. See **[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)** for verified versus externally required checks.
 
 ## Tests and packaging
 

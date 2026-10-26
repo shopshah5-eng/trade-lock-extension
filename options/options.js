@@ -175,10 +175,26 @@
     var tPct = parseFloat(el('perTradeRiskPercent').value) || 0;
     var box = el('planSummary');
     if (!box) return;
+    // The capital plan is only enforced on Pro: effectiveSettings() forces the
+    // risk rules to 0 on the free tier, so promising a lock here would be a lie.
+    var onPro = planState(currentSettings, currentLicense).pro;
+
     if (cap > 0 && (dPct > 0 || tPct > 0)) {
       var day = R.dailyRiskLimit({ totalCapital: cap, dailyRiskPercent: dPct });
       var per = R.plannedRiskPerTrade({ totalCapital: cap, perTradeRiskPercent: tPct });
       var rpu = parseFloat(el('riskPerUnit') ? el('riskPerUnit').value : '0') || 0;
+
+      if (!onPro) {
+        box.innerHTML = 'Your plan is saved: <b>' + R.inr(cap) + '</b> capital, daily budget <b>' +
+          (day ? R.inr(day) : '—') + '</b>, risk per trade <b>' + (per ? R.inr(per) : '—') + '</b>.' +
+          '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;' +
+          'background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.35);color:#fcd34d">' +
+          '<b>Not enforced on the Free plan.</b> Capital-based limits, loss limits and risk caps ' +
+          'activate with Pro. On Free, only the daily trade limit locks your screen.' +
+          '</div>';
+        return;
+      }
+
       box.innerHTML = 'On ' + R.inr(cap) + ' capital: daily risk budget <b>' + (day ? R.inr(day) : '—') +
         '</b> · planned risk per trade <b>' + (per ? R.inr(per) : '—') + '</b>. ' +
         'The screen locks when the day\'s used risk reaches the budget — but only after your open trade closes.';
@@ -951,7 +967,7 @@
 
   function loadAll() {
     if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
-    chrome.storage.local.get(['tlSettings', 'tlState', 'tlLicense', 'tlJournal', 'tlUserEmail', 'tlDailyFocus', 'tlProfile'], function (res) {
+    chrome.storage.local.get(['tlSettings', 'tlState', 'tlLicense', 'tlJournal', 'tlUserEmail', 'tlDailyFocus', 'tlProfile', 'tlMarket'], function (res) {
       if (res.tlProfile) currentProfile = res.tlProfile;
       var profName = (currentProfile && currentProfile.name && currentProfile.name.trim()) ? currentProfile.name.trim() : 'Trader';
       setText('sideUserName', profName);
@@ -973,7 +989,18 @@
         res.tlSettings.marketSource = 'broker';
         chrome.storage.local.set({ tlSettings: res.tlSettings });
       }
-      if (!dirty) fill(s);
+      /*
+       * Render the user's STORED settings, not the entitlement-filtered ones.
+       * effectiveSettings() zeroes loss/risk limits on the free tier, and read()
+       * copies every NUM field straight back out of the DOM - so filling with the
+       * filtered copy silently wiped a lapsed Pro user's limits on the next save.
+       * Entitlement filtering still happens at enforcement time in the service worker.
+       */
+      var stored = Object.assign({}, R.DEFAULT_SETTINGS, res.tlSettings || {});
+      if (!stored.marketSource || stored.marketSource === 'demo') {
+        stored.marketSource = 'broker';
+      }
+      if (!dirty) fill(stored);
       renderLicense(currentLicense, s);
       maybeRevalidate(currentLicense, s);
 
@@ -991,6 +1018,134 @@
       currentJournal = Array.isArray(res.tlJournal) ? res.tlJournal : [];
       renderMonthlyJournal();
       renderOverviewJournalSummary(currentState, currentJournal);
+      renderTickerStrip(res.tlMarket);
+    });
+  }
+
+  /*
+   * Index ticker strip. Free/Pro read quotes scraped from the user's open broker
+   * tab; Pro+ gets them from the server feed. With neither, every cell shows an
+   * em-dash and the badge admits there is no source — it never shows a price we
+   * did not receive.
+   */
+  var TICKER_CELLS = [
+    { sym: 'NIFTY', price: 'tickerNiftyPrice', chg: 'tickerNiftyChg', src: 'tickerNiftySrc' },
+    { sym: 'BANKNIFTY', price: 'tickerBankPrice', chg: 'tickerBankChg', src: 'tickerBankSrc' },
+    { sym: 'FINNIFTY', price: 'tickerFinPrice', chg: 'tickerFinChg', src: 'tickerFinSrc' },
+    { sym: 'SENSEX', price: 'tickerSensexPrice', chg: 'tickerSensexChg', src: 'tickerSensexSrc' }
+  ];
+
+  /*
+   * India VIX panel. Every value comes from the provider: VIX level and change
+   * from the quote, IV rank skipped (needs a year of history we do not fetch),
+   * and the call/put IV skew from the live ATM greeks.
+   */
+  function renderVolatilityPanel(vix, rows, spot) {
+    var level = vix && Number(vix.value) > 0 ? Number(vix.value) : null;
+
+    if (el('vixVal')) el('vixVal').textContent = level == null ? '—' : level.toFixed(2);
+
+    var chgEl = el('vixChg');
+    if (chgEl) {
+      var chg = vix ? Number(vix.change) : NaN;
+      if (level == null || !isFinite(chg)) {
+        chgEl.textContent = '—';
+        chgEl.style.color = '';
+      } else {
+        var pct = vix.prevClose ? (chg / vix.prevClose) * 100 : null;
+        chgEl.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) +
+          (pct == null ? '' : ' (' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%)');
+        chgEl.style.color = chg >= 0 ? '#10b981' : '#f87171';
+      }
+    }
+
+    // IV rank needs a year of VIX history, which this feed does not fetch.
+    if (el('vixRank')) el('vixRank').textContent = '—';
+
+    // ATM call/put IV straight from the chain.
+    var atm = null;
+    if (spot != null) {
+      var best = Infinity;
+      for (var i = 0; i < rows.length; i++) {
+        var d = Math.abs(Number(rows[i].strike) - spot);
+        if (d < best) { best = d; atm = rows[i]; }
+      }
+    }
+    var callIv = atm ? Number(atm.callIv) : NaN;
+    var putIv = atm ? Number(atm.putIv) : NaN;
+    if (el('vixSkew')) {
+      el('vixSkew').textContent = (isFinite(callIv) && callIv > 0 && isFinite(putIv) && putIv > 0)
+        ? callIv.toFixed(2) + '% / ' + putIv.toFixed(2) + '%'
+        : '—';
+    }
+
+    var spike = level != null && level >= 20;
+    if (el('vixAlertStatus')) {
+      el('vixAlertStatus').textContent = level == null ? '—' : (spike ? '⚠️ Elevated volatility' : 'Normal');
+      el('vixAlertStatus').style.color = level == null ? '' : (spike ? '#f87171' : '#34d399');
+    }
+    if (el('vixRegimeBadge')) {
+      if (level == null) {
+        el('vixRegimeBadge').textContent = 'Regime: no feed';
+        el('vixRegimeBadge').style.background = 'rgba(148,163,184,0.12)';
+        el('vixRegimeBadge').style.color = '#94a3b8';
+        el('vixRegimeBadge').style.border = '1px solid rgba(148,163,184,0.25)';
+      } else {
+        var label = level >= 20 ? 'High' : level >= 15 ? 'Elevated' : 'Calm';
+        el('vixRegimeBadge').textContent = 'Regime: ' + label + ' (' + level.toFixed(2) + ')';
+        el('vixRegimeBadge').style.background = spike ? 'rgba(239,68,68,0.18)' : 'rgba(16,185,129,0.18)';
+        el('vixRegimeBadge').style.color = spike ? '#f87171' : '#34d399';
+        el('vixRegimeBadge').style.border = '1px solid ' + (spike ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)');
+      }
+    }
+  }
+
+  function renderTickerStrip(snap) {
+    var quotes = (snap && snap.quotes) || null;
+    // A Pro+ snapshot carries analysis only, so fall back to its spot price.
+    var livePx = snap && snap.source === 'live' && snap.spot != null
+      ? { NIFTY: { price: snap.spot, changePercent: null } } : null;
+    var provider = snap && snap.provider ? String(snap.provider) : '';
+
+    TICKER_CELLS.forEach(function (cell) {
+      var q = quotes ? quotes[cell.sym] : null;
+      if (!q && livePx) q = livePx[cell.sym];
+      var priceEl = el(cell.price);
+      var chgEl = el(cell.chg);
+      var srcEl = el(cell.src);
+
+      if (q && Number(q.price) > 0) {
+        if (priceEl) {
+          priceEl.textContent = Number(q.price).toLocaleString('en-IN', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+          });
+        }
+        var pct = Number(q.changePercent);
+        if (chgEl) {
+          if (isFinite(pct) && pct !== 0) {
+            var sign = pct > 0 ? '+' : '';
+            chgEl.textContent = sign + pct.toFixed(2) + '%';
+            chgEl.style.color = pct >= 0 ? 'var(--tl-green)' : '#f87171';
+          } else {
+            chgEl.textContent = '';
+          }
+        }
+        if (srcEl) {
+          srcEl.textContent = snap.source === 'live' ? 'LIVE' : 'BROKER';
+          srcEl.className = 'badge';
+          srcEl.style.cssText = 'font-size:9px;background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3)';
+          srcEl.title = provider || '';
+        }
+      } else {
+        if (priceEl) priceEl.textContent = '—';
+        if (chgEl) { chgEl.textContent = '—'; chgEl.style.color = ''; }
+        if (srcEl) {
+          srcEl.textContent = 'NO FEED';
+          srcEl.className = 'badge';
+          srcEl.style.cssText = 'font-size:9px;background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25)';
+          srcEl.title = 'Open a supported broker tab to see live index quotes.';
+        }
+      }
     });
   }
 
@@ -2001,6 +2156,25 @@
       return;
     }
 
+    // Market-tab PCR / max pain come from the live analysis. These cards used to
+    // hold hardcoded values that never changed.
+    if (a.oi) {
+      if (el('marketPcrVal')) el('marketPcrVal').textContent = a.oi.pcr != null ? a.oi.pcr : '—';
+      if (el('marketPcrBias')) {
+        var pcr = Number(a.oi.pcr);
+        el('marketPcrBias').textContent = !isFinite(pcr) ? '—'
+          : pcr > 1.2 ? 'Bullish Sentiment' : pcr < 0.8 ? 'Bearish Sentiment' : 'Neutral Range';
+      }
+      if (el('marketMaxPainVal')) {
+        el('marketMaxPainVal').textContent = a.oi.maxPain != null
+          ? Number(a.oi.maxPain).toLocaleString('en-IN') : '—';
+      }
+    } else {
+      if (el('marketPcrVal')) el('marketPcrVal').textContent = '—';
+      if (el('marketPcrBias')) el('marketPcrBias').textContent = 'No option chain';
+      if (el('marketMaxPainVal')) el('marketMaxPainVal').textContent = '—';
+    }
+
     var zonesHtml = function (list, label) {
       if (!list || !list.length) return '';
       return '<tr><td class="k">' + label + '</td><td class="v">' + list.slice(-3).map(function (z) {
@@ -2321,6 +2495,8 @@
         chartState.optionRows = Array.isArray(snap.optionChain) ? snap.optionChain : [];
         chartState.fullOptionRows = chartState.optionRows;
 
+        renderVolatilityPanel(snap.vix, chartState.optionRows, chartState.chainSpot);
+
         if (snap.analysis) renderMarketData(snap);
         renderOptionsChainView();
       });
@@ -2361,6 +2537,7 @@
     chartState.optionRows = [];
     chartState.fullOptionRows = [];
     chartState.chainSpot = null;
+    renderVolatilityPanel(null, [], null);
     chartState.symbol = symbol;
     chartState.timeframe = tf;
     chartState.panOffset = 0;

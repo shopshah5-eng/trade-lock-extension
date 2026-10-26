@@ -104,7 +104,9 @@ test('Deployment: a self-hosted API origin can be granted without a rebuild', ()
 test('No demo: no fake market numbers are baked into the markup', () => {
   const html = read('options/options.html');
   const fakes = ['₹24,520.00', '₹24,510', '24,441.20', '24,612.30', '24,400.10', '24,437.55',
-    '+82.45 (+0.34%)', '13.85', '48% / 52%', '₹142.50'];
+    '+82.45 (+0.34%)', '13.85', '48% / 52%', '₹142.50', '₹-18.40', '₹-16.10', '₹-2.75',
+    '~13.2% decay', '~11.8% decay', '>1.08<', '24,500', 'Mild Bullish Sentiment', '54.2',
+    '13.4% / 14.2%'];
   for (const fake of fakes) {
     assert.strictEqual(html.includes(fake), false, `hardcoded market value still present: ${fake}`);
   }
@@ -127,4 +129,40 @@ test('No demo: free licences can never be minted on a hosted platform', () => {
     'demo checkout must refuse to run on serverless/hosted platforms');
   assert.ok(server.includes("process.env.NODE_ENV !== 'production'"),
     'demo checkout must refuse to run in production');
+});
+
+test('No demo: live PCR / max pain reach the cards that display them', () => {
+  const options = read('options/options.js');
+  const html = read('options/options.html');
+  // The market-tab cards must exist AND be written from live analysis, not left stale.
+  for (const id of ['marketPcrVal', 'marketPcrBias', 'marketMaxPainVal']) {
+    assert.ok(html.includes('id="' + id + '"'), `${id} must exist in the markup`);
+    assert.ok(options.includes("el('" + id + "')"), `${id} must be written by the UI`);
+  }
+  // The options-tab metrics the code writes to must also exist.
+  for (const id of ['optPcrVal', 'optPcrBias', 'optMaxPain', 'optHourlyDecay']) {
+    assert.ok(html.includes('id="' + id + '"'), `${id} must exist or its updates are dead code`);
+  }
+});
+
+test('No demo: the free tier never promises enforcement it does not perform', () => {
+  const options = read('options/options.js');
+  assert.ok(options.includes('Not enforced on the Free plan'),
+    'free users must be told the capital plan is not enforced');
+});
+
+test('No demo: the ticker strip and VIX panel render only from a live source', () => {
+  const options = read('options/options.js');
+  const html = read('options/options.html');
+  // Both panels had markup with no writer, so they sat on stale hardcoded values.
+  for (const id of ['tickerNiftyPrice', 'tickerBankPrice', 'tickerFinPrice', 'tickerSensexPrice',
+    'vixVal', 'vixChg', 'vixSkew', 'vixAlertStatus', 'vixRegimeBadge']) {
+    assert.ok(html.includes('id="' + id + '"'), `${id} must exist in the markup`);
+  }
+  assert.ok(options.includes('function renderTickerStrip'), 'the ticker strip needs a renderer');
+  assert.ok(options.includes('function renderVolatilityPanel'), 'the VIX panel needs a renderer');
+  // No writer may hardcode a price; unknown sources degrade to an em-dash.
+  assert.ok(options.includes("srcEl.textContent = 'NO FEED'"), 'missing feed must be labelled, not guessed');
+  assert.ok(options.includes("el('vixRank').textContent = '—'"),
+    'IV rank must stay blank rather than invented (needs a year of VIX history)');
 });
