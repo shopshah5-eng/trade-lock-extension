@@ -128,6 +128,11 @@ async function fetchMarket({
         fetchImpl
       );
       const fyersSymbol = mapToFyersSymbol(symbol);
+      if (!fyersSymbol) {
+        const error = new Error('unknown_symbol: ' + String(symbol) + ' is not a supported index');
+        error.code = 'unknown_symbol';
+        throw error;
+      }
       const to = Math.floor(Date.now() / 1000);
       const hist = await client.history({
         symbol: fyersSymbol, resolution: String(resolution || '15'),
@@ -183,18 +188,25 @@ async function fetchMarket({
 }
 
 /** App symbols -> Fyers wire symbols. */
+const FYERS_SYMBOLS = {
+  NIFTY: 'NSE:NIFTY50-INDEX',
+  BANKNIFTY: 'NSE:NIFTYBANK-INDEX',
+  FINNIFTY: 'NSE:FINNIFTY-INDEX',
+  MIDCPNIFTY: 'NSE:NIFTYMIDSELECT-INDEX',
+  SENSEX: 'BSE:SENSEX-INDEX',
+  BANKEX: 'BSE:BANKEX-INDEX',
+  INDIAVIX: 'NSE:INDIAVIX-INDEX',
+};
+
+/**
+ * App symbols -> Fyers wire symbols. An explicit provider symbol passes through;
+ * anything else unknown returns null so the caller reports unknown_symbol
+ * instead of forwarding a guess to the provider.
+ */
 function mapToFyersSymbol(symbol) {
   const s = String(symbol || 'NIFTY').trim();
   if (s.includes(':')) return s;
-  const map = {
-    NIFTY: 'NSE:NIFTY50-INDEX',
-    BANKNIFTY: 'NSE:NIFTYBANK-INDEX',
-    FINNIFTY: 'NSE:FINNIFTY-INDEX',
-    MIDCPNIFTY: 'NSE:NIFTYMIDSELECT-INDEX',
-    SENSEX: 'BSE:SENSEX-INDEX',
-    BANKEX: 'BSE:BANKEX-INDEX',
-  };
-  return map[s.toUpperCase()] || s;
+  return FYERS_SYMBOLS[s.toUpperCase()] || null;
 }
 
 function cacheStats() {
