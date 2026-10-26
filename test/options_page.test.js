@@ -267,3 +267,55 @@ test('The free tier sees the capital plan disabled and told why', async () => {
   }
   assert.ok(page.text('planSummary').length > 0, 'the plan summary must still render');
 });
+
+test('Every tab in the desktop sidebar is reachable from the mobile nav', () => {
+  // The markup carries two navigations: the icon sidebar (>=640px) and the
+  // compact top nav (<640px). Only one is displayed at a time, so a tab that
+  // exists in one and not the other is unreachable at that width. "Sites" was
+  // desktop-only until it was added to the compact nav.
+  const html = fs.readFileSync(path.join(ROOT, 'options', 'options.html'), 'utf8');
+  const tabs = (block) => new Set([...block.matchAll(/data-tab="([a-z]+)"/g)].map((m) => m[1]));
+
+  const aside = html.slice(html.indexOf('<aside'), html.indexOf('</aside>'));
+  const compactStart = html.indexOf('compact-top-nav');
+  const compact = html.slice(compactStart, html.indexOf('TAB: OVERVIEW', compactStart));
+
+  const sidebar = tabs(aside);
+  const mobile = tabs(compact);
+  assert.ok(sidebar.size >= 9, 'the sidebar nav must list every tab');
+  assert.deepStrictEqual([...mobile].sort(), [...sidebar].sort(),
+    'mobile and desktop navs must offer the same tabs');
+
+  const panes = new Set([...html.matchAll(/id="tab-([a-z]+)"/g)].map((m) => m[1]));
+  for (const tab of sidebar) {
+    assert.ok(panes.has(tab), `nav tab "${tab}" must have a matching #tab-${tab} pane`);
+  }
+  for (const pane of panes) {
+    assert.ok(sidebar.has(pane), `#tab-${pane} is unreachable: no nav button for it`);
+  }
+});
+
+test('Every element id the page looks up exists somewhere it can be found', async () => {
+  // options.js reaches for ids through el(). A missing id is not an error -
+  // the guard silently does nothing - so a broken control looks like a dead
+  // feature. Ids created inside innerHTML count, so the check walks the live
+  // document after every tab has rendered.
+  const page = await bootPage(baseStore(null));
+  for (const tab of ['overview', 'market', 'options', 'charts', 'journal', 'ai', 'rules', 'license', 'sites']) {
+    await page.clickTab(tab);
+  }
+
+  const js = fs.readFileSync(path.join(ROOT, 'options', 'options.js'), 'utf8');
+  const html = fs.readFileSync(path.join(ROOT, 'options', 'options.html'), 'utf8');
+  const wanted = [...new Set([...js.matchAll(/\bel\(\s*'([A-Za-z0-9_-]+)'/g)].map((m) => m[1]))]
+    .filter((id) => id !== 'tab-');
+
+  // Some ids are created inside innerHTML on error branches that this store
+  // does not reach, so the script's own markup counts as a definition.
+  const defined = (id) => Boolean(page.document.getElementById(id))
+    || html.includes(`id="${id}"`)
+    || js.includes(`id="${id}"`);
+
+  const missing = wanted.filter((id) => !defined(id));
+  assert.deepStrictEqual(missing, [], `these ids are looked up but never exist: ${missing.join(', ')}`);
+});

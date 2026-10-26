@@ -8,9 +8,9 @@
    'sessionCard', 'sessionStatusTag', 'sessionHours', 'sessionSchedule', 'sessionTimeLabel', 'sessionCountdown',
    'focusCard', 'focusText', 'focusEditBtn',
    'qaCharts', 'qaOptions', 'qaTechnicals', 'qaAddTrade', 'qaAi', 'qaJournal', 'qaRules',
-   'proUpgradeCard', 'proUpgradeBtn',
+   'proUpgradeCard',
    'logDrawer', 'logDrawerBody', 'pnl', 'risk', 'addWin', 'addLoss', 'lockNow', 'lockLabel', 'undo', 'openOptions',
-   'openOptions2', 'upgradeHeaderBtn', 'viewPlansBtn', 'openSidePanelBtn', 'openDashboardHero', 'footnote'].forEach(function (id) {
+   'openOptions2', 'openSidePanelBtn', 'footnote'].forEach(function (id) {
     els[id] = document.getElementById(id);
   });
 
@@ -171,7 +171,6 @@
       els[id].title = '';
     });
     if (els.proUpgradeCard) els.proUpgradeCard.style.display = proPlus ? 'none' : 'flex';
-    if (els.upgradeHeaderBtn) els.upgradeHeaderBtn.style.display = proPlus ? 'none' : 'inline-block';
 
     var sessionInfo = renderMarketSession(s);
     var isClosed = !sessionInfo.isMarketOpen;
@@ -491,12 +490,6 @@
       });
     });
   });
-  if (els.upgradeHeaderBtn) {
-    els.upgradeHeaderBtn.addEventListener('click', function () { openWorkspace('license'); });
-  }
-  if (els.viewPlansBtn) {
-    els.viewPlansBtn.addEventListener('click', function () { openWorkspace('license'); });
-  }
   if (els.planBadge) {
     els.planBadge.style.cursor = 'pointer';
     els.planBadge.title = 'Click to view Pro prepaid plans';
@@ -608,9 +601,6 @@
   if (els.openOptions2) els.openOptions2.addEventListener('click', function () { openWorkspace('rules'); });
   if (els.openSidePanelBtn) {
     els.openSidePanelBtn.addEventListener('click', function () { openWorkspace('overview'); });
-  }
-  if (els.openDashboardHero) {
-    els.openDashboardHero.addEventListener('click', function () { openTab('overview'); });
   }
 
   if (els.qaCharts) els.qaCharts.addEventListener('click', function () { openWorkspace('market'); });
