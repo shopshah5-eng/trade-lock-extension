@@ -185,3 +185,16 @@ test('Broker support matrix is generated from the adapters, not hand-written', (
       'no broker may claim verified order restriction until it is tested');
   }
 });
+
+test('Every el() reference on the options page resolves to a real element', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'options', 'options.html'), 'utf8');
+  // Ids are created in two ways: statically in the markup, or by an innerHTML
+  // assignment in options.js. A reference that matches neither is dead code,
+  // which is how the journal's "Add Trade Entry" button silently did nothing.
+  const refs = [...SRC.matchAll(/el\('([A-Za-z0-9_]+)'\)/g)].map((m) => m[1]);
+  const missing = [...new Set(refs)].filter((id) =>
+    !html.includes(`id="${id}"`) && !SRC.includes(`id="${id}"`));
+
+  assert.deepStrictEqual(missing, [],
+    `these el() ids exist nowhere, so the code guarding them can never run: ${missing.join(', ')}`);
+});

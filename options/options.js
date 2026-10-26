@@ -853,9 +853,6 @@
     });
   });
 
-  if (el('licBuy')) el('licBuy').addEventListener('click', function () {
-    switchTab('license');
-  });
 
   if (el('saveProfileBtn')) {
     el('saveProfileBtn').addEventListener('click', function () {
@@ -3173,8 +3170,10 @@
       var emptyAddBtn = el('jEmptyAddTradeBtn');
       if (emptyAddBtn) {
         emptyAddBtn.addEventListener('click', function () {
-          var form = el('jManualForm');
-          if (form) form.style.display = 'block';
+          var form = el('jAddFormDrawer');
+          if (!form) return;
+          form.style.display = 'block';
+          if (form.scrollIntoView) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
           if (el('jSymbol')) el('jSymbol').focus();
         });
       }
@@ -3351,7 +3350,7 @@
   if (el('jExportScope')) {
     el('jExportScope').addEventListener('change', function () {
       var scope = el('jExportScope').value;
-      var box = el('jCustomRangeFields') || el('jCustomRangeBox');
+      var box = el('jCustomRangeFields');
       if (box) box.style.display = scope === 'custom' ? 'flex' : 'none';
     });
   }
