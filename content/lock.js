@@ -89,6 +89,50 @@
   var overlayEl = null;
   var subframeEl = null;
 
+  /*
+   * Transient notification inside the broker page.
+   *
+   * This was called but never defined, so blocking a new order threw a
+   * ReferenceError after preventDefault() and the user got no explanation.
+   * It is built with DOM calls rather than innerHTML so broker page CSP cannot
+   * interfere, and it never blocks the click that follows.
+   */
+  var toastTimer = null;
+  function showToast(message, ms) {
+    try {
+      var host = document.body || document.documentElement;
+      if (!host) return;
+      var existing = document.getElementById('tl-toast');
+      if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+
+      var box = document.createElement('div');
+      box.id = 'tl-toast';
+      box.setAttribute('role', 'status');
+      box.setAttribute('aria-live', 'polite');
+      box.textContent = String(message);
+      box.style.cssText = [
+        'position:fixed', 'left:50%', 'bottom:28px', 'transform:translateX(-50%)',
+        'z-index:2147483647', 'max-width:min(560px,92vw)',
+        'background:#0b1324', 'color:#f8fafc',
+        'border:1px solid rgba(56,189,248,.45)', 'border-radius:10px',
+        'padding:12px 18px', 'font:600 13px/1.5 Inter,system-ui,sans-serif',
+        'box-shadow:0 12px 32px rgba(0,0,0,.45)', 'text-align:center',
+        'pointer-events:none', 'transition:opacity .25s ease', 'opacity:1'
+      ].join(';');
+      host.appendChild(box);
+
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () {
+        box.style.opacity = '0';
+        setTimeout(function () {
+          if (box.parentNode) box.parentNode.removeChild(box);
+        }, 260);
+      }, Number(ms) > 0 ? Number(ms) : 5000);
+    } catch (error) {
+      // Never let a notification failure re-enable the order that was blocked.
+    }
+  }
+
   function getLockTypeInfo(violation) {
     if (state.lock && state.lock.manual) {
       return {

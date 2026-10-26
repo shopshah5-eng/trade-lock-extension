@@ -198,3 +198,44 @@ test('Every el() reference on the options page resolves to a real element', () =
   assert.deepStrictEqual(missing, [],
     `these el() ids exist nowhere, so the code guarding them can never run: ${missing.join(', ')}`);
 });
+
+test('No shipped file calls a helper it does not define', () => {
+  const { scan, FILES } = require('../scripts/check-undefined-calls.js');
+  const findings = FILES.flatMap((file) => {
+    try {
+      return scan(file);
+    } catch (error) {
+      return [{ file, line: 0, name: 'PARSE ERROR: ' + error.message }];
+    }
+  });
+
+  const rendered = findings.map((f) => `${f.file}:${f.line} ${f.name}()`);
+  assert.deepStrictEqual(rendered, [],
+    'these calls throw only on the path that reaches them:\n' + rendered.join('\n'));
+});
+
+test('The undefined-call checker actually detects a missing helper', () => {
+  const acorn = require('acorn');
+  const { declaredNames, BUILTINS } = require('../scripts/check-undefined-calls.js');
+
+  // A miniature version of the real bug: call a helper, never define it.
+  const ast = acorn.parse('function a() { showToast("x"); }', { ecmaVersion: 'latest' });
+  const declared = declaredNames(ast);
+
+  const calls = [];
+  const walk = (node) => {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'CallExpression' && node.callee.type === 'Identifier') calls.push(node.callee.name);
+    for (const key of Object.keys(node)) {
+      if (['loc', 'start', 'end'].includes(key)) continue;
+      const value = node[key];
+      if (Array.isArray(value)) value.forEach(walk);
+      else if (value && typeof value.type === 'string') walk(value);
+    }
+  };
+  walk(ast);
+
+  assert.ok(calls.includes('showToast'), 'the call must be observed');
+  assert.strictEqual(declared.has('showToast'), false, 'an undefined helper must not look declared');
+  assert.strictEqual(BUILTINS.has('showToast'), false, 'and must not be excused as a built-in');
+});
