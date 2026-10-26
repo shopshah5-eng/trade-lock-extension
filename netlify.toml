@@ -1,7 +1,17 @@
+# Netlify deployment for the Trade Lock license/market server.
+#
+# IMPORTANT: every path below is resolved relative to `base`, NOT relative to
+# the repository root. With base = "server", publish = "server/public" would
+# resolve to server/server/public (missing) and functions would resolve to
+# server/server/netlify/functions (no functions deployed).
 [build]
   base = "server"
-  publish = "server/public"
-  functions = "server/netlify/functions"
+  publish = "public"
+  functions = "netlify/functions"
+  command = "npm install && node --version"
+
+[functions]
+  node_bundler = "esbuild"
 
 [[redirects]]
   from = "/api/*"
@@ -18,11 +28,8 @@
   to = "/privacy.html"
   status = 200
 
-[[redirects]]
-  from = "/privacy.html"
-  to = "/privacy.html"
-  status = 200
-
+# SPA fallback for the marketing/status page only. /privacy.html is served
+# directly from the publish directory, so it needs no rewrite rule.
 [[redirects]]
   from = "/*"
   to = "/index.html"
