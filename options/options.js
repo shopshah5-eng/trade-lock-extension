@@ -2228,6 +2228,28 @@
     });
   }
 
+  /** PCR / max-pain cards on the Market tab. Pure presentation, easy to test. */
+  function renderMarketOiCards(oi) {
+    if (!oi || oi.pcr == null) {
+      if (el('marketPcrVal')) el('marketPcrVal').textContent = '—';
+      if (el('marketPcrBias')) el('marketPcrBias').textContent = 'No option chain';
+      if (el('marketMaxPainVal')) el('marketMaxPainVal').textContent = '—';
+      return;
+    }
+
+    var pcr = Number(oi.pcr);
+    if (el('marketPcrVal')) el('marketPcrVal').textContent = isFinite(pcr) ? pcr.toFixed(2) : '—';
+    if (el('marketPcrBias')) {
+      el('marketPcrBias').textContent = !isFinite(pcr) ? '—'
+        : pcr > 1.2 ? 'Bullish Sentiment'
+          : pcr < 0.8 ? 'Bearish Sentiment' : 'Neutral Range';
+    }
+    if (el('marketMaxPainVal')) {
+      el('marketMaxPainVal').textContent = oi.maxPain != null
+        ? Number(oi.maxPain).toLocaleString('en-IN') : '—';
+    }
+  }
+
   function renderMarketData(data) {
     var box = el('marketResult');
     if (!box) return;
@@ -2237,24 +2259,13 @@
       return;
     }
 
-    // Market-tab PCR / max pain come from the live analysis. These cards used to
-    // hold hardcoded values that never changed.
-    if (a.oi) {
-      if (el('marketPcrVal')) el('marketPcrVal').textContent = a.oi.pcr != null ? a.oi.pcr : '—';
-      if (el('marketPcrBias')) {
-        var pcr = Number(a.oi.pcr);
-        el('marketPcrBias').textContent = !isFinite(pcr) ? '—'
-          : pcr > 1.2 ? 'Bullish Sentiment' : pcr < 0.8 ? 'Bearish Sentiment' : 'Neutral Range';
-      }
-      if (el('marketMaxPainVal')) {
-        el('marketMaxPainVal').textContent = a.oi.maxPain != null
-          ? Number(a.oi.maxPain).toLocaleString('en-IN') : '—';
-      }
-    } else {
-      if (el('marketPcrVal')) el('marketPcrVal').textContent = '—';
-      if (el('marketPcrBias')) el('marketPcrBias').textContent = 'No option chain';
-      if (el('marketMaxPainVal')) el('marketMaxPainVal').textContent = '—';
-    }
+    // Market-tab PCR / max pain. The analysis payload does not always carry an
+    // `oi` block, so derive it from the chain the same way the options tab does
+    // rather than showing a permanent em-dash on a live feed.
+    var oiRows = Array.isArray(data.optionChain) ? data.optionChain
+      : (Array.isArray(chartState.fullOptionRows) ? chartState.fullOptionRows : []);
+    renderMarketOiCards((a.oi && a.oi.pcr != null) ? a.oi
+      : (M && M.oiSummary ? M.oiSummary(oiRows) : null));
 
     var zonesHtml = function (list, label) {
       if (!list || !list.length) return '';

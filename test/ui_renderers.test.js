@@ -48,6 +48,7 @@ const IDS = [
   'tickerSensexPrice', 'tickerSensexChg', 'tickerSensexSrc',
   'overviewLiveBadge', 'vixVal', 'vixChg', 'vixRank', 'vixSkew',
   'vixAlertStatus', 'vixRegimeBadge', 'brokerSupportTbody',
+  'marketResult', 'marketPcrVal', 'marketPcrBias', 'marketMaxPainVal',
 ];
 
 /** Fresh fake DOM plus the four renderers bound to it. */
@@ -77,11 +78,12 @@ function harness() {
     extract('renderTickerStrip'),
     extract('renderVolatilityPanel'),
     extract('renderBrokerSupport'),
+    extract('renderMarketOiCards'),
   ].join('\n');
 
   const factory = new Function(
-    'el', 'escapeHtml', 'globalThis', 'isFinite', 'Number', 'Boolean',
-    `${code}\nreturn { renderTickerStrip, renderVolatilityPanel, renderBrokerSupport };`
+    'el', 'escapeHtml', 'globalThis', 'isFinite', 'Number', 'Boolean', 'M', 'chartState',
+    `${code}\nreturn { renderTickerStrip, renderVolatilityPanel, renderBrokerSupport, renderMarketOiCards };`
   );
 
   const fns = factory(
@@ -90,7 +92,9 @@ function harness() {
     sandbox,
     isFinite,
     Number,
-    Boolean
+    Boolean,
+    require(path.join(ROOT, 'lib', 'market.js')),
+    { fullOptionRows: [] }
   );
   return Object.assign(fns, { nodes });
 }
@@ -270,4 +274,37 @@ test('The undefined-call checker actually detects a missing helper', () => {
   assert.ok(calls.includes('showToast'), 'the call must be observed');
   assert.strictEqual(declared.has('showToast'), false, 'an undefined helper must not look declared');
   assert.strictEqual(BUILTINS.has('showToast'), false, 'and must not be excused as a built-in');
+});
+
+test('Market-tab PCR and max pain are computed from the live chain', () => {
+  const ui = harness();
+  const market = require(path.join(ROOT, 'lib', 'market.js'));
+  // The exact chain shape the Upstox normalizer produces.
+  const oi = market.oiSummary([
+    { strike: 24600, callOi: 5000, putOi: 7000 },
+    { strike: 24700, callOi: 3000, putOi: 9000 },
+  ]);
+  ui.renderMarketOiCards(oi);
+
+  // put 16000 / call 8000 = 2.00
+  assert.strictEqual(ui.nodes.marketPcrVal.textContent, '2.00');
+  assert.strictEqual(ui.nodes.marketPcrBias.textContent, 'Bullish Sentiment');
+  assert.strictEqual(ui.nodes.marketMaxPainVal.textContent, '24,700');
+});
+
+test('Market-tab PCR maps each OI bias band honestly', () => {
+  const ui = harness();
+  ui.renderMarketOiCards({ pcr: 0.5, maxPain: 24000 });
+  assert.strictEqual(ui.nodes.marketPcrBias.textContent, 'Bearish Sentiment');
+  ui.renderMarketOiCards({ pcr: 1.0, maxPain: 24000 });
+  assert.strictEqual(ui.nodes.marketPcrBias.textContent, 'Neutral Range');
+});
+
+test('Market-tab PCR admits when there is no chain', () => {
+  const ui = harness();
+  ui.renderMarketOiCards(null);
+
+  assert.strictEqual(ui.nodes.marketPcrVal.textContent, '—');
+  assert.strictEqual(ui.nodes.marketPcrBias.textContent, 'No option chain');
+  assert.strictEqual(ui.nodes.marketMaxPainVal.textContent, '—');
 });
