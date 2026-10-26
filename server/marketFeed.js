@@ -140,8 +140,11 @@ async function fetchMarket({
         detail: 'The provider returned zero candles for ' + symbol + '. Check the symbol and market hours.' };
     }
 
-    const value = { ok: true, provider: p.id, symbol, resolution, candles, optionChain: chain,
-      fetchedAt: Date.now() };
+    // The chain is what Pro+ actually pays for, so it travels with the payload
+    // instead of being recomputed (or worse, invented) in the extension.
+    const spot = candles.length ? Number(candles[candles.length - 1].c) : null;
+    const value = { ok: true, provider: p.id, symbol, resolution, candles,
+      optionChain: chain, spot, fetchedAt: Date.now() };
     cacheSet(key, value, CACHE_TTL_MS);
     return value;
   } catch (e) {

@@ -120,6 +120,7 @@ function normalizeOptionChain(payload) {
       const poi = Number(pm.oi) || 0;
       return {
         strike: Number(r.strike_price),
+        spot: Number(r.underlying_spot_price) || 0,
         callOi: coi,
         putOi: poi,
         callOiChange: coi - (Number(cm.prev_oi) || coi),

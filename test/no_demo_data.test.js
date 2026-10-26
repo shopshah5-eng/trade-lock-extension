@@ -98,3 +98,33 @@ test('Deployment: a self-hosted API origin can be granted without a rebuild', ()
   const options = read('options/options.js');
   assert.ok(options.includes('chrome.permissions.request'), 'options must request the origin at runtime');
 });
+
+// ------------------------------------------------- hardcoded market values ----
+
+test('No demo: no fake market numbers are baked into the markup', () => {
+  const html = read('options/options.html');
+  const fakes = ['₹24,520.00', '₹24,510', '24,441.20', '24,612.30', '24,400.10', '24,437.55',
+    '+82.45 (+0.34%)', '13.85', '48% / 52%', '₹142.50'];
+  for (const fake of fakes) {
+    assert.strictEqual(html.includes(fake), false, `hardcoded market value still present: ${fake}`);
+  }
+});
+
+test('No demo: the option chain reads real greeks instead of zero-filled placeholders', () => {
+  const options = read('options/options.js');
+  assert.strictEqual(/var atmCallTheta = 0;/.test(options), false, 'ATM theta must not be hardcoded to 0');
+  assert.strictEqual(/var atmPutTheta = 0;/.test(options), false, 'ATM theta must not be hardcoded to 0');
+  assert.strictEqual(options.includes('var spot = cfg.basePrice;'), false,
+    'spot must come from the feed, not a built-in base price');
+  assert.ok(options.includes('chartState.chainSpot'), 'the live spot must be carried into the options view');
+  assert.ok(options.includes('chartState.fullOptionRows = chartState.optionRows'),
+    'the live chain must be handed to the options view');
+});
+
+test('No demo: free licences can never be minted on a hosted platform', () => {
+  const server = read('server/index.js');
+  assert.ok(/const isDemoMode = \(\) =>[\s\S]{0,220}!IS_SERVERLESS/.test(server),
+    'demo checkout must refuse to run on serverless/hosted platforms');
+  assert.ok(server.includes("process.env.NODE_ENV !== 'production'"),
+    'demo checkout must refuse to run in production');
+});

@@ -1039,16 +1039,18 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
             fetchedAt: Date.now(),
             source: 'live',
             symbol: symbol,
-            provider: 'Fyers API v3',
+            provider: result.body.provider || 'market feed',
             analysis: result.body.analysis,
             brief: result.body.brief || null,
-            candles: result.body.candles || 0
+            candles: result.body.candles || 0,
+            spot: typeof result.body.spot === 'number' ? result.body.spot : null,
+            optionChain: Array.isArray(result.body.optionChain) ? result.body.optionChain : null
           };
           return chrome.storage.local.set({ tlMarket: snap }).then(function () {
             sendResponse({
               ok: true,
               connected: true,
-              provider: 'Fyers API v3',
+              provider: snap.provider,
               fetchedAt: snap.fetchedAt,
               data: snap
             });
@@ -1059,7 +1061,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         sendResponse({
           ok: false,
           connected: false,
-          provider: 'Fyers API v3',
+          provider: (result.body && result.body.provider) || null,
           statusCode: result.status,
           error: errCode,
           hint: hint,

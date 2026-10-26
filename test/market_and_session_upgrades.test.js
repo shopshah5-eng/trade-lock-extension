@@ -226,7 +226,10 @@ test('Section C: Truthful Live Market Feed vs Disconnected Setup State', () => {
   // Background must implement TL_CHECK_MARKET_FEED with Fyers endpoint probing and timeout
   assert.ok(bgJs.includes("msg.type === 'TL_CHECK_MARKET_FEED'"), 'background.js must implement TL_CHECK_MARKET_FEED handler');
   assert.ok(bgJs.includes('/api/market/live?symbol='), 'background.js must probe /api/market/live');
-  assert.ok(bgJs.includes('provider: \'Fyers API v3\''), 'background.js must return Fyers API v3 provider info');
+  // The provider is dynamic now (Upstox or Fyers), so it must be echoed from the
+  // server response rather than hardcoded.
+  assert.ok(bgJs.includes('provider: result.body.provider'), 'background.js must echo the server provider');
+  assert.strictEqual(bgJs.includes("provider: 'Fyers API v3'"), false, 'provider must not be hardcoded');
 
   // options.html must contain setup cards for market and options
   assert.ok(optionsHtml.includes('id="liveMarketSetupCard"'), 'options.html must contain liveMarketSetupCard');

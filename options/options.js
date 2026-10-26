@@ -2315,7 +2315,14 @@
         if (timeEl) timeEl.textContent = 'Tick Time: ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
         if (noteEl) noteEl.textContent = 'Live feed active';
 
+        // Hand the real chain to the options view. Without this the strike table
+        // had no source and always rendered as "disconnected".
+        chartState.chainSpot = (typeof snap.spot === 'number' && snap.spot > 0) ? snap.spot : null;
+        chartState.optionRows = Array.isArray(snap.optionChain) ? snap.optionChain : [];
+        chartState.fullOptionRows = chartState.optionRows;
+
         if (snap.analysis) renderMarketData(snap);
+        renderOptionsChainView();
       });
       return;
     }
@@ -2352,6 +2359,8 @@
 
     chartState.candles = [];
     chartState.optionRows = [];
+    chartState.fullOptionRows = [];
+    chartState.chainSpot = null;
     chartState.symbol = symbol;
     chartState.timeframe = tf;
     chartState.panOffset = 0;
@@ -2501,12 +2510,11 @@
     }
 
     var cfg = getInstrumentConfig(symbol);
-    var spot = cfg.basePrice;
-    var step = cfg.step;
-    var dte = expiry === 'monthly' ? 23 : (expiry === 'next' ? 9 : 2);
-
-    // Option strikes arrive from live exchange feed; synthetic math is purged.
     var rows = Array.isArray(chartState.fullOptionRows) ? chartState.fullOptionRows : [];
+    // Spot comes from the feed. No feed, no spot - never a built-in base price.
+    var spot = (typeof chartState.chainSpot === 'number' && chartState.chainSpot > 0)
+      ? chartState.chainSpot
+      : (rows.length && Number(rows[0].spot) > 0 ? Number(rows[0].spot) : null);
 
     if (!rows.length) {
       if (el('optCallThetaVal')) el('optCallThetaVal').textContent = '—';
@@ -2528,25 +2536,44 @@
       return;
     }
 
-    var atmCallTheta = 0;
-    var atmPutTheta = 0;
-    var atmCallPrice = 0;
-    var atmPutPrice = 0;
+    // ATM row = the strike closest to the live spot.
+    var atm = null;
+    if (spot != null) {
+      var bestDist = Infinity;
+      for (var ai = 0; ai < rows.length; ai++) {
+        var d = Math.abs(Number(rows[ai].strike) - spot);
+        if (d < bestDist) { bestDist = d; atm = rows[ai]; }
+      }
+    }
+    var atmCallTheta = atm ? Math.abs(Number(atm.callTheta) || 0) : null;
+    var atmPutTheta = atm ? Math.abs(Number(atm.putTheta) || 0) : null;
+    var atmCallPrice = atm ? Number(atm.callLtp) || 0 : 0;
+    var atmPutPrice = atm ? Number(atm.putLtp) || 0 : 0;
+    var dte = '—';
 
-    // Update Telemetry with Distinct Call & Put Theta
-    if (el('optCallThetaVal')) el('optCallThetaVal').textContent = '₹' + atmCallTheta.toFixed(2) + ' / d';
-    if (el('optCallThetaSub')) {
-      var callPct = atmCallPrice > 0 ? Math.round((Math.abs(atmCallTheta) / atmCallPrice) * 100) : 14;
-      el('optCallThetaSub').textContent = '~' + callPct + '% decay / day (DTE ' + dte + ')';
-    }
-    if (el('optPutThetaVal')) el('optPutThetaVal').textContent = '₹' + atmPutTheta.toFixed(2) + ' / d';
-    if (el('optPutThetaSub')) {
-      var putPct = atmPutPrice > 0 ? Math.round((Math.abs(atmPutTheta) / atmPutPrice) * 100) : 14;
-      el('optPutThetaSub').textContent = '~' + putPct + '% decay / day (DTE ' + dte + ')';
-    }
+    // Telemetry straight from the provider's greeks. No decay is estimated.
+    var fmtTheta = function (v) {
+      return v == null ? '—' : '₹' + Number(v).toFixed(2) + ' / d';
+    };
+    var decaySub = function (theta, price) {
+      if (theta == null) return 'Greeks unavailable from feed';
+      if (!price) return 'Premium unavailable from feed';
+      return '~' + Math.round((theta / price) * 100) + '% decay / day';
+    };
+    if (el('optCallThetaVal')) el('optCallThetaVal').textContent = fmtTheta(atmCallTheta);
+    if (el('optCallThetaSub')) el('optCallThetaSub').textContent = decaySub(atmCallTheta, atmCallPrice);
+    if (el('optPutThetaVal')) el('optPutThetaVal').textContent = fmtTheta(atmPutTheta);
+    if (el('optPutThetaSub')) el('optPutThetaSub').textContent = decaySub(atmPutTheta, atmPutPrice);
     if (el('optHourlyDecay')) {
-      var hourlyDecay = Math.abs(atmCallTheta + atmPutTheta) / 2 / 6.25;
-      el('optHourlyDecay').textContent = '₹-' + hourlyDecay.toFixed(2) + ' / hr';
+      el('optHourlyDecay').textContent = (atmCallTheta == null || atmPutTheta == null)
+        ? '—'
+        : '₹-' + (Math.abs(atmCallTheta + atmPutTheta) / 2 / 6.25).toFixed(2) + ' / hr';
+    }
+    // Surface the real spot instead of a modelled one.
+    if (el('optSpotPrice')) {
+      el('optSpotPrice').textContent = spot != null
+        ? '₹' + Number(spot).toLocaleString('en-IN', { minimumFractionDigits: 2 })
+        : '—';
     }
 
     if (M && M.oiSummary) {
@@ -2556,7 +2583,11 @@
         if (el('optPcrBias')) {
           el('optPcrBias').textContent = summary.pcr > 1.2 ? 'Bullish Sentiment' : summary.pcr < 0.8 ? 'Bearish Sentiment' : 'Neutral Range';
         }
-        if (el('optMaxPain')) el('optMaxPain').textContent = summary.maxPain ? summary.maxPain.toLocaleString('en-IN') : spot.toLocaleString('en-IN');
+        if (el('optMaxPain')) {
+          el('optMaxPain').textContent = summary.maxPain
+            ? summary.maxPain.toLocaleString('en-IN')
+            : (spot != null ? Number(spot).toLocaleString('en-IN') : '—');
+        }
       }
     }
 
@@ -2564,10 +2595,18 @@
     if (!tbody) return;
     tbody.innerHTML = '';
 
+    // Strike spacing comes from the chain itself; there is no built-in step.
+    var step = 0;
+    for (var si = 1; si < rows.length; si++) {
+      var gap = Math.abs(Number(rows[si].strike) - Number(rows[si - 1].strike));
+      if (gap > 0 && (step === 0 || gap < step)) step = gap;
+    }
+    if (!step && cfg && cfg.step) step = cfg.step;
+
     rows.forEach(function (r) {
-      var isAtm = Math.abs(r.strike - spot) < step;
-      var isCallItm = r.strike < spot;
-      var isPutItm = r.strike > spot;
+      var isAtm = spot != null && step > 0 && Math.abs(r.strike - spot) < step;
+      var isCallItm = spot != null && r.strike < spot;
+      var isPutItm = spot != null && r.strike > spot;
 
       var tr = document.createElement('tr');
       if (isAtm) tr.className = 'atm';

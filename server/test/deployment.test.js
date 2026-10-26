@@ -33,8 +33,10 @@ test('Vercel adapter is callable, disables body parsing, and serves the real app
   assert.strictEqual(response.status, 200);
   const body = await response.json();
   assert.strictEqual(body.ok, true);
-  assert.strictEqual(body.demoMode, true);
-  assert.strictEqual(body.paymentPersistenceReady, true);
+  // TL_DEMO_MODE=1 is set above, but this process looks like a hosted platform,
+  // so the free-licence sandbox must stay OFF and payments must fail closed.
+  assert.strictEqual(body.demoMode, false, 'demo checkout must never run on a hosted platform');
+  assert.strictEqual(body.paymentPersistenceReady, false, 'serverless without Supabase must fail closed');
 });
 
 test('Deployment: server/lib copies never drift from the canonical lib/', () => {

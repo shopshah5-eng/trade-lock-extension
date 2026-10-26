@@ -51,11 +51,22 @@ const PORT = Number(process.env.PORT || 8787);
 const KEY_ID = process.env.RAZORPAY_KEY_ID || '';
 const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
 const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || '';
-const DEMO_MODE = process.env.TL_DEMO_MODE === '1' && process.env.NODE_ENV !== 'production';
 const IS_SERVERLESS = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY || process.env.VERCEL);
 const PROVIDER_TIMEOUT_MS = Number(process.env.PROVIDER_TIMEOUT_MS || 15000);
 
-const isDemoMode = () => (process.env.TL_DEMO_MODE === '1' || DEMO_MODE) && process.env.NODE_ENV !== 'production';
+/*
+ * Local test checkout. This is NOT market data - it issues a licence without a
+ * payment so the purchase flow can be exercised offline.
+ *
+ * It is opt-in (TL_DEMO_MODE=1), refuses to run in production, and refuses to
+ * run on any hosted platform. Without that last guard a stray env var on Netlify
+ * would hand out free lifetime licences.
+ */
+const isDemoMode = () =>
+  process.env.TL_DEMO_MODE === '1' &&
+  process.env.NODE_ENV !== 'production' &&
+  !IS_SERVERLESS;
+const DEMO_MODE = isDemoMode();
 const razorpayConfigured = () => Boolean((process.env.RAZORPAY_KEY_ID !== undefined ? process.env.RAZORPAY_KEY_ID : KEY_ID) && (process.env.RAZORPAY_KEY_SECRET !== undefined ? process.env.RAZORPAY_KEY_SECRET : KEY_SECRET));
 const isServerless = () => Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY || process.env.VERCEL || IS_SERVERLESS);
 const demoCheckoutEnabled = () => isDemoMode() && !razorpayConfigured();
@@ -847,6 +858,8 @@ const server = http.createServer(async (req, res) => {
         provider: feed.provider,
         cached: Boolean(feed.cached),
         candles: feed.candles.length,
+        spot: feed.spot,
+        optionChain: feed.optionChain || null,
         analysis,
         brief,
       }, req);
@@ -863,7 +876,7 @@ if (require.main === module) {
   server.listen(PORT, '0.0.0.0', () => {
     console.log('[trade-lock] license server on http://0.0.0.0:' + PORT +
       '  razorpay=' + (razorpayConfigured() ? 'configured' : 'NOT configured') +
-      (DEMO_MODE ? '  DEMO_MODE=on' : ''));
+      (DEMO_MODE ? '  DEMO_MODE=on (licences issued WITHOUT payment - local testing only)' : ''));
   });
 }
 

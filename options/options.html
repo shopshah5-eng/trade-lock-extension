@@ -311,21 +311,21 @@
 
         <div class="home-chart-price-row">
           <div class="price-big-group">
-            <strong id="overviewChartPrice">24,520.00</strong>
-            <span id="overviewChartChange" class="price-change-pill pos">+82.45 (+0.34%)</span>
+            <strong id="overviewChartPrice">—</strong>
+            <span id="overviewChartChange" class="price-change-pill">—</span>
           </div>
           <div class="ohlc-summary-row" id="overviewOhlcSummary">
-            <span>O <b>24,441.20</b></span>
-            <span>H <b>24,612.30</b></span>
-            <span>L <b>24,400.10</b></span>
-            <span>Prev <b>24,437.55</b></span>
+            <span>O <b>—</b></span>
+            <span>H <b>—</b></span>
+            <span>L <b>—</b></span>
+            <span>Prev <b>—</b></span>
           </div>
         </div>
 
         <!-- SVG Candlestick & Volume Chart -->
         <div class="overview-chart-wrap home-chart-canvas-wrap">
-          <svg id="overviewChart" viewBox="0 0 720 230" preserveAspectRatio="none" role="img" aria-label="Simulated market overview chart">
-            <title>Simulated market overview — not live market data</title>
+          <svg id="overviewChart" viewBox="0 0 720 230" preserveAspectRatio="none" role="img" aria-label="Market overview chart">
+            <title>Market overview — waiting for a live feed</title>
           </svg>
         </div>
 
@@ -815,7 +815,7 @@
         </div>
 
         <div style="position:relative;width:100%;height:320px;background:#060913;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,0.05)">
-          <canvas id="marketCandleCanvas" tabindex="0" role="img" aria-label="Simulated candlestick chart. Left and right arrows pan, plus and minus zoom, Home resets." style="width:100%;height:100%;display:block;cursor:crosshair;"></canvas>
+          <canvas id="marketCandleCanvas" tabindex="0" role="img" aria-label="Candlestick chart. Left and right arrows pan, plus and minus zoom, Home resets." style="width:100%;height:100%;display:block;cursor:crosshair;"></canvas>
           <div id="chartStateOverlay" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(6,9,19,0.85);font-size:13px;color:#94a3b8;"></div>
         </div>
         <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10.5px;color:var(--muted)">
@@ -828,7 +828,7 @@
       <div class="grid4" style="margin-bottom:16px">
         <div class="stat-card">
           <span class="stat-lbl">Spot Price</span>
-          <span class="stat-val" id="marketSpotVal">₹24,520.00</span>
+          <span class="stat-val" id="marketSpotVal">—</span>
           <span class="stat-sub" id="marketExchangeSub">NSE Index</span>
         </div>
         <div class="stat-card">
@@ -843,7 +843,7 @@
         </div>
         <div class="stat-card">
           <span class="stat-lbl">ATM Straddle &amp; Theta</span>
-          <span class="stat-val" id="marketThetaVal">₹245 · ~18% / d</span>
+          <span class="stat-val" id="marketThetaVal">—</span>
           <span class="stat-sub">Expected time decay</span>
         </div>
       </div>
@@ -855,17 +855,17 @@
             <h3 style="margin:0;font-size:13px;font-weight:750">India VIX &amp; Volatility Regime</h3>
             <p class="desc" style="margin:2px 0 0">Volatility regime and spike detection. Requires a real India VIX feed — nothing is benchmarked locally.</p>
           </div>
-          <span id="vixRegimeBadge" class="badge" style="background:rgba(16,185,129,0.18);color:#34d399;border:1px solid rgba(16,185,129,0.3)">Regime: Normal (13.85)</span>
+          <span id="vixRegimeBadge" class="badge" style="background:rgba(16,185,129,0.18);color:#34d399;border:1px solid rgba(16,185,129,0.3)">Regime: no feed</span>
         </div>
         <div class="grid4">
           <div class="stat-card">
             <span class="stat-lbl">India VIX</span>
-            <span class="stat-val" id="vixVal">13.85</span>
-            <span class="stat-sub" id="vixChg" style="color:#10b981">+0.42 (+3.13%)</span>
+            <span class="stat-val" id="vixVal">—</span>
+            <span class="stat-sub" id="vixChg">—</span>
           </div>
           <div class="stat-card">
             <span class="stat-lbl">IV Rank / Percentile</span>
-            <span class="stat-val" id="vixRank">48% / 52%</span>
+            <span class="stat-val" id="vixRank">—</span>
             <span class="stat-sub">Awaiting a real VIX feed</span>
           </div>
           <div class="stat-card">
@@ -875,7 +875,7 @@
           </div>
           <div class="stat-card">
             <span class="stat-lbl">Spike Alert Status</span>
-            <span class="stat-val" id="vixAlertStatus" style="color:#34d399">Normal</span>
+            <span class="stat-val" id="vixAlertStatus">—</span>
             <span class="stat-sub">Alert: ≥10% change or VIX ≥20</span>
           </div>
         </div>
@@ -951,7 +951,7 @@
           <div class="chart-symbol-info">
             <div class="symbol-title-row">
               <h3 id="chartsSymbolDisplay" style="font-size:18px;font-weight:800;margin:0">NIFTY 50</h3>
-              <span class="symbol-change pos" id="chartsChangeDisplay" style="font-size:13px;font-weight:700;color:var(--tl-green)">+82.45 (+0.34%)</span>
+              <span class="symbol-change" id="chartsChangeDisplay" style="font-size:13px;font-weight:700">—</span>
             </div>
             <div class="ohlc-strip" id="chartsOhlcDisplay" style="font-size:11px;color:var(--tl-dim);margin-top:4px">
               O: — &nbsp; H: — &nbsp; L: — &nbsp; C: —
@@ -971,19 +971,19 @@
         <div id="chartsTelemetryBar" class="grid4" style="margin-top:14px;margin-bottom:14px">
           <div class="stat-card" style="padding:8px 12px">
             <span class="stat-lbl" style="font-size:10px">RSI (14)</span>
-            <span class="stat-val" id="chartsRsiVal" style="font-size:14px">54.2</span>
+            <span class="stat-val" id="chartsRsiVal" style="font-size:14px">—</span>
           </div>
           <div class="stat-card" style="padding:8px 12px">
             <span class="stat-lbl" style="font-size:10px">VWAP</span>
-            <span class="stat-val" id="chartsVwapVal" style="font-size:14px">₹24,510</span>
+            <span class="stat-val" id="chartsVwapVal" style="font-size:14px">—</span>
           </div>
           <div class="stat-card" style="padding:8px 12px">
             <span class="stat-lbl" style="font-size:10px">ATR (14)</span>
-            <span class="stat-val" id="chartsAtrVal" style="font-size:14px">₹142.50</span>
+            <span class="stat-val" id="chartsAtrVal" style="font-size:14px">—</span>
           </div>
           <div class="stat-card" style="padding:8px 12px">
             <span class="stat-lbl" style="font-size:10px">Trend Structure</span>
-            <span class="stat-val" id="chartsTrendVal" style="font-size:14px;color:var(--tl-green)">Uptrend</span>
+            <span class="stat-val" id="chartsTrendVal" style="font-size:14px">—</span>
           </div>
         </div>
 
@@ -1005,7 +1005,7 @@
         <h2 style="margin:0">NSE Options Chain &amp; Analytics <span class="badge" id="optionsModeBadge" style="background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);color:#34d399">Live Broker Mode</span></h2>
         <span class="badge" style="background:rgba(255,255,255,0.06);color:var(--muted)">Strike-by-Strike Analytics</span>
       </div>
-      <p class="desc">Open Interest (OI) distribution, Put-Call Ratio (PCR), and Max Pain computed via mathematical model. Data is simulated for strategy review and not a live exchange feed.</p>
+      <p class="desc">Open Interest (OI) distribution, Put-Call Ratio (PCR) and Max Pain, computed from a real option chain. Nothing is displayed without a live feed.</p>
 
       <!-- Live Provider Setup Card for Options -->
       <div id="liveOptionsSetupCard" class="live-setup-card" style="display:none;margin-bottom:14px;"></div>
@@ -1053,7 +1053,7 @@
       <div class="grid4" id="optionsMetricsGrid" style="margin-bottom:14px">
         <div class="stat-card">
           <span class="stat-lbl">Spot Price</span>
-          <span class="stat-val" id="optSpotPrice">₹24,520.00</span>
+          <span class="stat-val" id="optSpotPrice">—</span>
           <span class="stat-sub">Underlying Index</span>
         </div>
         <div class="stat-card">
@@ -1595,7 +1595,7 @@
               <td><span class="feat-yes">✓ Pro+ access</span></td>
             </tr>
             <tr>
-              <td>Simulated Options Chain, PCR &amp; Max Pain workspace</td>
+              <td>Live Options Chain, PCR &amp; Max Pain workspace</td>
               <td><span class="feat-no">—</span></td>
               <td><span class="feat-no">—</span></td>
               <td><span class="feat-yes">✓ Included</span></td>
