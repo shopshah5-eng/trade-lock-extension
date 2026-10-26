@@ -80,7 +80,11 @@ async function bootPage(store) {
   // A real <select> accepts any assignment; linkedom throws unless an option
   // matches. Emulate the browser so the page can be driven.
   for (const select of document.querySelectorAll('select')) {
-    let current = '';
+    // A browser initialises .value from the selected option (or the first one),
+    // not from the empty string.
+    const options = [...select.querySelectorAll('option')];
+    const chosen = options.find((o) => o.hasAttribute('selected')) || options[0];
+    let current = chosen ? chosen.getAttribute('value') : '';
     Object.defineProperty(select, 'value', {
       configurable: true,
       get() { return current; },
@@ -354,5 +358,23 @@ test('Charts refuses a snapshot that belongs to another index', async () => {
 
   const svg = page.document.getElementById('dedicatedChartsSvg');
   assert.strictEqual(svg.style.display, 'none', 'no chart is shown for the wrong index');
+  assert.deepStrictEqual(page.errors, []);
+});
+
+test('The options table refuses a chain that belongs to another index', async () => {
+  // Same rule as the chart: a plausible-looking strike ladder for the wrong
+  // instrument is worse than an empty table, because someone will trade it.
+  const foreign = Object.assign({}, LIVE_SNAPSHOT, { symbol: 'BANKNIFTY' });
+  const page = await bootPage(baseStore(foreign));
+  page.setMarketSource('live');
+  await page.clickTab('options');
+
+  const rows = page.chainRowTexts();
+  assert.strictEqual(rows.length, 1, 'only the explanatory row may render');
+  assert.ok(!rows[0].includes('24,600'), 'no strike from the other index may appear');
+
+  const notice = page.document.getElementById('optionsChainEmptyNotice');
+  assert.strictEqual(notice.style.display, 'block');
+  assert.match(notice.textContent.replace(/\s+/g, ' '), /BANKNIFTY/);
   assert.deepStrictEqual(page.errors, []);
 });

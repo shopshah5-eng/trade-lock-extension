@@ -2795,7 +2795,13 @@
         // this table reported "unavailable" even with a full live chain in
         // hand, because the analysis payload has no oi block.
         var chainRows = snap && Array.isArray(snap.optionChain) ? snap.optionChain : [];
-        var hasLiveChain = Boolean(snap && snap.source === 'live' &&
+        // Strikes from another index are worse than no strikes: every number
+        // looks plausible while the levels belong to a different instrument.
+        // The background refreshes one configured symbol on a timer, so the
+        // stored snapshot is not necessarily the one this tab is showing.
+        var sameSymbol = Boolean(snap) &&
+          String(snap.symbol || '').toUpperCase() === String(symbol).toUpperCase();
+        var hasLiveChain = Boolean(snap && snap.source === 'live' && sameSymbol &&
           (chainRows.length || (snap.analysis && snap.analysis.oi)));
         if (!hasLiveChain) {
           if (setupCard) {
@@ -2820,9 +2826,14 @@
           }
           if (emptyNotice) {
             emptyNotice.style.display = 'block';
+            var chainWhy = (snap && snap.source === 'live' && !sameSymbol)
+              ? 'The stored chain is for ' + escapeHtml(String(snap.symbol || 'a different index')) +
+                ', so it is not shown against ' + escapeHtml(symbol) + '.'
+              : 'No live strike-by-strike options feed received.';
             emptyNotice.innerHTML =
               '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#fca5a5">Live Options Feed Unavailable</div>' +
-              '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">No live strike-by-strike options feed received. Trade Lock will not invent synthetic strike data under Live mode.</div>';
+              '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">' + chainWhy +
+              ' Trade Lock will not invent synthetic strike data under Live mode.</div>';
           }
           if (tableWrap) tableWrap.style.display = 'none';
           if (el('optSpotPrice')) el('optSpotPrice').textContent = '—';
