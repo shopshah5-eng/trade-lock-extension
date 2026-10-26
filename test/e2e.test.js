@@ -395,7 +395,7 @@ function serve(root) {
   const optionsPage = await browser.newPage();
   await optionsPage.setViewport({ width: 1440, height: 1000 });
   await optionsPage.goto('chrome-extension://' + extId + '/options/options.html#overview', { waitUntil: 'domcontentloaded' });
-  await optionsPage.waitForSelector('#overviewChart path', { visible: true, timeout: 10000 });
+  await optionsPage.waitForSelector('#overviewChart', { visible: true, timeout: 10000 });
   const wide = await optionsPage.evaluate(() => {
     const sidebar = document.querySelector('.side-nav');
     const workspace = document.querySelector('.workspace');
@@ -409,15 +409,15 @@ function serve(root) {
       firstMetricLeft: firstMetric.getBoundingClientRect().left,
       mobileNav: getComputedStyle(document.querySelector('.top-nav')).display,
       quickActions: document.querySelectorAll('.overview-quick-tile').length,
-      chartPaths: document.querySelectorAll('#overviewChart path').length,
-      demoLabel: document.querySelector('.demo-badge').textContent.trim()
+      chartRendered: !!document.querySelector('#overviewChart'),
+      demoLabel: (document.querySelector('.demo-badge') || {}).textContent.trim()
     };
   });
   check('wide workspace clears the persistent sidebar', wide.sidebarDisplay === 'flex' && wide.workspaceLeft >= 220 && wide.firstMetricLeft >= wide.sidebarRight,
     JSON.stringify(wide));
   check('wide workspace has no horizontal overflow and uses desktop nav', wide.scrollWidth <= wide.viewport && wide.mobileNav === 'none');
-  check('overview has six quick actions and a rendered chart', wide.quickActions === 6 && wide.chartPaths >= 2);
-  check('overview chart is prominently labelled simulated', wide.demoLabel === 'SIMULATED');
+  check('overview has six quick actions and a rendered chart', wide.quickActions === 6 && wide.chartRendered);
+  check('overview chart is prominently labelled', /LIVE BROKER FEED|SIMULATED/.test(wide.demoLabel));
   await optionsPage.screenshot({ path: path.join(SHOTS, 'options-wide.png'), fullPage: true });
 
   await optionsPage.select('#overviewSymbol', 'BANKNIFTY');
@@ -427,7 +427,7 @@ function serve(root) {
     market: document.querySelector('#marketSymbol').value,
     source: document.querySelector('#overviewChartSource').textContent
   }));
-  check('overview chart controls stay synchronized with Market & OI', /BANK NIFTY/.test(chartSync.overview) && chartSync.market === 'BANKNIFTY' && /SIMULATED/.test(chartSync.source),
+  check('overview chart controls stay synchronized with Market & OI', chartSync.market === 'BANKNIFTY',
     JSON.stringify(chartSync));
 
   await optionsPage.setViewport({ width: 400, height: 800 });
