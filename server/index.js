@@ -12,7 +12,7 @@
  *   POST /api/validate          { key, deviceId }          -> license status
  *
  * No dependencies: Node >= 18 (global fetch) only.
- * Razorpay credentials come from env — see .env.example / RAZORPAY_SETUP.md.
+ * Razorpay credentials come from env — see server/.env.example / RAZORPAY_SETUP.md.
  */
 require('./env').loadEnvFile(); // server/.env, if present
 const http = require('node:http');

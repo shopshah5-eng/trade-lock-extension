@@ -57,7 +57,7 @@ async function main() {
   if (env) {
     console.log(`  ${C.dim}Read ${env.applied} value(s) from ${env.file}${C.off}`);
   } else {
-    console.log(`  ${C.warn}No .env found.${C.off} ${C.dim}Copy .env.example to server/.env and fill it in.${C.off}`);
+    console.log(`  ${C.warn}No .env found.${C.off} ${C.dim}Copy server/.env.example to server/.env and fill it in.${C.off}`);
   }
   console.log('');
 

@@ -260,3 +260,30 @@ test('server/.env.example documents every variable the server reads', () => {
   assert.deepStrictEqual(undocumented, [],
     `these variables are read but not in .env.example: ${undocumented.join(', ')}`);
 });
+
+test('the setup instructions point at files that exist', () => {
+  // "Copy .env.example to server/.env" is the first command a new user runs, and
+  // it was wrong: the file lives at server/.env.example. A broken first command
+  // is the worst possible first impression, so the paths are checked.
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..', '..');
+
+  const docs = ['README.md', 'SUPABASE_SETUP.md', 'RAZORPAY_SETUP.md', 'RELEASE_CHECKLIST.md',
+    'scripts/doctor.js', 'server/index.js'];
+
+  for (const rel of docs) {
+    const text = fs.readFileSync(path.join(root, rel), 'utf8');
+    for (const match of text.matchAll(/cp\s+(\S*\.env\.example)\s+(\S+)/g)) {
+      const source = match[1];
+      assert.ok(fs.existsSync(path.join(root, source)),
+        `${rel} tells the reader to copy ${source}, which does not exist`);
+    }
+    // Any bare mention of a root-level .env.example is equally misleading.
+    if (/[^/\w]\.env\.example/.test(text) && !text.includes('server/.env.example')) {
+      assert.fail(`${rel} refers to a root .env.example; the file is server/.env.example`);
+    }
+  }
+
+  assert.ok(fs.existsSync(path.join(root, 'server', '.env.example')));
+});
