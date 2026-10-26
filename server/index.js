@@ -44,6 +44,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const emailService = require('./email');
 const supabase = require('./supabase');
+const paymentStatus = require('./paymentStatus');
 const L = require('./license');
 const store = require('./store');
 
@@ -775,92 +776,9 @@ const server = http.createServer(async (req, res) => {
      */
     if (req.method === 'GET' && url.pathname === '/api/admin/payment-status') {
       if (!adminAuthorized(req)) return json(res, 403, { error: 'admin_authorization_required' }, req);
-      const sbUrl = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
-      const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || '';
-      const checks = {
-        razorpay: {
-          ok: razorpayConfigured(),
-          detail: razorpayConfigured()
-            ? 'RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET present'
-            : 'Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET',
-        },
-        webhookSecret: {
-          ok: Boolean(WEBHOOK_SECRET),
-          detail: WEBHOOK_SECRET ? 'RAZORPAY_WEBHOOK_SECRET present' : 'Set RAZORPAY_WEBHOOK_SECRET',
-        },
-        supabase: {
-          ok: supabase.isConfigured(),
-          detail: supabase.isConfigured()
-            ? 'SUPABASE_URL + SUPABASE_SERVICE_KEY present'
-            : 'Set SUPABASE_URL and SUPABASE_SERVICE_KEY (service role, not anon)',
-        },
-        platform: {
-          ok: true,
-          detail: isServerless()
-            ? 'Serverless host: Supabase is REQUIRED for payments to persist'
-            : 'Long-lived host: local JSON store is also usable',
-        },
-      };
-
-      // Only touch the network when credentials exist.
-      let schema = { ok: false, detail: 'Skipped: Supabase not configured' };
-      if (checks.supabase.ok) {
-        const probe = async (pathname) => {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), PROVIDER_TIMEOUT_MS);
-          try {
-            const r = await fetch(sbUrl + pathname, {
-              headers: { apikey: sbKey, Authorization: 'Bearer ' + sbKey },
-              signal: ctrl.signal,
-            });
-            return r;
-          } finally { clearTimeout(timer); }
-        };
-        try {
-          const tables = ['licenses', 'orders', 'processed_webhooks'];
-          const missing = [];
-          for (const t of tables) {
-            const r = await probe('/rest/v1/' + t + '?select=*&limit=1');
-            if (r.status === 404) missing.push(t);
-            else if (r.status === 401 || r.status === 403) {
-              schema = { ok: false, detail: 'Key rejected (' + r.status + '). Use the service_role key, not the anon key.' };
-              break;
-            } else if (!r.ok) {
-              schema = { ok: false, detail: 'Table ' + t + ' query failed: HTTP ' + r.status };
-              break;
-            }
-          }
-          if (!schema.detail || schema.detail.startsWith('Skipped')) {
-            if (missing.length) {
-              schema = { ok: false, detail: 'Missing tables: ' + missing.join(', ') + '. Run server/schema.sql in the SQL editor.' };
-            } else {
-              // fulfill_order raises on nulls and returns 404 when the function is absent.
-              const rpc = await fetch(sbUrl + '/rest/v1/rpc/fulfill_order', {
-                method: 'POST',
-                headers: { apikey: sbKey, Authorization: 'Bearer ' + sbKey, 'Content-Type': 'application/json' },
-                body: JSON.stringify({}),
-              });
-              schema = rpc.status === 404
-                ? { ok: false, detail: 'Tables exist but the fulfill_order() function is missing. Re-run server/schema.sql.' }
-                : { ok: true, detail: 'Tables and fulfill_order() reachable' };
-            }
-          }
-        } catch (e) {
-          schema = { ok: false, detail: 'Supabase unreachable: ' + (e.message || 'network error') };
-        }
-      }
-      checks.schema = schema;
-
-      const ready = checks.razorpay.ok && checks.supabase.ok && schema.ok;
-      return json(res, ready ? 200 : 503, {
-        ok: ready,
-        paymentPersistenceReady: paymentPersistenceReady(),
-        demoCheckout: demoCheckoutEnabled(),
-        checks,
-        next: ready
-          ? 'Checkout is live. Do a ₹1 test purchase, then refund it in the Razorpay dashboard.'
-          : 'Fix the failing checks above, redeploy, then re-run this endpoint.',
-      }, req);
+      // Shared with `npm run doctor` so local and deployed answers never diverge.
+      const report = await paymentStatus.collect();
+      return json(res, report.ok ? 200 : 503, report, req);
     }
 
     if (req.method === 'POST' && url.pathname === '/api/admin/market-token') {

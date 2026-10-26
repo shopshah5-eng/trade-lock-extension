@@ -96,6 +96,25 @@ no licence.
 
 ## 6. Verify before you tell anyone
 
+Locally, one command checks everything and prints what to fix:
+
+```bash
+cp .env.example server/.env   # then fill in the values
+npm run doctor
+```
+
+It exits `0` only when a real payment would succeed, so it doubles as a deploy
+gate. Sample output while something is still missing:
+
+```
+  FAIL  razorpay        Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET
+  FAIL  supabase        Set SUPABASE_URL and SUPABASE_SERVICE_KEY (service role key, not anon)
+  PASS  platform        Long-lived host: the local JSON store is also usable
+  FAIL  schema          Skipped: Supabase not configured
+```
+
+Against the deployed server, use the same checks over HTTP:
+
 ```bash
 curl -s https://your-site.netlify.app/api/admin/payment-status \
   -H "x-admin-token: $FYERS_ADMIN_TOKEN" | jq

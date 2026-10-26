@@ -1,20 +1,26 @@
 'use strict';
 /* Supabase REST adapter. Payment routes fail closed when these operations fail. */
-const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || '';
+/*
+ * Credentials are read on every call rather than captured at require time.
+ * Capturing meant a key set after the module loaded (tests, the admin token
+ * endpoints, a warm serverless instance picking up a rotated secret) was
+ * silently ignored, and isConfigured() could disagree with reality.
+ */
+function baseUrl() { return (process.env.SUPABASE_URL || '').replace(/\/$/, ''); }
+function serviceKey() { return process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || ''; }
 const FETCH_TIMEOUT_MS = Number(process.env.PROVIDER_TIMEOUT_MS || 15000);
 
-function isConfigured() { return Boolean(SUPABASE_URL && SUPABASE_KEY); }
+function isConfigured() { return Boolean(baseUrl() && serviceKey()); }
 
 async function request(pathname, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    return await fetch(SUPABASE_URL + pathname, {
+    return await fetch(baseUrl() + pathname, {
       ...options,
       headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
+        apikey: serviceKey(),
+        Authorization: `Bearer ${serviceKey()}`,
         'Content-Type': 'application/json',
         ...(options.headers || {}),
       },

@@ -95,6 +95,17 @@ The Node server in `server/` provides the pricing page, Razorpay order/signature
 
 See **[SUPABASE_SETUP.md](SUPABASE_SETUP.md)** for the end-to-end payment setup (Supabase project, schema, env vars, webhook, self-test). See **[RAZORPAY_SETUP.md](RAZORPAY_SETUP.md)** for local demo, deployment, provider, and support procedures. See **[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)** for verified versus externally required checks.
 
+### Is checkout actually working?
+
+```bash
+cp .env.example server/.env   # fill in your keys; .env is gitignored
+npm run doctor
+```
+
+`npm run doctor` runs the same checks as `GET /api/admin/payment-status` and
+exits non-zero until a real payment would succeed, so it can gate a deploy.
+Every failing row names the variable to set.
+
 ## Tests and packaging
 
 Requires Node 22.12+ for the root development dependencies.
