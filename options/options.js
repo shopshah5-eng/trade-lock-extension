@@ -1788,14 +1788,26 @@
     if (source === 'live') {
       chrome.storage.local.get('tlMarket', function (res) {
         var snap = res && res.tlMarket;
-        var hasLive = Boolean(snap && snap.source === 'live' &&
-          ((snap.candleCount > 0) || (Array.isArray(snap.candles) && snap.candles.length)));
+        // The background refreshes one configured symbol on a timer and rewrites
+        // tlMarket. If the user is looking at a different index, that snapshot
+        // is not for this chart - drawing it would put NIFTY candles under a
+        // BANKNIFTY heading. Same-symbol is part of "is this live".
+        var sameSymbol = Boolean(snap) &&
+          String(snap.symbol || '').toUpperCase() === String(symbol).toUpperCase();
+        var liveCandles = (snap && Array.isArray(snap.candles)) ? snap.candles : [];
+        var hasLive = Boolean(snap && snap.source === 'live' && sameSymbol &&
+          ((snap.candleCount > 0) || liveCandles.length));
         if (!hasLive) {
           if (offlineNotice) {
             offlineNotice.style.display = 'block';
+            var why = (snap && snap.source === 'live' && !sameSymbol)
+              ? 'The stored snapshot is for ' + escapeHtml(String(snap.symbol || 'another index')) +
+                ', so it is not drawn over ' + escapeHtml(symbol) + '.'
+              : 'Live exchange candles are not connected or server credentials are missing.';
             offlineNotice.innerHTML =
               '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#fca5a5">Live Exchange Chart Unavailable</div>' +
-              '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Live exchange candles are not connected or server credentials are missing. Trade Lock does not fabricate live candles.</div>';
+              '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">' + why +
+              ' Trade Lock does not fabricate live candles.</div>';
           }
           if (svg) svg.style.display = 'none';
           if (modeBadge) {
@@ -1816,9 +1828,13 @@
         }
         if (statusText) statusText.textContent = 'Provider: ' + (snap.provider || 'market feed') + ' · ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
 
-        if (chartState.candles.length) {
-          drawDedicatedSvgChart(svg, chartState.candles);
-        }
+        // Draw from the snapshot, not from whatever the Market tab last left in
+        // chartState. Opening Charts first used to show a green "live" badge over
+        // a blank panel because nothing had filled chartState.candles yet.
+        chartState.candles = liveCandles;
+        chartState.symbol = symbol;
+        chartState.panOffset = 0;
+        drawDedicatedSvgChart(svg, liveCandles);
         if (el('marketCandleCanvas')) drawMarketCandleChart();
       });
       return;

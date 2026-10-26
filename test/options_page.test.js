@@ -319,3 +319,40 @@ test('Every element id the page looks up exists somewhere it can be found', asyn
   const missing = wanted.filter((id) => !defined(id));
   assert.deepStrictEqual(missing, [], `these ids are looked up but never exist: ${missing.join(', ')}`);
 });
+
+test('Charts draws the candles already in the snapshot, without visiting Market first', async () => {
+  // chartState.candles used to be filled only by the Market tab, so opening
+  // Charts first showed a green "live feed" badge over an empty panel. The
+  // charts renderer now draws from the snapshot it just verified.
+  const page = await bootPage(baseStore(LIVE_SNAPSHOT));
+  await page.clickTab('charts');
+
+  const svg = page.document.getElementById('dedicatedChartsSvg');
+  assert.ok(svg, 'missing #dedicatedChartsSvg');
+  assert.ok(svg.innerHTML.length > 500, 'the chart must actually be drawn');
+  assert.ok(/<rect|<path|<line|<polyline/i.test(svg.innerHTML), 'candles produce shapes, not just labels');
+  assert.ok(!/No market candle data|disconnected/i.test(svg.innerHTML),
+    'a real snapshot must not render the empty-chart message');
+
+  const notice = page.document.getElementById('chartsOfflineNotice');
+  assert.strictEqual(notice.style.display, 'none', 'the offline notice must stay hidden');
+  assert.deepStrictEqual(page.errors, []);
+});
+
+test('Charts refuses a snapshot that belongs to another index', async () => {
+  // The background refreshes one configured symbol on a timer. Drawing that
+  // snapshot under a different heading would silently mislabel the chart.
+  const foreign = Object.assign({}, LIVE_SNAPSHOT, { symbol: 'BANKNIFTY' });
+  const page = await bootPage(baseStore(foreign));
+  await page.clickTab('charts');
+
+  const notice = page.document.getElementById('chartsOfflineNotice');
+  assert.strictEqual(notice.style.display, 'block', 'a foreign snapshot must not be drawn');
+  const text = notice.textContent.replace(/\s+/g, ' ');
+  assert.match(text, /BANKNIFTY/, 'the notice must name the index it is holding');
+  assert.match(text, /fabricate/i, 'and repeat that nothing is invented');
+
+  const svg = page.document.getElementById('dedicatedChartsSvg');
+  assert.strictEqual(svg.style.display, 'none', 'no chart is shown for the wrong index');
+  assert.deepStrictEqual(page.errors, []);
+});
