@@ -194,6 +194,38 @@ test('demo checkout can never be enabled on a hosted platform', async () => {
   });
 });
 
+test('market feed readiness is reported but never blocks a payment', async () => {
+  await withEnv(Object.assign({}, CLEAR, { UPSTOX_ANALYTICS_TOKEN: undefined }), async () => {
+    const none = await collect();
+    assert.strictEqual(none.checks.marketProvider.ok, false);
+    assert.strictEqual(none.checks.marketProvider.advisory, true);
+    assert.match(none.checks.marketProvider.detail, /UPSTOX_ANALYTICS_TOKEN/,
+      'the failing row must name the variable to set');
+    assert.ok(!none.blocking.includes('marketProvider'),
+      'a dark market feed must never stop someone buying a licence');
+  });
+
+  await withEnv(Object.assign({}, CLEAR, { UPSTOX_ANALYTICS_TOKEN: 'analytics' }), async () => {
+    const upstox = await collect();
+    assert.strictEqual(upstox.checks.marketProvider.ok, true);
+    assert.match(upstox.checks.marketProvider.detail, /upstox/i);
+    assert.strictEqual(upstox.checks.marketToken, undefined,
+      'an Upstox analytics token lasts a year, so there is no daily-token warning');
+  });
+
+  await withEnv(Object.assign({}, CLEAR, {
+    UPSTOX_ANALYTICS_TOKEN: undefined,
+    FYERS_APP_ID: 'app',
+    FYERS_ACCESS_TOKEN: 'token',
+  }), async () => {
+    const fyers = await collect();
+    assert.strictEqual(fyers.checks.marketProvider.ok, true);
+    // Fyers tokens die at 06:30 every morning; say so before the open, not after.
+    assert.match(fyers.checks.marketToken.detail, /06:30/);
+    assert.strictEqual(fyers.checks.marketToken.advisory, true);
+  });
+});
+
 test('server/.env.example documents every variable the server reads', () => {
   const fs = require('node:fs');
   const path = require('node:path');

@@ -10,6 +10,7 @@
  */
 
 const supabase = require('./supabase');
+const marketFeed = require('./marketFeed');
 
 const PROVIDER_TIMEOUT_MS = Number(process.env.PROVIDER_TIMEOUT_MS) || 8000;
 
@@ -148,6 +149,25 @@ async function collect() {
       ? 'FYERS_ADMIN_TOKEN present'
       : 'Set FYERS_ADMIN_TOKEN (guards /api/admin/*; generate 32 random bytes)',
   };
+  // Market data is what the Pro+ tabs render. It never blocks a payment, but
+  // "no live data" is the most common reason someone says the product is
+  // broken, so the same command answers both questions.
+  const feed = marketFeed.resolveProvider();
+  checks.marketProvider = {
+    ok: feed.configured,
+    advisory: true,
+    detail: feed.configured
+      ? feed.id + ' configured - ' + feed.tokenNote
+      : feed.tokenNote,
+  };
+  if (feed.configured && feed.id === 'fyers') {
+    checks.marketToken = {
+      ok: false,
+      advisory: true,
+      detail: 'Fyers access tokens expire every day at 06:30 IST. Re-mint one with POST /api/admin/market-token before the open.',
+    };
+  }
+
   checks.publicBaseUrl = {
     ok: Boolean(process.env.PUBLIC_BASE_URL),
     // Advisory: the default Netlify origin is already allowed by CORS, so this

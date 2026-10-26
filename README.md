@@ -96,16 +96,22 @@ The Node server in `server/` provides the pricing page, Razorpay order/signature
 
 See **[SUPABASE_SETUP.md](SUPABASE_SETUP.md)** for the end-to-end payment setup (Supabase project, schema, env vars, webhook, self-test). See **[RAZORPAY_SETUP.md](RAZORPAY_SETUP.md)** for local demo, deployment, provider, and support procedures. See **[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)** for verified versus externally required checks.
 
-### Is checkout actually working?
+### Is checkout actually working? Is live data working?
 
 ```bash
-cp .env.example server/.env   # fill in your keys; .env is gitignored
+cp server/.env.example server/.env   # fill in your keys; .env is gitignored
 npm run doctor
 ```
 
 `npm run doctor` runs the same checks as `GET /api/admin/payment-status` and
 exits non-zero until a real payment would succeed, so it can gate a deploy.
 Every failing row names the variable to set.
+
+It also reports the market feed as advisory rows, because "the tabs are empty"
+and "nobody can pay" are the two things worth knowing before launch. A missing
+`UPSTOX_ANALYTICS_TOKEN` shows as `WARN marketProvider` without failing the run -
+a dark feed must never stop someone buying a licence. If Fyers is the provider it
+adds `WARN marketToken`: those tokens expire every day at 06:30 IST.
 
 ## Tests and packaging
 
