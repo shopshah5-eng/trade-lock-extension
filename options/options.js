@@ -2809,6 +2809,14 @@
           modeBadge.textContent = 'Live Exchange Chain';
           modeBadge.style.cssText = 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399';
         }
+
+        // Hand the feed's chain to the table, then paint it.
+        chartState.optionRows = chainRows;
+        chartState.fullOptionRows = chainRows;
+        chartState.chainSpot = (typeof snap.spot === 'number' && snap.spot > 0)
+          ? snap.spot
+          : (chainRows.length && Number(chainRows[0].spot) > 0 ? Number(chainRows[0].spot) : null);
+        renderChainTable();
       });
       return;
     }
@@ -2834,113 +2842,124 @@
       });
     }
 
-    var cfg = getInstrumentConfig(symbol);
-    var rows = Array.isArray(chartState.fullOptionRows) ? chartState.fullOptionRows : [];
-    // Spot comes from the feed. No feed, no spot - never a built-in base price.
-    var spot = (typeof chartState.chainSpot === 'number' && chartState.chainSpot > 0)
-      ? chartState.chainSpot
-      : (rows.length && Number(rows[0].spot) > 0 ? Number(rows[0].spot) : null);
+    renderChainTable();
+  }
 
-    if (!rows.length) {
-      if (el('optCallThetaVal')) el('optCallThetaVal').textContent = '—';
-      if (el('optCallThetaSub')) el('optCallThetaSub').textContent = 'Live broker feed required';
-      if (el('optPutThetaVal')) el('optPutThetaVal').textContent = '—';
-      if (el('optPutThetaSub')) el('optPutThetaSub').textContent = 'Live broker feed required';
-      if (el('optHourlyDecay')) el('optHourlyDecay').textContent = '—';
-      if (el('optPcrVal')) el('optPcrVal').textContent = '—';
-      if (el('optPcrBias')) el('optPcrBias').textContent = 'Awaiting Live Feed';
-      if (el('optMaxPain')) el('optMaxPain').textContent = '—';
+  function renderChainTable() {
+    /*
+     * Fills the strike table, the ATM greeks cards and PCR / max pain from
+     * chartState. Live mode used to `return` before reaching this code, so the
+     * options tab showed a green "Live Exchange Chain" badge above an empty
+     * table. Extracted so both the live and broker-tap paths can call it.
+     */
+      var cfg = getInstrumentConfig(symbol);
+      var rows = Array.isArray(chartState.fullOptionRows) ? chartState.fullOptionRows : [];
+      // Spot comes from the feed. No feed, no spot - never a built-in base price.
+      var spot = (typeof chartState.chainSpot === 'number' && chartState.chainSpot > 0)
+        ? chartState.chainSpot
+        : (rows.length && Number(rows[0].spot) > 0 ? Number(rows[0].spot) : null);
+
+      if (!rows.length) {
+        if (el('optCallThetaVal')) el('optCallThetaVal').textContent = '—';
+        if (el('optCallThetaSub')) el('optCallThetaSub').textContent = 'Live broker feed required';
+        if (el('optPutThetaVal')) el('optPutThetaVal').textContent = '—';
+        if (el('optPutThetaSub')) el('optPutThetaSub').textContent = 'Live broker feed required';
+        if (el('optHourlyDecay')) el('optHourlyDecay').textContent = '—';
+        if (el('optPcrVal')) el('optPcrVal').textContent = '—';
+        if (el('optPcrBias')) el('optPcrBias').textContent = 'Awaiting Live Feed';
+        if (el('optMaxPain')) el('optMaxPain').textContent = '—';
+
+        var tbody = el('optionsChainTbody');
+        if (tbody) {
+          tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:48px 16px;color:#94a3b8;font-size:13px;line-height:1.6">' +
+            '<div style="font-size:15px;font-weight:600;margin-bottom:6px;color:#e2e8f0">🔴 Live Option Chain Disconnected</div>' +
+            '<div>Real-time option strikes, Greeks, Open Interest and volume require a connected market feed (Upstox Analytics Token or Fyers). Nothing here is simulated.</div>' +
+            '</td></tr>';
+        }
+        return;
+      }
+
+      // ATM row = the strike closest to the live spot.
+      var atm = null;
+      if (spot != null) {
+        var bestDist = Infinity;
+        for (var ai = 0; ai < rows.length; ai++) {
+          var d = Math.abs(Number(rows[ai].strike) - spot);
+          if (d < bestDist) { bestDist = d; atm = rows[ai]; }
+        }
+      }
+      // A missing greek must stay null. `Number(x) || 0` made an absent theta
+      // render as "₹0.00 / d", i.e. a real-looking number we never received.
+      var atmLive = function (v) { return v != null && isFinite(Number(v)) ? Math.abs(Number(v)) : null; };
+      var atmCallTheta = atm ? atmLive(atm.callTheta) : null;
+      var atmPutTheta = atm ? atmLive(atm.putTheta) : null;
+      var atmCallPrice = atm ? atmLive(atm.callLtp) : null;
+      var atmPutPrice = atm ? atmLive(atm.putLtp) : null;
+      var dte = '—';
+
+      // Telemetry straight from the provider's greeks. No decay is estimated.
+      var fmtTheta = function (v) {
+        return v == null ? '—' : '₹' + Number(v).toFixed(2) + ' / d';
+      };
+      var decaySub = function (theta, price) {
+        if (theta == null) return 'Greeks unavailable from feed';
+        if (!price) return 'Premium unavailable from feed';
+        return '~' + Math.round((theta / price) * 100) + '% decay / day';
+      };
+      if (el('optCallThetaVal')) el('optCallThetaVal').textContent = fmtTheta(atmCallTheta);
+      if (el('optCallThetaSub')) el('optCallThetaSub').textContent = decaySub(atmCallTheta, atmCallPrice);
+      if (el('optPutThetaVal')) el('optPutThetaVal').textContent = fmtTheta(atmPutTheta);
+      if (el('optPutThetaSub')) el('optPutThetaSub').textContent = decaySub(atmPutTheta, atmPutPrice);
+      if (el('optHourlyDecay')) {
+        el('optHourlyDecay').textContent = (atmCallTheta == null || atmPutTheta == null)
+          ? '—'
+          : '₹-' + (Math.abs(atmCallTheta + atmPutTheta) / 2 / 6.25).toFixed(2) + ' / hr';
+      }
+      // Surface the real spot instead of a modelled one.
+      if (el('optSpotPrice')) {
+        el('optSpotPrice').textContent = spot != null
+          ? '₹' + Number(spot).toLocaleString('en-IN', { minimumFractionDigits: 2 })
+          : '—';
+      }
+
+      if (M && M.oiSummary) {
+        var summary = M.oiSummary(rows, spot);
+        // With no OI on either side the ratio is meaningless; a bare 0 would be
+        // displayed as an extremely bearish reading.
+        if (summary && (summary.totalCallOi > 0 || summary.totalPutOi > 0)) {
+          if (el('optPcrVal')) el('optPcrVal').textContent = summary.pcr;
+          if (el('optPcrBias')) {
+            el('optPcrBias').textContent = summary.pcr > 1.2 ? 'Bullish Sentiment' : summary.pcr < 0.8 ? 'Bearish Sentiment' : 'Neutral Range';
+          }
+          if (el('optMaxPain')) {
+            el('optMaxPain').textContent = summary.maxPain
+              ? summary.maxPain.toLocaleString('en-IN')
+              : (spot != null ? Number(spot).toLocaleString('en-IN') : '—');
+          }
+        }
+      }
 
       var tbody = el('optionsChainTbody');
-      if (tbody) {
-        tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:48px 16px;color:#94a3b8;font-size:13px;line-height:1.6">' +
-          '<div style="font-size:15px;font-weight:600;margin-bottom:6px;color:#e2e8f0">🔴 Live Option Chain Disconnected</div>' +
-          '<div>Real-time option strikes, Greeks, Open Interest and volume require a connected market feed (Upstox Analytics Token or Fyers). Nothing here is simulated.</div>' +
-          '</td></tr>';
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      // Strike spacing comes from the chain itself; there is no built-in step.
+      var step = 0;
+      for (var si = 1; si < rows.length; si++) {
+        var gap = Math.abs(Number(rows[si].strike) - Number(rows[si - 1].strike));
+        if (gap > 0 && (step === 0 || gap < step)) step = gap;
       }
-      return;
-    }
+      if (!step && cfg && cfg.step) step = cfg.step;
 
-    // ATM row = the strike closest to the live spot.
-    var atm = null;
-    if (spot != null) {
-      var bestDist = Infinity;
-      for (var ai = 0; ai < rows.length; ai++) {
-        var d = Math.abs(Number(rows[ai].strike) - spot);
-        if (d < bestDist) { bestDist = d; atm = rows[ai]; }
-      }
-    }
-    // A missing greek must stay null. `Number(x) || 0` made an absent theta
-    // render as "₹0.00 / d", i.e. a real-looking number we never received.
-    var atmLive = function (v) { return v != null && isFinite(Number(v)) ? Math.abs(Number(v)) : null; };
-    var atmCallTheta = atm ? atmLive(atm.callTheta) : null;
-    var atmPutTheta = atm ? atmLive(atm.putTheta) : null;
-    var atmCallPrice = atm ? atmLive(atm.callLtp) : null;
-    var atmPutPrice = atm ? atmLive(atm.putLtp) : null;
-    var dte = '—';
-
-    // Telemetry straight from the provider's greeks. No decay is estimated.
-    var fmtTheta = function (v) {
-      return v == null ? '—' : '₹' + Number(v).toFixed(2) + ' / d';
-    };
-    var decaySub = function (theta, price) {
-      if (theta == null) return 'Greeks unavailable from feed';
-      if (!price) return 'Premium unavailable from feed';
-      return '~' + Math.round((theta / price) * 100) + '% decay / day';
-    };
-    if (el('optCallThetaVal')) el('optCallThetaVal').textContent = fmtTheta(atmCallTheta);
-    if (el('optCallThetaSub')) el('optCallThetaSub').textContent = decaySub(atmCallTheta, atmCallPrice);
-    if (el('optPutThetaVal')) el('optPutThetaVal').textContent = fmtTheta(atmPutTheta);
-    if (el('optPutThetaSub')) el('optPutThetaSub').textContent = decaySub(atmPutTheta, atmPutPrice);
-    if (el('optHourlyDecay')) {
-      el('optHourlyDecay').textContent = (atmCallTheta == null || atmPutTheta == null)
-        ? '—'
-        : '₹-' + (Math.abs(atmCallTheta + atmPutTheta) / 2 / 6.25).toFixed(2) + ' / hr';
-    }
-    // Surface the real spot instead of a modelled one.
-    if (el('optSpotPrice')) {
-      el('optSpotPrice').textContent = spot != null
-        ? '₹' + Number(spot).toLocaleString('en-IN', { minimumFractionDigits: 2 })
-        : '—';
-    }
-
-    if (M && M.oiSummary) {
-      var summary = M.oiSummary(rows, spot);
-      // With no OI on either side the ratio is meaningless; a bare 0 would be
-      // displayed as an extremely bearish reading.
-      if (summary && (summary.totalCallOi > 0 || summary.totalPutOi > 0)) {
-        if (el('optPcrVal')) el('optPcrVal').textContent = summary.pcr;
-        if (el('optPcrBias')) {
-          el('optPcrBias').textContent = summary.pcr > 1.2 ? 'Bullish Sentiment' : summary.pcr < 0.8 ? 'Bearish Sentiment' : 'Neutral Range';
-        }
-        if (el('optMaxPain')) {
-          el('optMaxPain').textContent = summary.maxPain
-            ? summary.maxPain.toLocaleString('en-IN')
-            : (spot != null ? Number(spot).toLocaleString('en-IN') : '—');
-        }
-      }
-    }
-
-    var tbody = el('optionsChainTbody');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-
-    // Strike spacing comes from the chain itself; there is no built-in step.
-    var step = 0;
-    for (var si = 1; si < rows.length; si++) {
-      var gap = Math.abs(Number(rows[si].strike) - Number(rows[si - 1].strike));
-      if (gap > 0 && (step === 0 || gap < step)) step = gap;
-    }
-    if (!step && cfg && cfg.step) step = cfg.step;
-
-    rows.forEach(function (r) {
-      var isAtm = spot != null && step > 0 && Math.abs(r.strike - spot) < step;
-      var tr = document.createElement('tr');
-      if (isAtm) tr.className = 'atm';
-      tr.innerHTML = chainRowHtml(r, spot, step);
-      tbody.appendChild(tr);
-    });
+      rows.forEach(function (r) {
+        var isAtm = spot != null && step > 0 && Math.abs(r.strike - spot) < step;
+        var tr = document.createElement('tr');
+        if (isAtm) tr.className = 'atm';
+        tr.innerHTML = chainRowHtml(r, spot, step);
+        tbody.appendChild(tr);
+      });
   }
+
 
   if (el('optionsRefreshBtn')) el('optionsRefreshBtn').addEventListener('click', renderOptionsChainView);
   if (el('optionsSymbol')) el('optionsSymbol').addEventListener('change', renderOptionsChainView);
