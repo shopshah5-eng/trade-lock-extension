@@ -197,3 +197,18 @@ test('Live: the chart is not driven by a field that does not exist', () => {
     options.includes('chartState.candles.length'),
     'the chart must be gated on a populated series');
 });
+
+test('product copy does not quote invented index-level prices', () => {
+  // An illustrative "₹24,000" in a tooltip is still an invented price, and it
+  // goes stale the moment the index moves. Explain the mechanism instead.
+  // Plan prices and per-unit greeks are real product constants, so the check
+  // only flags amounts large enough to read as a market level.
+  for (const rel of SHIPPED_UI) {
+    const text = read(rel);
+    const invented = [...text.matchAll(/\u20b9\s?([0-9][0-9,]*)/g)]
+      .map((m) => ({ raw: m[0], value: Number(m[1].replace(/,/g, '')) }))
+      .filter((hit) => Number.isFinite(hit.value) && hit.value >= 10000);
+    assert.deepStrictEqual(invented.map((h) => h.raw), [],
+      `${rel} quotes an index-sized rupee amount in product copy`);
+  }
+});

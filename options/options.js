@@ -205,8 +205,11 @@
           'background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);color:#fca5a5">' +
           '<b>⚠️ Set Risk per unit before relying on these limits.</b> ' +
           'Risk per unit is 0, so detected risk is counted as <b>quantity × price (notional)</b>, not your stop-loss. ' +
-          'One NIFTY futures lot (75 × ₹24,000 ≈ ₹18,00,000 notional) would exceed any capital-based budget on the ' +
-          'first fill and lock you out immediately. Enter risk-per-point × lot size (for example 20 points × 75 = 1500).' +
+          // No worked example with a price in it: an invented index level in
+          // product copy is still an invented price, and it goes stale.
+          'One NIFTY futures lot is 75 units, so its notional value is many times ' +
+          'your account size and would exceed any capital-based budget on the first fill, ' +
+          'locking you out immediately. Enter risk-per-point × lot size (for example 20 × 75 = 1500).' +
           '</div>';
       }
     } else {
