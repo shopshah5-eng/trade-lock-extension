@@ -455,9 +455,13 @@
 
   function applyPlanGating(settings, lic) {
     var plan = planState(settings, lic);
+    // totalCapital / dailyRiskPercent / perTradeRiskPercent belong here too: their
+    // output (maxDailyRisk, maxRiskPerTrade) is forced to 0 on the free tier, so
+    // letting a free user edit them was offering a control that does nothing.
     var proIds = ['autoDetect', 'countAutoTrades', 'countAutoRisk',
       'maxDailyLoss', 'profitTarget', 'maxConsecutiveLosses',
-      'maxRiskPerTrade', 'maxDailyRisk', 'riskPerUnit'];
+      'maxRiskPerTrade', 'maxDailyRisk', 'riskPerUnit',
+      'totalCapital', 'dailyRiskPercent', 'perTradeRiskPercent'];
     proIds.forEach(function (id) {
       var node = el(id);
       if (!node) return;
