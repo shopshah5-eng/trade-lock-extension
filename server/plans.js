@@ -14,20 +14,17 @@ const PLANS = {
   pro_plus_ai_monthly: {
     id: 'pro_plus_ai_monthly', name: 'Pro+ AI Markets — Monthly', amount: 39900, currency: 'INR',
     durationDays: 30, tagline: '30-day prepaid Pro+ access. No auto-renewal.',
-    badge: 'Pro+', maxDevices: 5, proPlus: true, billingModel: 'prepaid',
-    available: false,
+    badge: 'Pro+', maxDevices: 5, proPlus: true, billingModel: 'prepaid', available: true,
   },
   pro_plus_ai_yearly: {
     id: 'pro_plus_ai_yearly', name: 'Pro+ AI Markets — Yearly', amount: 399900, currency: 'INR',
     durationDays: 365, tagline: '365-day prepaid Pro+ access with market analytics and coaching.',
-    badge: 'Save 16%', maxDevices: 5, proPlus: true, billingModel: 'prepaid',
-    available: false,
+    badge: 'Save 16%', maxDevices: 5, proPlus: true, billingModel: 'prepaid', available: true,
   },
   founder_lifetime: {
     id: 'founder_lifetime', name: 'Founder Lifetime', amount: 299900, currency: 'INR',
     durationDays: null, tagline: 'One payment. Lifetime access.',
-    badge: 'Founder access', maxDevices: 5, proPlus: true, billingModel: 'lifetime',
-    available: false,
+    badge: 'Founder access', maxDevices: 5, proPlus: true, billingModel: 'lifetime', available: true,
   },
   free: {
     id: 'free', name: 'Free', amount: 0, currency: 'INR', durationDays: null,
@@ -50,10 +47,9 @@ function canonicalPlanId(id) {
   return ALIASES[id] || id || 'free';
 }
 /**
- * Pro+ market-data plans are deliberately NOT for sale until a licensed,
- * redistributable market feed replaces the single-owner Fyers token
- * (which expires daily at 06:30 IST). Existing Pro+/Founder licenses keep
- * validating — only new purchases are blocked.
+ * `available: false` withdraws a plan from sale without removing it, so
+ * already-issued licenses keep validating. All plans are on sale again; the
+ * `available` flag stays as the kill-switch if the market feed goes dark.
  */
 function isAvailable(id) {
   const plan = getPlan(id);

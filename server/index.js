@@ -20,6 +20,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { PLANS, getPlan, canonicalPlanId, isAvailable, purchasablePlans } = require('./plans');
+const marketFeed = require('./marketFeed');
+const upstoxProvider = require('./providers/upstox');
 const TLMarket = fs.existsSync(path.join(__dirname, 'lib', 'market.js'))
   ? require('./lib/market')
   : require('../lib/market');
@@ -324,7 +326,12 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { plans: purchasablePlans() }, req);
     }
     if (req.method === 'GET' && url.pathname === '/api/config') {
+      const feed = marketFeed.resolveProvider();
       return json(res, 200, { keyId: KEY_ID, demoMode: demoCheckoutEnabled(), configured: razorpayConfigured(),
+        marketProvider: feed.id,
+        marketFeedConfigured: feed.configured,
+        marketCredential: feed.tokenNote,
+        upstoxConfigured: Boolean(process.env.UPSTOX_ANALYTICS_TOKEN),
         fyersConfigured: Boolean(FYERS_APP_ID && FYERS_ACCESS_TOKEN),
         openRouterConfigured: Boolean(OPENROUTER_API_KEY),
         geminiConfigured: Boolean(GEMINI_API_KEY),
@@ -332,7 +339,15 @@ const server = http.createServer(async (req, res) => {
         supabaseConfigured: supabase.isConfigured() }, req);
     }
     if (req.method === 'GET' && url.pathname === '/health') {
-      return json(res, 200, { ok: true, configured: razorpayConfigured(), demoMode: demoCheckoutEnabled(), paymentPersistenceReady: paymentPersistenceReady() }, req);
+      const feed = marketFeed.resolveProvider();
+      return json(res, 200, {
+        ok: true,
+        configured: razorpayConfigured(),
+        demoMode: demoCheckoutEnabled(),
+        paymentPersistenceReady: paymentPersistenceReady(),
+        marketFeed: { provider: feed.id, configured: feed.configured, credential: feed.tokenNote },
+        cache: marketFeed.cacheStats(),
+      }, req);
     }
 
     if (req.method === 'POST' && url.pathname === '/api/create-order') {
@@ -741,28 +756,110 @@ const server = http.createServer(async (req, res) => {
         note: 'Store this as FYERS_ACCESS_TOKEN on the server. Treat it like a password.' }, req);
     }
 
+    /*
+     * Operator-only credential rotation. Exists so a daily Fyers token (or a
+     * yearly Upstox token) can be updated WITHOUT a redeploy. Credentials are
+     * validated against the provider before they are accepted, and the response
+     * never echoes the token back.
+     *
+     * Serverless caveat: setting process.env here only lives as long as the
+     * warm instance. For a permanent value set the dashboard env var. The
+     * Upstox Analytics Token needs this once a year, not once a day.
+     */
+    if (req.method === 'POST' && url.pathname === '/api/admin/market-token') {
+      if (!adminAuthorized(req)) return json(res, 403, { error: 'admin_authorization_required' }, req);
+      if (isRateLimited(req, 10, 60000)) return json(res, 429, { error: 'rate_limited' }, req);
+      const body = await readJson(req);
+      const provider = String(body.provider || '').toLowerCase();
+      const token = String(body.token || '').trim();
+      if (!token) return json(res, 400, { error: 'token_required' }, req);
+
+      if (provider === 'upstox') {
+        const check = await upstoxProvider.verifyToken(token, providerFetch);
+        if (!check.ok) {
+          return json(res, 400, { ok: false, error: check.error,
+            detail: 'Upstox rejected this token. Generate one at Developer Apps -> Analytics.' }, req);
+        }
+        process.env.UPSTOX_ANALYTICS_TOKEN = token;
+      } else if (provider === 'fyers') {
+        process.env.FYERS_ACCESS_TOKEN = token;
+      } else {
+        return json(res, 400, { error: 'unknown_provider', detail: "provider must be 'upstox' or 'fyers'" }, req);
+      }
+
+      marketFeed.clearCache();
+      const feed = marketFeed.resolveProvider();
+      return json(res, 200, {
+        ok: true, provider: feed.id, credential: feed.tokenNote,
+        note: process.env.NETLIFY || process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME
+          ? 'Applied to this instance only. Set the dashboard env var for a permanent value.'
+          : 'Applied and used immediately.',
+      }, req);
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/admin/market-status') {
+      if (!adminAuthorized(req)) return json(res, 403, { error: 'admin_authorization_required' }, req);
+      const feed = marketFeed.resolveProvider();
+      if (!feed.configured) {
+        return json(res, 200, { ok: false, provider: null, error: 'market_feed_not_configured',
+          credential: feed.tokenNote, cache: marketFeed.cacheStats() }, req);
+      }
+      let probe;
+      if (feed.id === 'upstox') {
+        probe = await upstoxProvider.verifyToken(process.env.UPSTOX_ANALYTICS_TOKEN, providerFetch);
+      } else {
+        try {
+          const client = fyers.createClient(
+            { appId: getFyersAppId(), accessToken: getFyersAccessToken() }, providerFetch);
+          await client.history({ symbol: 'NSE:NIFTY50-INDEX', resolution: '15',
+            rangeFrom: String(Math.floor(Date.now() / 1000) - 86400),
+            rangeTo: String(Math.floor(Date.now() / 1000)) });
+          probe = { ok: true, error: null };
+        } catch (e) {
+          probe = { ok: false, error: 'token_rejected', message: e.message };
+        }
+      }
+      return json(res, 200, {
+        ok: probe.ok, provider: feed.id, credential: feed.tokenNote,
+        error: probe.ok ? null : probe.error,
+        cache: marketFeed.cacheStats(),
+      }, req);
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/market/live') {
       if (!await requireProPlus(req)) return json(res, 403, { error: 'pro_plus_required' }, req);
       if (isRateLimited(req, 40, 60000)) return json(res, 429, { error: 'rate_limited' }, req);
-      const appId = getFyersAppId();
-      const accessToken = getFyersAccessToken();
-      if (!appId || !accessToken) return json(res, 503, { error: 'fyers_not_configured',
-        hint: 'Set FYERS_APP_ID and FYERS_ACCESS_TOKEN (login via /api/fyers/login), or use /api/market/demo' }, req);
-      const symbol = url.searchParams.get('symbol') || 'NSE:NIFTY50-INDEX';
+
+      const symbol = url.searchParams.get('symbol') || 'NIFTY';
       const resolution = url.searchParams.get('resolution') || '15';
-      const client = fyers.createClient({ appId, accessToken }, providerFetch);
-      const to = Math.floor(Date.now() / 1000);
-      try {
-        const hist = await client.history({ symbol, resolution, rangeFrom: String(to - 10 * 86400), rangeTo: String(to) });
-        const candles = fyers.normalizeHistory(hist);
-        let chain = null;
-        try { chain = fyers.normalizeOptionChain(await client.optionChain({ symbol, strikeCount: 12 })); } catch (e) { chain = null; }
-        const analysis = TLMarket.analyze(candles, { symbol, timeframe: resolution + 'm', optionChain: chain });
-        const brief = await ai.summarize({ apiKey: OPENROUTER_API_KEY, geminiApiKey: GEMINI_API_KEY, analysis }, providerFetch);
-        return json(res, 200, { ok: true, symbol, candles: candles.length, analysis, brief }, req);
-      } catch (err) {
-        return json(res, 502, { error: 'fyers_provider_error', message: err.message }, req);
+      const feed = await marketFeed.fetchMarket({ symbol, resolution, fetchImpl: providerFetch });
+
+      if (!feed.ok) {
+        // 503 = credentials missing/expired (operator action); 502 = upstream fault.
+        const status = feed.error === 'market_feed_not_configured' || feed.error === 'provider_token_expired'
+          ? 503 : 502;
+        return json(res, status, {
+          error: feed.error,
+          provider: feed.provider || null,
+          detail: feed.detail || null,
+          message: feed.message || null,
+          hint: 'Pro+ users must see an honest offline state; nothing is fabricated.',
+        }, req);
       }
+
+      const analysis = TLMarket.analyze(feed.candles, {
+        symbol, timeframe: resolution + 'm', optionChain: feed.optionChain,
+      });
+      const brief = await ai.summarize({ apiKey: OPENROUTER_API_KEY, geminiApiKey: GEMINI_API_KEY, analysis }, providerFetch);
+      return json(res, 200, {
+        ok: true,
+        symbol,
+        provider: feed.provider,
+        cached: Boolean(feed.cached),
+        candles: feed.candles.length,
+        analysis,
+        brief,
+      }, req);
     }
 
     return json(res, 404, { error: 'not_found' }, req);

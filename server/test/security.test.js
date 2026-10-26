@@ -118,26 +118,21 @@ test('mocked live checkout, entitlements, cold starts and webhook recovery remai
 
   const plans = await request(port, 'GET', '/api/plans');
   assert.strictEqual(plans.status, 200);
-  // Pro+ / Founder are defined for already-issued licenses but are not for sale:
-  // no licensed redistributable market feed exists yet.
-  assert.deepStrictEqual(plans.body.plans.map(p => p.id).sort(), ['pro_monthly', 'pro_yearly']);
+  assert.deepStrictEqual(plans.body.plans.map(p => p.id).sort(), [
+    'founder_lifetime', 'pro_monthly', 'pro_plus_ai_monthly', 'pro_plus_ai_yearly', 'pro_yearly',
+  ]);
   assert.ok(plans.body.plans.every(p => p.id !== 'free' && p.billingModel));
   assert.strictEqual((await request(port, 'POST', '/api/create-order', { plan: 'free', email: 'free@example.com' })).status, 400);
 
-  // Nobody may be charged for a Pro+ plan that cannot deliver live market data.
-  for (const unavailable of ['pro_plus_ai_monthly', 'pro_plus_ai_yearly', 'pro_plus_ai', 'founder_lifetime', 'lifetime']) {
-    const refused = await request(port, 'POST', '/api/create-order', { plan: unavailable, email: 'plus@example.com' });
-    assert.strictEqual(refused.status, 409, `${unavailable} must be refused`);
-    assert.strictEqual(refused.body.error, 'plan_not_available');
-  }
-  assert.strictEqual(orderSequence, 0, 'no Razorpay order may be created for an unavailable plan');
-
-  // Pro+ entitlements still apply to keys issued before the plan was withdrawn.
-  const plusKey = seedLicense('pro_plus_ai_monthly', 'plus@example.com');
-  const plusVerify = await request(port, 'POST', '/api/validate', { key: plusKey, deviceId: 'plus-device-0' });
-  assert.strictEqual(plusVerify.body.proPlus, true);
-
-  for (let i = 1; i < 5; i++) {
+  // Pro+ is purchasable again, and its key must carry Pro+ entitlements.
+  const plusOrder = await create('pro_plus_ai', 'plus@example.com');
+  assert.strictEqual(plusOrder.plan, 'pro_plus_ai_monthly');
+  const plusPayment = 'pay_plus_1';
+  const plusVerify = await verify(plusOrder.orderId, plusPayment, 'plus@example.com');
+  assert.strictEqual(plusVerify.status, 200, plusVerify.text);
+  assert.strictEqual(plusVerify.body.plan, 'pro_plus_ai_monthly');
+  const plusKey = plusVerify.body.licenseKey;
+  for (let i = 0; i < 5; i++) {
     const res = await request(port, 'POST', '/api/validate', { key: plusKey, deviceId: 'plus-device-' + i });
     assert.strictEqual(res.body.active, true, res.text);
     assert.strictEqual(res.body.maxDevices, 5);
@@ -149,7 +144,7 @@ test('mocked live checkout, entitlements, cold starts and webhook recovery remai
   assert.strictEqual(sixth.body.maxDevices, 5);
 
   const proOrder = await create('pro_monthly', 'pro@example.com');
-  assert.strictEqual(orderSequence, 1, 'exactly one Razorpay order for the single sellable plan');
+  assert.strictEqual(orderSequence, 2, 'one Razorpay order per purchase');
 
   const bad = await request(port, 'POST', '/api/verify-payment', {
     orderId: proOrder.orderId, paymentId: 'pay_pro_1', signature: 'forged', email: 'pro@example.com',
@@ -183,8 +178,8 @@ test('mocked live checkout, entitlements, cold starts and webhook recovery remai
     { Authorization: 'Bearer ' + proKey })).status, 403);
   const plusMarket = await request(port, 'GET', '/api/market/live?symbol=NIFTY', undefined,
     { Authorization: 'Bearer ' + plusKey });
-  assert.strictEqual(plusMarket.status, 503); // entitlement passed; Fyers is intentionally not configured
-  assert.strictEqual(plusMarket.body.error, 'fyers_not_configured');
+  assert.strictEqual(plusMarket.status, 503); // entitlement passed; no market credential is configured
+  assert.strictEqual(plusMarket.body.error, 'market_feed_not_configured');
 
   const demo = await request(port, 'GET', '/api/market/demo?symbol=NIFTY');
   assert.strictEqual(demo.status, 200);

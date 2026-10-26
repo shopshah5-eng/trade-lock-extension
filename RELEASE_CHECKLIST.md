@@ -93,7 +93,18 @@ Host permission does not prove adapter compatibility. Use safe/test accounts whe
 
 - [ ] Deploy the actual Netlify/Vercel/Node target; verify routing, included pricing assets, environment detection, HTTPS and raw webhook bodies.
 - [ ] Verify live payments fail closed on serverless when Supabase is absent and recover after correct configuration.
-- [ ] Verify Fyers OAuth admin authorization, signed/expiring state, token expiry/refresh, live candle/option normalization and Pro+ denial for Pro.
+- [ ] Choose the Pro+ market feed and set its credential on the host:
+      - **Upstox Analytics Token (recommended)** — `UPSTOX_ANALYTICS_TOKEN`. Free, read-only,
+        generated once per year at Developer Apps -> Analytics. No daily ritual.
+      - **Fyers API v3** — `FYERS_APP_ID` + `FYERS_ACCESS_TOKEN`. This token expires **every day
+        at 06:30 IST**, so Pro+ goes dark each morning until a human refreshes it. Only use this
+        if you can commit to that daily step.
+- [ ] Confirm `/health` reports `marketFeed.configured: true` and the expected provider.
+- [ ] Rotate the credential without a redeploy if needed:
+      `POST /api/admin/market-token` with `x-admin-token: $FYERS_ADMIN_TOKEN`,
+      body `{"provider":"upstox","token":"..."}`. Check it with `GET /api/admin/market-status`.
+- [ ] Verify Pro+ denial for Pro, live candle/option normalization, and that an expired or missing
+      credential produces an honest offline state (never fabricated candles).
 - [ ] Verify OpenRouter/Gemini timeout/failure fallback and that public demo analysis never invokes remote AI.
 - [ ] Replace or supplement in-memory rate limiting if the deployment needs coordinated multi-instance limits.
 - [ ] Set monitoring/alerts without logging license keys, payment signatures, raw keys or provider secrets.

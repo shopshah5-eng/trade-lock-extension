@@ -593,18 +593,16 @@
     var proAiSub = el('proAiCardSub');
     var proAiBadge = el('proAiBadge');
     var proAiBtn = el('proAiCardBtn');
-    // Pro+ market data is not sold yet (no licensed redistributable feed, and the
-    // current Fyers token is a single-owner credential that expires daily at 06:30 IST).
-    if (proAiName) proAiName.textContent = 'Pro+ AI Markets';
-    if (proAiPrice) proAiPrice.innerHTML = 'Coming soon';
-    if (proAiSub) proAiSub.textContent = 'Not for sale until a licensed market feed is in place';
-    if (proAiBadge) proAiBadge.style.display = 'none';
+    if (proAiName) proAiName.textContent = isYearly ? 'Pro+ AI 365-Day' : 'Pro+ AI 30-Day';
+    if (proAiPrice) proAiPrice.innerHTML = isYearly ? '₹3,999 <span style="font-size:12px;font-weight:400">/ 365 days</span>' : '₹399 <span style="font-size:12px;font-weight:400">/ 30 days</span>';
+    if (proAiSub) proAiSub.textContent = isYearly ? '365-day prepaid access · equivalent ₹333/month (Save 16%)' : 'Discipline + market intelligence · 30-day prepaid access';
+    if (proAiBadge) proAiBadge.style.display = isYearly ? 'inline-block' : 'none';
     if (proAiBtn) {
       proAiBtn.setAttribute('data-plan', isYearly ? 'pro_plus_ai_yearly' : 'pro_plus_ai_monthly');
-      proAiBtn.disabled = true;
-      proAiBtn.textContent = 'Not for sale yet';
-      proAiBtn.style.opacity = '0.6';
-      proAiBtn.style.cursor = 'not-allowed';
+      proAiBtn.disabled = false;
+      proAiBtn.textContent = 'Get Pro+ AI';
+      proAiBtn.style.opacity = '';
+      proAiBtn.style.cursor = '';
     }
 
     // Update plan buttons in comparison cards
@@ -657,17 +655,14 @@
       if (plan === 'free') return;
 
       var notice = el('checkoutNotice');
-      if (btn.getAttribute('data-unavailable') === '1' ||
-          plan === 'pro_plus_ai_monthly' || plan === 'pro_plus_ai_yearly' ||
-          plan === 'pro_plus_ai' || plan === 'founder_lifetime' || plan === 'lifetime') {
+      if (btn.getAttribute('data-unavailable') === '1') {
         if (notice) {
           notice.style.display = 'block';
           notice.style.background = 'rgba(245,158,11,0.12)';
           notice.style.border = '1px solid rgba(245,158,11,0.35)';
           notice.style.color = '#fcd34d';
-          notice.innerHTML = '⚠️ <b>Not for sale yet.</b> Pro+ market data needs a licensed redistributable ' +
-            'exchange feed. No payment can be taken for it. Pro (₹199 / 30 days) includes every ' +
-            'discipline rule and broker-tab detection.';
+          notice.innerHTML = '⚠️ <b>This plan is not on sale right now.</b> ' +
+            'Pro (₹199 / 30 days) includes every discipline rule and broker-tab detection.';
         }
         return;
       }
