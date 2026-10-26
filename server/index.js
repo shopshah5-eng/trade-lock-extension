@@ -19,7 +19,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { PLANS, getPlan, canonicalPlanId } = require('./plans');
+const { PLANS, getPlan, canonicalPlanId, isAvailable, purchasablePlans } = require('./plans');
 const TLMarket = fs.existsSync(path.join(__dirname, 'lib', 'market.js'))
   ? require('./lib/market')
   : require('../lib/market');
@@ -321,7 +321,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(html);
     }
     if (req.method === 'GET' && url.pathname === '/api/plans') {
-      return json(res, 200, { plans: Object.values(PLANS).filter(p => p.id !== 'free') }, req);
+      return json(res, 200, { plans: purchasablePlans() }, req);
     }
     if (req.method === 'GET' && url.pathname === '/api/config') {
       return json(res, 200, { keyId: KEY_ID, demoMode: demoCheckoutEnabled(), configured: razorpayConfigured(),
@@ -340,6 +340,12 @@ const server = http.createServer(async (req, res) => {
       const { plan: planId, email } = await readJson(req);
       const plan = getPlan(planId);
       if (!plan || !plan.amount) return json(res, 400, { error: 'unknown_plan' }, req);
+      if (!isAvailable(planId)) {
+        return json(res, 409, {
+          error: 'plan_not_available',
+          detail: 'This plan is not open for purchase yet. Pro+ market data requires a licensed redistributable feed and is not sold at this time.',
+        }, req);
+      }
       if (!paymentPersistenceReady()) return json(res, 503, { error: 'payment_persistence_not_configured', detail: 'Configure Supabase before accepting serverless payments' }, req);
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || '')) return json(res, 400, { error: 'valid_email_required' }, req);
 

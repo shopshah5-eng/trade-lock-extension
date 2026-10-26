@@ -296,11 +296,32 @@ test('Paid Plans Catalog: Client and server plan catalogs match proposed pricing
     assert.strictEqual(sPlan.amount, p.amount, `Price for ${p.id} must be ${p.amount} paise`);
   });
 
+  // Pro+ / Founder stay DEFINED (existing licenses must keep validating) but are
+  // NOT for sale: the Fyers access token is a single-owner credential that expires
+  // daily at 06:30 IST, so Pro+ market data cannot be delivered to buyers yet.
+  assert.strictEqual(serverPlans.isAvailable('pro_monthly'), true, 'Pro monthly must be purchasable');
+  assert.strictEqual(serverPlans.isAvailable('pro_yearly'), true, 'Pro yearly must be purchasable');
+  assert.strictEqual(serverPlans.isAvailable('pro_plus_ai_monthly'), false, 'Pro+ monthly must not be purchasable');
+  assert.strictEqual(serverPlans.isAvailable('pro_plus_ai_yearly'), false, 'Pro+ yearly must not be purchasable');
+  assert.strictEqual(serverPlans.isAvailable('founder_lifetime'), false, 'Founder lifetime must not be purchasable');
+  assert.strictEqual(serverPlans.isAvailable('pro_plus_ai'), false, 'Pro+ alias must not be purchasable');
+  assert.deepStrictEqual(
+    serverPlans.purchasablePlans().map((p) => p.id).sort(),
+    ['pro_monthly', 'pro_yearly'],
+    'Only Pro plans may be offered for sale'
+  );
+
+  // Entitlements for already-issued Pro+ / Founder keys must be unaffected.
+  assert.strictEqual(serverPlans.getPlan('pro_plus_ai_monthly').proPlus, true);
+  assert.strictEqual(serverPlans.getPlan('founder_lifetime').proPlus, true);
+
   // Verify options/options.html contains Upgrade / Plans entry points
   const optionsHtml = fs.readFileSync(path.join(rootDir, 'options/options.html'), 'utf8');
   assert.ok(optionsHtml.includes('Pro 30-Day'), 'Options must present 30-day prepaid Pro');
   assert.ok(optionsHtml.includes('365 days'), 'Options must present 365-day prepaid access');
-  assert.ok(optionsHtml.includes('Pro+ AI 30-Day'), 'Options must present 30-day prepaid Pro+');
+  assert.ok(optionsHtml.includes('Pro+ AI Markets'), 'Options must present the Pro+ tier');
+  assert.ok(optionsHtml.includes('Not for sale yet'), 'Options must mark Pro+ as not for sale');
+  assert.ok(optionsHtml.includes('data-unavailable="1"'), 'Pro+ buy button must be flagged unavailable');
   assert.ok(optionsHtml.includes('no auto-renewal'), 'Options must disclose prepaid non-renewing access');
   assert.strictEqual(optionsHtml.includes('Recurring subscriptions can be managed or cancelled'), false);
   assert.ok(optionsHtml.includes('Founder Lifetime'), 'Options must present Founder Lifetime');

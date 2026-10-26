@@ -179,7 +179,7 @@ function paymentSignature(orderId, paymentId) {
   return crypto.createHmac('sha256', 'mock_key_secret').update(orderId + '|' + paymentId).digest('hex');
 }
 async function createOrder(email = 'remote@example.com') {
-  const res = await request(port, 'POST', '/api/create-order', { plan: 'pro_plus_ai_monthly', email });
+  const res = await request(port, 'POST', '/api/create-order', { plan: 'pro_monthly', email });
   assert.strictEqual(res.status, 200, res.text);
   return res.body;
 }

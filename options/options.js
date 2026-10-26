@@ -178,9 +178,21 @@
     if (cap > 0 && (dPct > 0 || tPct > 0)) {
       var day = R.dailyRiskLimit({ totalCapital: cap, dailyRiskPercent: dPct });
       var per = R.plannedRiskPerTrade({ totalCapital: cap, perTradeRiskPercent: tPct });
+      var rpu = parseFloat(el('riskPerUnit') ? el('riskPerUnit').value : '0') || 0;
       box.innerHTML = 'On ' + R.inr(cap) + ' capital: daily risk budget <b>' + (day ? R.inr(day) : '—') +
         '</b> · planned risk per trade <b>' + (per ? R.inr(per) : '—') + '</b>. ' +
         'The screen locks when the day\'s used risk reaches the budget — but only after your open trade closes.';
+      if (rpu <= 0) {
+        // Notional is quantity x price. On F&O that is many times the account
+        // size, so a capital-based budget would be exhausted by the first fill.
+        box.innerHTML += '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;' +
+          'background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);color:#fca5a5">' +
+          '<b>⚠️ Set Risk per unit before relying on these limits.</b> ' +
+          'Risk per unit is 0, so detected risk is counted as <b>quantity × price (notional)</b>, not your stop-loss. ' +
+          'One NIFTY futures lot (75 × ₹24,000 ≈ ₹18,00,000 notional) would exceed any capital-based budget on the ' +
+          'first fill and lock you out immediately. Enter risk-per-point × lot size (for example 20 points × 75 = 1500).' +
+          '</div>';
+      }
     } else {
       box.textContent = 'Set capital and percentages to see your derived limits.';
     }
@@ -581,11 +593,19 @@
     var proAiSub = el('proAiCardSub');
     var proAiBadge = el('proAiBadge');
     var proAiBtn = el('proAiCardBtn');
-    if (proAiName) proAiName.textContent = isYearly ? 'Pro+ AI 365-Day' : 'Pro+ AI 30-Day';
-    if (proAiPrice) proAiPrice.innerHTML = isYearly ? '₹3,999 <span style="font-size:12px;font-weight:400">/ 365 days</span>' : '₹399 <span style="font-size:12px;font-weight:400">/ 30 days</span>';
-    if (proAiSub) proAiSub.textContent = isYearly ? '365-day prepaid access · equivalent ₹333/month (Save 16%)' : 'Discipline + market intelligence · 30-day prepaid access';
-    if (proAiBadge) proAiBadge.style.display = isYearly ? 'inline-block' : 'none';
-    if (proAiBtn) proAiBtn.setAttribute('data-plan', isYearly ? 'pro_plus_ai_yearly' : 'pro_plus_ai_monthly');
+    // Pro+ market data is not sold yet (no licensed redistributable feed, and the
+    // current Fyers token is a single-owner credential that expires daily at 06:30 IST).
+    if (proAiName) proAiName.textContent = 'Pro+ AI Markets';
+    if (proAiPrice) proAiPrice.innerHTML = 'Coming soon';
+    if (proAiSub) proAiSub.textContent = 'Not for sale until a licensed market feed is in place';
+    if (proAiBadge) proAiBadge.style.display = 'none';
+    if (proAiBtn) {
+      proAiBtn.setAttribute('data-plan', isYearly ? 'pro_plus_ai_yearly' : 'pro_plus_ai_monthly');
+      proAiBtn.disabled = true;
+      proAiBtn.textContent = 'Not for sale yet';
+      proAiBtn.style.opacity = '0.6';
+      proAiBtn.style.cursor = 'not-allowed';
+    }
 
     // Update plan buttons in comparison cards
     var planId = R.canonicalPlanId ? R.canonicalPlanId((lic && lic.plan) || 'free') : ((lic && lic.plan) || 'free');
@@ -636,8 +656,23 @@
       var plan = btn.getAttribute('data-plan');
       if (plan === 'free') return;
 
-      var email = el('checkoutEmail') ? el('checkoutEmail').value.trim() : '';
       var notice = el('checkoutNotice');
+      if (btn.getAttribute('data-unavailable') === '1' ||
+          plan === 'pro_plus_ai_monthly' || plan === 'pro_plus_ai_yearly' ||
+          plan === 'pro_plus_ai' || plan === 'founder_lifetime' || plan === 'lifetime') {
+        if (notice) {
+          notice.style.display = 'block';
+          notice.style.background = 'rgba(245,158,11,0.12)';
+          notice.style.border = '1px solid rgba(245,158,11,0.35)';
+          notice.style.color = '#fcd34d';
+          notice.innerHTML = '⚠️ <b>Not for sale yet.</b> Pro+ market data needs a licensed redistributable ' +
+            'exchange feed. No payment can be taken for it. Pro (₹199 / 30 days) includes every ' +
+            'discipline rule and broker-tab detection.';
+        }
+        return;
+      }
+
+      var email = el('checkoutEmail') ? el('checkoutEmail').value.trim() : '';
 
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         if (notice) {
@@ -1979,7 +2014,11 @@
         (fvgsHtml ? '<tr><td class="k">Unfilled FVGs</td><td class="v">' + fvgsHtml + '</td></tr>' : '') +
       '</table>' +
       '<div class="callout blue" style="margin-top:14px">' +
-        '<b>AI Market Brief:</b> ' + (data.brief && data.brief.text ? escapeHtml(data.brief.text) : 'Market testing key zones. Watch for price reaction at nearest pivot.') +
+        '<b>Market Brief:</b> ' + (data.brief && data.brief.text
+          ? escapeHtml(data.brief.text) +
+            '<span style="display:block;margin-top:6px;font-size:10.5px;color:var(--dim)">Source: ' +
+            escapeHtml(data.brief.source || 'unknown') + '</span>'
+          : '<span style="color:var(--muted)">No brief available — the narrative engine returned no text.</span>') +
       '</div>';
   }
 
