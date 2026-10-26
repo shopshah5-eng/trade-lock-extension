@@ -377,12 +377,12 @@
   // ------------------------------------------------ extended analytics & greeks ----
 
   var INSTRUMENTS = {
-    NIFTY: { symbol: 'NIFTY', name: 'NIFTY 50', exchange: 'NSE', fyersSymbol: 'NSE:NIFTY50-INDEX', basePrice: 24520, step: 50, lotSize: 75, expiryDay: 4 },
-    BANKNIFTY: { symbol: 'BANKNIFTY', name: 'BANK NIFTY', exchange: 'NSE', fyersSymbol: 'NSE:NIFTYBANK-INDEX', basePrice: 51200, step: 100, lotSize: 15, expiryDay: 3 },
-    FINNIFTY: { symbol: 'FINNIFTY', name: 'FIN NIFTY', exchange: 'NSE', fyersSymbol: 'NSE:FINNIFTY-INDEX', basePrice: 23850, step: 50, lotSize: 25, expiryDay: 2 },
-    MIDCPNIFTY: { symbol: 'MIDCPNIFTY', name: 'MIDCPNIFTY', exchange: 'NSE', fyersSymbol: 'NSE:MIDCPNIFTY-INDEX', basePrice: 12850, step: 25, lotSize: 50, expiryDay: 1 },
-    SENSEX: { symbol: 'SENSEX', name: 'BSE SENSEX', exchange: 'BSE', fyersSymbol: 'BSE:SENSEX-INDEX', basePrice: 80400, step: 100, lotSize: 10, expiryDay: 5 },
-    BANKEX: { symbol: 'BANKEX', name: 'BSE BANKEX', exchange: 'BSE', fyersSymbol: 'BSE:BANKEX-INDEX', basePrice: 58600, step: 100, lotSize: 15, expiryDay: 1 }
+    NIFTY: { symbol: 'NIFTY', name: 'NIFTY 50', exchange: 'NSE', fyersSymbol: 'NSE:NIFTY50-INDEX', step: 50, lotSize: 75, expiryDay: 4 },
+    BANKNIFTY: { symbol: 'BANKNIFTY', name: 'BANK NIFTY', exchange: 'NSE', fyersSymbol: 'NSE:NIFTYBANK-INDEX', step: 100, lotSize: 15, expiryDay: 3 },
+    FINNIFTY: { symbol: 'FINNIFTY', name: 'FIN NIFTY', exchange: 'NSE', fyersSymbol: 'NSE:FINNIFTY-INDEX', step: 50, lotSize: 25, expiryDay: 2 },
+    MIDCPNIFTY: { symbol: 'MIDCPNIFTY', name: 'MIDCPNIFTY', exchange: 'NSE', fyersSymbol: 'NSE:MIDCPNIFTY-INDEX', step: 25, lotSize: 50, expiryDay: 1 },
+    SENSEX: { symbol: 'SENSEX', name: 'BSE SENSEX', exchange: 'BSE', fyersSymbol: 'BSE:SENSEX-INDEX', step: 100, lotSize: 10, expiryDay: 5 },
+    BANKEX: { symbol: 'BANKEX', name: 'BSE BANKEX', exchange: 'BSE', fyersSymbol: 'BSE:BANKEX-INDEX', step: 100, lotSize: 15, expiryDay: 1 }
   };
 
   var TIMEFRAME_MINUTES = {

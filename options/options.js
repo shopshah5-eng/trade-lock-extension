@@ -1375,12 +1375,12 @@
   function getInstrumentConfig(sym) {
     if (M && M.INSTRUMENTS && M.INSTRUMENTS[sym]) return M.INSTRUMENTS[sym];
     var map = {
-      NIFTY: { symbol: 'NIFTY', name: 'NIFTY 50', exchange: 'NSE', basePrice: 24520, step: 50, lotSize: 75 },
-      BANKNIFTY: { symbol: 'BANKNIFTY', name: 'BANK NIFTY', exchange: 'NSE', basePrice: 51200, step: 100, lotSize: 15 },
-      FINNIFTY: { symbol: 'FINNIFTY', name: 'FIN NIFTY', exchange: 'NSE', basePrice: 23850, step: 50, lotSize: 25 },
-      MIDCPNIFTY: { symbol: 'MIDCPNIFTY', name: 'MIDCPNIFTY', exchange: 'NSE', basePrice: 12850, step: 25, lotSize: 50 },
-      SENSEX: { symbol: 'SENSEX', name: 'BSE SENSEX', exchange: 'BSE', basePrice: 80400, step: 100, lotSize: 10 },
-      BANKEX: { symbol: 'BANKEX', name: 'BSE BANKEX', exchange: 'BSE', basePrice: 58600, step: 100, lotSize: 15 }
+      NIFTY: { symbol: 'NIFTY', name: 'NIFTY 50', exchange: 'NSE', step: 50, lotSize: 75 },
+      BANKNIFTY: { symbol: 'BANKNIFTY', name: 'BANK NIFTY', exchange: 'NSE', step: 100, lotSize: 15 },
+      FINNIFTY: { symbol: 'FINNIFTY', name: 'FIN NIFTY', exchange: 'NSE', step: 50, lotSize: 25 },
+      MIDCPNIFTY: { symbol: 'MIDCPNIFTY', name: 'MIDCPNIFTY', exchange: 'NSE', step: 25, lotSize: 50 },
+      SENSEX: { symbol: 'SENSEX', name: 'BSE SENSEX', exchange: 'BSE', step: 100, lotSize: 10 },
+      BANKEX: { symbol: 'BANKEX', name: 'BSE BANKEX', exchange: 'BSE', step: 100, lotSize: 15 }
     };
     return map[sym] || map.NIFTY;
   }

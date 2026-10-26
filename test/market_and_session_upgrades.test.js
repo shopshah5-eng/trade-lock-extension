@@ -21,9 +21,14 @@ test('Instruments: all 6 Indian exchange indices are supported with correct lot 
     assert.ok(inst, `Instrument ${sym} must be configured`);
     assert.ok(inst.name && inst.name.length > 0, `${sym} must have a descriptive name`);
     assert.ok(inst.exchange === 'NSE' || inst.exchange === 'BSE', `${sym} exchange must be NSE or BSE`);
-    assert.ok(typeof inst.basePrice === 'number' && inst.basePrice > 0, `${sym} must have a positive basePrice`);
     assert.ok(typeof inst.step === 'number' && inst.step > 0, `${sym} must have a positive strike step`);
     assert.ok(typeof inst.lotSize === 'number' && inst.lotSize > 0, `${sym} must have a positive lotSize`);
+  });
+
+  // No instrument may carry a hardcoded price. basePrice used to exist here and
+  // was never read by product code - a fallback waiting to be used by mistake.
+  requiredSymbols.forEach((sym) => {
+    assert.ok(!('basePrice' in instruments[sym]), `${sym} must not embed a fallback price`);
   });
 
   assert.strictEqual(instruments.NIFTY.step, 50);
