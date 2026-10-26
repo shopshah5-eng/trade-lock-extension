@@ -443,6 +443,10 @@ html.popup-html {
 .popup-footer button { padding: 4px 8px; color: #38bdf8; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.18); border-radius: 8px; font-size: 9.5px; font-weight: 650; cursor: pointer; transition: all 0.16s ease; }
 .popup-footer button:hover { color: #fff; background: rgba(56, 189, 248, 0.22); border-color: rgba(56, 189, 248, 0.4); }
 .popup-footnote { margin-top: 7px; color: #64748b; text-align: center; font-size: 8.5px; }
+/* Detection coverage note: only rendered when auto-counting is not verified on
+   the current broker, so it must not reserve space when hidden. */
+.popup-detect-note { margin: 0 0 8px; padding: 6px 9px; border-radius: 8px; font-size: 9px; line-height: 1.45;
+  color: #fcd34d; background: rgba(245, 158, 11, .1); border: 1px solid rgba(245, 158, 11, .28); }
 
 /* ---------------------------------------------------------- workspace ---- */
 .trade-lock-workspace { min-height: 100vh; margin: 0; padding: 0; background-attachment: fixed; }

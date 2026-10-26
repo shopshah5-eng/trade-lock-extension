@@ -10,7 +10,7 @@
    'qaCharts', 'qaOptions', 'qaTechnicals', 'qaAddTrade', 'qaAi', 'qaJournal', 'qaRules',
    'proUpgradeCard',
    'logDrawer', 'logDrawerBody', 'pnl', 'risk', 'addWin', 'addLoss', 'lockNow', 'lockLabel', 'undo', 'openOptions',
-   'openOptions2', 'openSidePanelBtn', 'footnote'].forEach(function (id) {
+   'openOptions2', 'openSidePanelBtn', 'footnote', 'detectNote'].forEach(function (id) {
     els[id] = document.getElementById(id);
   });
 
@@ -149,6 +149,7 @@
   }
 
   function render() {
+    renderDetectNote();
     var s = view.settings || R.DEFAULT_SETTINGS;
     var state = view.state;
     var pro = R.isPro(view.license, Date.now());
@@ -307,6 +308,39 @@
     renderMarketSession(view.settings || R.DEFAULT_SETTINGS);
     var lock = view.state && view.state.lock;
     if (lock && lock.active) els.bannerCd.textContent = R.countdown(lock.until, Date.now());
+  }
+
+  /**
+   * Auto-counting is only verified on a few brokers. Where it is not, the trade
+   * counter can sit at 0 while real trades are being placed - the worst failure
+   * this extension can have, because the daily limit looks respected when it is
+   * not being measured at all. The note is text only: no overlay, no popup.
+   */
+  function detectNoteText(settings, hostname, tabUrl) {
+    // autoDetect defaults to true; only an explicit false turns it off. Testing
+    // for truthiness here would hide the note from every user who never touched
+    // the setting, which is most of them.
+    if (!settings || settings.autoDetect === false) return '';
+    if (!isBrokerUrl(tabUrl)) return '';
+    var detector = globalThis.TLDetect;
+    var profile = detector && detector.getBrokerAdapterProfile
+      ? detector.getBrokerAdapterProfile(hostname) : null;
+    if (!profile) return '';
+    if (profile.detectionStatus === 'DETECTION_VERIFIED') return '';
+    var name = profile.name || hostname || 'this broker';
+    if (!profile.domainRecognized) {
+      return 'Auto-counting is not supported on ' + name +
+        '. Trades here will not count toward your daily limit unless you log them in the Journal.';
+    }
+    return 'Auto-counting is not verified on ' + name +
+      '. A trade placed here may be missed \u2014 log it in the Journal to be sure.';
+  }
+
+  function renderDetectNote() {
+    if (!els.detectNote) return;
+    var text = detectNoteText(view.settings, view.hostname, view.tabUrl);
+    els.detectNote.textContent = text;
+    els.detectNote.style.display = text ? 'block' : 'none';
   }
 
   function isBrokerUrl(url) {
