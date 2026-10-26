@@ -54,7 +54,20 @@ const IDS = [
 function harness() {
   const nodes = {};
   for (const id of IDS) {
-    nodes[id] = { id, textContent: '', innerHTML: '', className: '', title: '', style: { cssText: '' } };
+    // Mirror the real DOM: textContent and innerHTML are two views of the same
+    // content, so a test can assert on either without depending on which one
+    // the renderer happened to use.
+    let html = '';
+    nodes[id] = {
+      id,
+      className: '',
+      title: '',
+      style: { cssText: '' },
+      get innerHTML() { return html; },
+      set innerHTML(value) { html = String(value); },
+      get textContent() { return html.replace(/<[^>]*>/g, ''); },
+      set textContent(value) { html = String(value); },
+    };
   }
 
   const sandbox = { TLDetect: require(path.join(ROOT, 'lib', 'detector.js')) };
@@ -94,6 +107,8 @@ test('Ticker strip shows blanks, not invented prices, with no feed', () => {
   }
   assert.ok(ui.nodes.overviewLiveBadge.innerHTML.includes('NO FEED'),
     'the dashboard badge must not claim LIVE without data');
+  assert.ok(ui.nodes.overviewLiveBadge.style.cssText.includes('148,163,184'),
+    'the offline badge must be grey, not the amber default');
 });
 
 test('Ticker strip renders broker-tab quotes and labels the source', () => {
@@ -117,6 +132,23 @@ test('Ticker strip renders broker-tab quotes and labels the source', () => {
   assert.strictEqual(ui.nodes.tickerFinPrice.textContent, '—');
   assert.strictEqual(ui.nodes.tickerFinSrc.textContent, 'NO FEED');
   assert.ok(ui.nodes.overviewLiveBadge.innerHTML.includes('BROKER FEED'));
+});
+
+test('Feed badge returns to the offline state without stale styling', () => {
+  const ui = harness();
+  // Offline first, so the inline grey styles are set...
+  ui.renderTickerStrip(null);
+  assert.ok(ui.nodes.overviewLiveBadge.style.cssText.length > 0);
+  // ...then a feed arrives: the inline styles must be cleared, not layered over.
+  ui.renderTickerStrip({ source: 'live', spot: 24700, provider: 'Upstox', quotes: null });
+  assert.strictEqual(ui.nodes.overviewLiveBadge.style.cssText, '',
+    'a recovered feed must not keep the offline colours');
+  assert.strictEqual(ui.nodes.overviewLiveBadge.className, 'demo-badge-green');
+  assert.ok(ui.nodes.overviewLiveBadge.innerHTML.includes('LIVE FEED'));
+  // And back again.
+  ui.renderTickerStrip(null);
+  assert.strictEqual(ui.nodes.overviewLiveBadge.className, 'demo-badge');
+  assert.ok(ui.nodes.overviewLiveBadge.innerHTML.includes('NO FEED'));
 });
 
 test('Ticker strip uses the server spot for a live feed', () => {

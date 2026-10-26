@@ -1145,24 +1145,39 @@
     }).join('');
   }
 
-  /** Dashboard "feed" badge. Never claims LIVE unless data actually arrived. */
+  /*
+   * Dashboard "feed" badge. It must never claim LIVE unless data actually
+   * arrived, and it has to switch back cleanly when a feed drops: the previous
+   * version set inline styles for the offline state and never cleared them, so
+   * a recovered feed kept the grey "no feed" colours.
+   */
   function renderOverviewFeedBadge(snap) {
     var badge = el('overviewLiveBadge');
     if (!badge) return;
-    var hasQuotes = Boolean(snap && snap.quotes && Object.keys(snap.quotes).length);
-    var isLive = Boolean(snap && snap.source === 'live' && (snap.spot != null || (snap.analysis && snap.analysis.ok)));
 
-    if (hasQuotes || isLive) {
-      var label = isLive ? 'LIVE FEED' : 'BROKER FEED';
-      badge.innerHTML = '<span class="live-pulse-dot" style="background:#10b981"></span> ' + label;
-      badge.className = 'demo-badge-green demo-badge';
+    var hasQuotes = Boolean(snap && snap.quotes && Object.keys(snap.quotes).length);
+    var isLive = Boolean(snap && snap.source === 'live' &&
+      (snap.spot != null || (snap.analysis && snap.analysis.ok)));
+    var online = hasQuotes || isLive;
+
+    // Reset every stateful property before applying the current one.
+    badge.style.cssText = '';
+    badge.title = '';
+
+    if (online) {
+      // .demo-badge-green carries its own green styling and has no ::before
+      // dot, so the pulse span below is the only dot.
+      badge.className = 'demo-badge-green';
+      badge.innerHTML = '<span class="live-pulse-dot"></span> ' + (isLive ? 'LIVE FEED' : 'BROKER FEED');
       badge.title = (snap && snap.provider) || '';
-    } else {
-      badge.innerHTML = '<span class="live-pulse-dot" style="background:#94a3b8"></span> NO FEED';
-      badge.className = 'demo-badge';
-      badge.style.cssText = 'background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25)';
-      badge.title = 'Open a supported broker tab, or connect a market feed on the server.';
+      return;
     }
+
+    // .demo-badge has an amber ::before dot; add no span of our own.
+    badge.className = 'demo-badge';
+    badge.style.cssText = 'background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25)';
+    badge.textContent = 'NO FEED';
+    badge.title = 'Open a supported broker tab, or connect a market feed on the server.';
   }
 
   function renderTickerStrip(snap) {
