@@ -52,6 +52,15 @@ Use `dist/trade-lock-extension/` or the ZIP in a clean Chrome profile:
 - [ ] Exercise popup, HUD and Options journal add/undo/delete together across multiple tabs; check counters, archives, CSV and analytics remain synchronized. Deliberately write from a stale tab and confirm an unexpired lock is restored while an audited manual release stays released.
 - [ ] Open the popup on a broker tab before its content script responds; recovery must not create a new manual lock.
 - [ ] Complete keyboard-only navigation and a screen-reader pass for popup, settings, journal forms, confirmations and lock screen.
+- [ ] Open the popup on a broker whose trade detection is not verified (e.g. `web.dhan.co`) with
+      auto-detect on: the coverage note must appear and name that broker. It must be absent on
+      `kite.zerodha.com` and Sahi, absent on non-broker tabs, and absent with auto-detect off.
+- [ ] Open Charts before ever opening Market & OI: the chart must draw from the stored snapshot.
+      A green "live feed" badge over an empty panel is the exact bug this guards against.
+- [ ] With a live snapshot loaded for one index, switch the Options symbol and the Charts symbol
+      to a different one: no strike ladder and no candles from the first index may appear, and the
+      notice must name the index being held back.
+- [ ] At a narrow window width (<640px) confirm the compact nav reaches every tab, including Sites.
 - [ ] Check light/dark/forced-colors, zoom, narrow popup, full-tab and side-panel layouts.
 - [ ] Run `npm run test:e2e` and `npm run test:paid-e2e` with `CHROME_PATH`; inspect screenshots and console output rather than relying only on exit status.
 
@@ -99,7 +108,10 @@ Host permission does not prove adapter compatibility. Use safe/test accounts whe
       - **Fyers API v3** — `FYERS_APP_ID` + `FYERS_ACCESS_TOKEN`. This token expires **every day
         at 06:30 IST**, so Pro+ goes dark each morning until a human refreshes it. Only use this
         if you can commit to that daily step.
-- [ ] Confirm `/health` reports `marketFeed.configured: true` and the expected provider.
+- [ ] Confirm `/health` reports `marketFeed.configured: true` and the expected provider, and that
+      `npm run doctor` shows `PASS marketProvider` plus the `marketToken` warning when Fyers is the
+      provider. With no credential it must show `WARN marketProvider` and still exit 0 when the
+      payment checks pass — a dark feed must never read as "cannot take payments".
 - [ ] Rotate the credential without a redeploy if needed:
       `POST /api/admin/market-token` with `x-admin-token: $FYERS_ADMIN_TOKEN`,
       body `{"provider":"upstox","token":"..."}`. Check it with `GET /api/admin/market-status`.
