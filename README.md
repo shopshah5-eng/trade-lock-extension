@@ -100,8 +100,12 @@ See **[SUPABASE_SETUP.md](SUPABASE_SETUP.md)** for the end-to-end payment setup 
 
 ```bash
 cp server/.env.example server/.env   # fill in your keys; .env is gitignored
-npm run doctor
+npm start                             # licence server + pricing page on :8787
+npm run doctor                        # can a customer pay? will the tabs have data?
 ```
+
+`npm start` is plain `node server/index.js`; it reads `server/.env`, serves the
+pricing page at `/`, and exposes `/health`. Set `PORT` to move it.
 
 `npm run doctor` runs the same checks as `GET /api/admin/payment-status` and
 exits non-zero until a real payment would succeed, so it can gate a deploy.

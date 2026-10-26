@@ -99,7 +99,7 @@ no licence.
 Locally, one command checks everything and prints what to fix:
 
 ```bash
-cp .env.example server/.env   # then fill in the values
+cp server/.env.example server/.env   # then fill in the values
 npm run doctor
 ```
 
@@ -108,9 +108,10 @@ gate. Sample output while something is still missing:
 
 ```
   FAIL  razorpay        Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET
-  FAIL  supabase        Set SUPABASE_URL and SUPABASE_SERVICE_KEY (service role key, not anon)
+  WARN  supabase        Optional here: the local JSON store is used. Set SUPABASE_URL
+                        + SUPABASE_SERVICE_KEY for backups or multiple instances
   PASS  platform        Long-lived host: the local JSON store is also usable
-  FAIL  schema          Skipped: Supabase not configured
+  WARN  schema          Skipped: Supabase not configured
 ```
 
 Against the deployed server, use the same checks over HTTP:
