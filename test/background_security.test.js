@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const TLRules = require('../lib/rules.js');
 
-function createBackground(initial = {}) {
+function createBackground(initial = {}, fetchImpl) {
   const data = {
     tlSettings: Object.assign({ blockedHosts: ['kite.zerodha.com'] }, initial.settings || {}),
     tlState: initial.state || null,
@@ -60,7 +60,9 @@ function createBackground(initial = {}) {
   const context = {
     chrome, TLRules, TLDetect: require('../lib/detector.js'), console, URL, Date, Math, Promise, JSON, Number, String, Boolean,
     setInterval() { return 1; }, clearInterval() {}, setTimeout,
-    importScripts() {}, fetch: () => Promise.resolve({ json: () => Promise.resolve({}) }),
+    importScripts() {},
+    AbortController, clearTimeout,
+    fetch: fetchImpl || (() => Promise.resolve({ json: () => Promise.resolve({}) })),
   };
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(require.resolve('../background.js'), 'utf8'), context, { filename: 'background.js' });
@@ -245,3 +247,57 @@ test('real background serves broker market quotes through TL_CHECK_MARKET_FEED',
   assert.strictEqual(afterTick.quotes.NIFTY.price, 24900);
 });
 
+test('real background keeps the live candle series, chain, spot and VIX', async () => {
+  // The chart draws from chartState.candles, which the service worker has to
+  // hand over. This payload mirrors what /api/market/live returns.
+  const candles = [];
+  for (let i = 0; i < 40; i += 1) {
+    candles.push({ t: 1700000000000 + i * 900000, o: 24500 + i, h: 24520 + i, l: 24490 + i, c: 24512 + i, v: 1000 });
+  }
+  const body = {
+    ok: true,
+    symbol: 'NIFTY',
+    provider: 'upstox',
+    candleCount: 40,
+    candles,
+    spot: 24653,
+    vix: { value: 14.32, prevClose: 13.9, change: 0.42 },
+    optionChain: [{ strike: 24600, callOi: 5000, putOi: 7000, callIv: 14.2, putIv: 13.8 }],
+    analysis: { ok: true, oi: { pcr: 1.4, maxPain: 24600 } },
+  };
+  const bg = createBackground(
+    { license: { key: 'TL-TEST-0000-0000-0000', plan: 'pro_plus_ai_monthly', expiresAt: Date.now() + 86400000 } },
+    () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) })
+  );
+
+  const res = await bg.send({ type: 'TL_CHECK_MARKET_FEED', source: 'live', symbol: 'NIFTY' });
+  assert.strictEqual(res.ok, true, JSON.stringify(res));
+
+  const snap = bg.data.tlMarket;
+  assert.strictEqual(snap.source, 'live');
+  assert.strictEqual(snap.provider, 'upstox');
+  // The array itself, not a count: a number here left the chart permanently blank.
+  assert.ok(Array.isArray(snap.candles), 'the snapshot must carry the candle array');
+  assert.strictEqual(snap.candles.length, 40);
+  assert.strictEqual(snap.candleCount, 40);
+  assert.strictEqual(snap.spot, 24653);
+  assert.strictEqual(snap.vix.value, 14.32);
+  assert.strictEqual(snap.optionChain.length, 1);
+  assert.strictEqual(snap.optionChain[0].strike, 24600);
+});
+
+test('a live response with no candles records zero rather than an empty count', async () => {
+  const bg = createBackground(
+    { license: { key: 'TL-TEST-0000-0000-0000', plan: 'pro_plus_ai_monthly', expiresAt: Date.now() + 86400000 } },
+    () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true, analysis: { ok: true }, provider: 'upstox' }) })
+  );
+
+  await bg.send({ type: 'TL_CHECK_MARKET_FEED', source: 'live', symbol: 'NIFTY' });
+  const snap = bg.data.tlMarket;
+  // Arrays built inside the vm realm have a different prototype, so compare
+  // shape and length rather than deep-equality.
+  assert.strictEqual(Array.isArray(snap.candles), true);
+  assert.strictEqual(snap.candles.length, 0);
+  assert.strictEqual(snap.candleCount, 0);
+  assert.strictEqual(snap.spot, null, 'a missing spot must not become 0');
+});

@@ -166,3 +166,34 @@ test('No demo: the ticker strip and VIX panel render only from a live source', (
   assert.ok(options.includes("el('vixRank').textContent = '—'"),
     'IV rank must stay blank rather than invented (needs a year of VIX history)');
 });
+
+test('Live: the chart receives real candles, not just a count', () => {
+  const server = read('server/index.js');
+  const background = read('background.js');
+  const options = read('options/options.js');
+
+  // The route used to send candles: <number>, so the client had no OHLC at all
+  // and the Pro+ canvas always rendered "no market candle data".
+  assert.ok(server.includes('candles: feed.candles.slice(-400)'),
+    'the live route must ship the candle series');
+  assert.ok(server.includes('candleCount: feed.candles.length'),
+    'the count belongs in its own field');
+  assert.strictEqual(/candles:\s*feed\.candles\.length\s*,/.test(server), false,
+    'candles must never be a bare number again');
+
+  assert.ok(background.includes('candles: Array.isArray(body.candles) ? body.candles : []'),
+    'the snapshot must keep the series as an array');
+  assert.ok(background.includes('candleCount:'),
+    'the snapshot must keep the count separately');
+
+  assert.ok(options.includes('chartState.candles = Array.isArray(snap.candles)'),
+    'the chart engine needs its candle source populated');
+});
+
+test('Live: the chart is not driven by a field that does not exist', () => {
+  const options = read('options/options.js');
+  // analysis.candles is a COUNT, not the series.
+  assert.ok(!options.includes('drawDedicatedSvgChart(svg, chartState.candles || [])') ||
+    options.includes('chartState.candles.length'),
+    'the chart must be gated on a populated series');
+});

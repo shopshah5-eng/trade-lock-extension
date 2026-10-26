@@ -874,7 +874,12 @@ const server = http.createServer(async (req, res) => {
         symbol,
         provider: feed.provider,
         cached: Boolean(feed.cached),
-        candles: feed.candles.length,
+        // The chart needs the OHLC series itself, not just how many candles
+        // exist. This previously sent only a count, so chartState.candles was
+        // never populated and the Pro+ chart always rendered "no data".
+        // 400 candles is ~10 sessions of 15-minute bars and stays a small payload.
+        candles: feed.candles.slice(-400),
+        candleCount: feed.candles.length,
         spot: feed.spot,
         vix: feed.vix || null,
         optionChain: feed.optionChain || null,

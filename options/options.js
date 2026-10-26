@@ -1773,7 +1773,8 @@
     if (source === 'live') {
       chrome.storage.local.get('tlMarket', function (res) {
         var snap = res && res.tlMarket;
-        var hasLive = snap && snap.source === 'live' && snap.candles > 0;
+        var hasLive = Boolean(snap && snap.source === 'live' &&
+          ((snap.candleCount > 0) || (Array.isArray(snap.candles) && snap.candles.length)));
         if (!hasLive) {
           if (offlineNotice) {
             offlineNotice.style.display = 'block';
@@ -1800,9 +1801,10 @@
         }
         if (statusText) statusText.textContent = 'Provider: ' + (snap.provider || 'market feed') + ' · ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
 
-        if (snap.analysis && snap.analysis.candles) {
-          drawDedicatedSvgChart(svg, chartState.candles || []);
+        if (chartState.candles.length) {
+          drawDedicatedSvgChart(svg, chartState.candles);
         }
+        if (el('marketCandleCanvas')) drawMarketCandleChart();
       });
       return;
     }
@@ -2587,6 +2589,10 @@
 
         // Hand the real chain to the options view. Without this the strike table
         // had no source and always rendered as "disconnected".
+        // The chart renders from chartState.candles; nothing ever wrote it, so
+        // the Pro+ canvas always fell back to "no market candle data".
+        chartState.candles = Array.isArray(snap.candles) ? snap.candles : [];
+        chartState.panOffset = 0;
         chartState.chainSpot = (typeof snap.spot === 'number' && snap.spot > 0) ? snap.spot : null;
         chartState.optionRows = Array.isArray(snap.optionChain) ? snap.optionChain : [];
         chartState.fullOptionRows = chartState.optionRows;
@@ -2713,7 +2719,12 @@
     if (source === 'live') {
       chrome.storage.local.get('tlMarket', function (res) {
         var snap = res && res.tlMarket;
-        var hasLiveChain = snap && snap.source === 'live' && snap.analysis && snap.analysis.oi;
+        // The chain lives on snap.optionChain. Gating on snap.analysis.oi meant
+        // this table reported "unavailable" even with a full live chain in
+        // hand, because the analysis payload has no oi block.
+        var chainRows = snap && Array.isArray(snap.optionChain) ? snap.optionChain : [];
+        var hasLiveChain = Boolean(snap && snap.source === 'live' &&
+          (chainRows.length || (snap.analysis && snap.analysis.oi)));
         if (!hasLiveChain) {
           if (setupCard) {
             setupCard.style.display = 'block';

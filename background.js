@@ -216,7 +216,8 @@ function buildLiveSnapshot(body, fallbackSymbol) {
     provider: body.provider || 'market feed',
     analysis: body.analysis,
     brief: body.brief || null,
-    candles: body.candles || 0,
+    candles: Array.isArray(body.candles) ? body.candles : [],
+    candleCount: Number(body.candleCount) || (Array.isArray(body.candles) ? body.candles.length : 0),
     spot: typeof body.spot === 'number' ? body.spot : null,
     vix: body.vix || null,
     optionChain: Array.isArray(body.optionChain) ? body.optionChain : null
@@ -1016,9 +1017,12 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       }
 
       var base = String(settings.licenseApiBase || 'https://trade-lock-app.netlify.app').replace(/\/+$/, '');
-      var fyersSymbol = symbol === 'NIFTY' ? 'NSE:NIFTY50-INDEX' : (symbol.startsWith('NSE:') || symbol.startsWith('BSE:') ? symbol : 'NSE:' + symbol + '-INDEX');
+      // Send the app's own symbol name. This handler used to build its own Fyers
+      // dialect ('NSE:BANKNIFTY-INDEX'), which the server mapped back to Nifty -
+      // so the on-demand path could quietly serve the wrong index even after the
+      // scheduled path was fixed.
       var resolution = msg.resolution || '15';
-      var targetUrl = base + '/api/market/live?symbol=' + encodeURIComponent(fyersSymbol) + '&resolution=' + encodeURIComponent(resolution);
+      var targetUrl = base + '/api/market/live?symbol=' + encodeURIComponent(symbol) + '&resolution=' + encodeURIComponent(resolution);
 
       return chrome.storage.local.get('tlLicense').then(function (licRes) {
         var lic = licRes.tlLicense;
@@ -1028,7 +1032,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         }
 
         var probeEndpoint = function (endpointBase) {
-          var targetUrl = endpointBase + '/api/market/live?symbol=' + encodeURIComponent(fyersSymbol) + '&resolution=' + encodeURIComponent(resolution);
+          var targetUrl = endpointBase + '/api/market/live?symbol=' + encodeURIComponent(symbol) + '&resolution=' + encodeURIComponent(resolution);
           var probeHeaders = Object.assign({}, headers);
           var controller = new AbortController();
           var timer = setTimeout(function () { controller.abort(); }, 8000);
