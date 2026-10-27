@@ -9,4 +9,6 @@ data.json.tmp
 supabase/.temp/
 dist/
 *.zip
+screenshots/*
+!screenshots/[1-5]_*.png
 
