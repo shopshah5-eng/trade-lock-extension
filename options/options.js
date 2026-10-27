@@ -1543,7 +1543,7 @@
     svg.innerHTML = html;
   }
 
-  function renderDedicatedChartsView() {
+  function renderDedicatedChartsView(forceProbe) {
     var svg = el('dedicatedChartsSvg');
     if (!svg) return;
     var symbol = (el('chartsSymbolSelect') && el('chartsSymbolSelect').value) || (el('marketSymbol') && el('marketSymbol').value) || 'NIFTY';
@@ -1554,12 +1554,7 @@
     var modeBadge = el('chartsModeBadge');
     var statusText = el('chartsStatusText');
 
-    chrome.storage.local.get('tlMarket', function (res) {
-      var snap = res && res.tlMarket;
-      // The background refreshes one configured symbol on a timer and rewrites
-      // tlMarket. If the user is looking at a different index, that snapshot
-      // is not for this chart - drawing it would put NIFTY candles under a
-      // BANKNIFTY heading. Same-symbol is part of "is this live".
+    var populateFromSnap = function (snap) {
       var sameSymbol = Boolean(snap) &&
         String(snap.symbol || '').toUpperCase() === String(symbol).toUpperCase();
       var liveCandles = (snap && Array.isArray(snap.candles)) ? snap.candles : [];
@@ -1584,7 +1579,13 @@
         }
         if (statusText) statusText.textContent = 'Live Feed: Offline';
         if (calloutBanner) calloutBanner.style.display = 'none';
-        return;
+        if (el('chartsRsiVal')) el('chartsRsiVal').textContent = '—';
+        if (el('chartsVwapVal')) el('chartsVwapVal').textContent = '—';
+        if (el('chartsAtrVal')) el('chartsAtrVal').textContent = '—';
+        if (el('chartsTrendVal')) el('chartsTrendVal').textContent = '—';
+        if (el('chartsOhlcDisplay')) el('chartsOhlcDisplay').innerHTML = 'O: — &nbsp; H: — &nbsp; L: — &nbsp; C: —';
+        if (el('chartsChangeDisplay')) el('chartsChangeDisplay').textContent = '—';
+        return false;
       }
 
       if (offlineNotice) offlineNotice.style.display = 'none';
@@ -1596,28 +1597,63 @@
       }
       if (statusText) statusText.textContent = 'Provider: ' + (snap.provider || 'market feed') + ' · ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
 
-      // Draw from the snapshot, not from whatever the Market tab last left in
-      // chartState. Opening Charts first used to show a green "live" badge over
-      // a blank panel because nothing had filled chartState.candles yet.
       chartState.candles = liveCandles;
       chartState.symbol = symbol;
       chartState.panOffset = 0;
       drawDedicatedSvgChart(svg, liveCandles);
       if (el('marketCandleCanvas')) drawMarketCandleChart();
-    });
 
+      var a = snap.analysis || (M && M.analyze ? M.analyze(liveCandles, { symbol: symbol, timeframe: tf }) : null);
+      if (a) {
+        if (el('chartsRsiVal')) el('chartsRsiVal').textContent = a.rsi14 != null ? a.rsi14 : '—';
+        if (el('chartsVwapVal')) el('chartsVwapVal').textContent = a.vwap != null ? '₹' + a.vwap : '—';
+        if (el('chartsAtrVal')) el('chartsAtrVal').textContent = a.atr14 != null ? '₹' + a.atr14 : '—';
+        if (el('chartsTrendVal')) el('chartsTrendVal').textContent = (a.trend || 'Neutral') + ' structure';
+      }
+      var cfg = getInstrumentConfig(symbol);
+      if (el('chartsSymbolDisplay')) el('chartsSymbolDisplay').textContent = cfg.name || symbol;
+      if (liveCandles.length) {
+        var last = liveCandles[liveCandles.length - 1];
+        var first = liveCandles[0];
+        var chg = Number(last.c) - Number(first.o);
+        var chgPct = first.o ? (chg / Number(first.o)) * 100 : 0;
+        if (el('chartsOhlcDisplay')) {
+          el('chartsOhlcDisplay').innerHTML = 'O: ₹' + Number(last.o).toFixed(2) + ' &nbsp; H: ₹' + Number(last.h).toFixed(2) + ' &nbsp; L: ₹' + Number(last.l).toFixed(2) + ' &nbsp; C: ₹' + Number(last.c).toFixed(2);
+        }
+        if (el('chartsChangeDisplay')) {
+          el('chartsChangeDisplay').textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + ' (' + (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%)';
+          el('chartsChangeDisplay').className = 'symbol-change ' + (chg >= 0 ? 'pos' : 'neg');
+        }
+      }
+      return true;
+    };
+
+    chrome.storage.local.get('tlMarket', function (res) {
+      var snap = res && res.tlMarket;
+      var ok = populateFromSnap(snap);
+      if (!ok || forceProbe === true) {
+        if (statusText) statusText.textContent = 'Probing live exchange feed...';
+        chrome.runtime.sendMessage({
+          type: 'TL_CHECK_MARKET_FEED',
+          symbol: symbol,
+          resolution: tf.replace(/[^0-9]/g, '') || '15'
+        }, function (resp) {
+          if (resp && resp.ok && resp.data) {
+            populateFromSnap(resp.data);
+          }
+        });
+      }
+    });
   }
 
-
-
   // Hook up event listeners for dedicated charts controls
-  if (el('chartsSymbolSelect')) el('chartsSymbolSelect').addEventListener('change', renderDedicatedChartsView);
-  if (el('chartsRefreshBtn')) el('chartsRefreshBtn').addEventListener('click', renderDedicatedChartsView);
+  if (el('chartsSymbolSelect')) el('chartsSymbolSelect').addEventListener('change', function () { renderDedicatedChartsView(true); });
+  if (el('chartsRefreshBtn')) el('chartsRefreshBtn').addEventListener('click', function () { renderDedicatedChartsView(true); });
   document.querySelectorAll('#chartsTimeframePills .tf-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
       document.querySelectorAll('#chartsTimeframePills .tf-btn').forEach(function (b) { b.classList.remove('active'); });
       btn.classList.add('active');
-      renderDedicatedChartsView();
+      renderDedicatedChartsView(true);
     });
   });
 
@@ -1645,6 +1681,8 @@
       ctx.font = '12px Inter, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('No market candle data available', width / 2, height / 2);
+      var rangeEmpty = el('chartTimestampRange');
+      if (rangeEmpty) rangeEmpty.textContent = 'No candle source connected';
       return;
     }
 
@@ -1664,6 +1702,13 @@
     var candleWidth = Math.max(2, candleSpacing * 0.72);
     var startIdx = windowed.startIndex;
     var visibleCandles = windowed.candles;
+
+    var rangePopulated = el('chartTimestampRange');
+    if (rangePopulated && visibleCandles.length) {
+      var tFirst = new Date(visibleCandles[0].t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      var tLast = new Date(visibleCandles[visibleCandles.length - 1].t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      rangePopulated.textContent = visibleCandles.length + ' visible / ' + candles.length + ' total candles (' + tFirst + ' – ' + tLast + ')';
+    }
 
     // Find min and max price & volume
     var minPrice = Infinity;
@@ -1875,9 +1920,9 @@
         chartState.zoom = 1;
         chartState.panOffset = 0;
       } else if (key === '+' || key === '=') {
-        chartState.zoom = Math.min(3, (chartState.zoom || 1) * 1.25);
+        chartState.zoom = Math.min(16.0, (chartState.zoom || 1) * 1.25);
       } else if (key === '-' || key === '_') {
-        chartState.zoom = Math.max(0.5, (chartState.zoom || 1) / 1.25);
+        chartState.zoom = Math.max(0.4, (chartState.zoom || 1) / 1.25);
       } else {
         var visible = Math.max(20, Math.min(chartState.candles.length,
           Math.round(chartState.candles.length / (chartState.zoom || 1))));
@@ -1919,11 +1964,8 @@
 
     canvas.addEventListener('wheel', function (e) {
       e.preventDefault();
-      if (e.deltaY < 0) {
-        chartState.zoom = Math.min(3.0, chartState.zoom * 1.15);
-      } else {
-        chartState.zoom = Math.max(0.5, chartState.zoom / 1.15);
-      }
+      var factor = e.deltaY < 0 ? 1.15 : (1 / 1.15);
+      chartState.zoom = Math.max(0.4, Math.min(16.0, (chartState.zoom || 1.0) * factor));
       drawMarketCandleChart();
     }, { passive: false });
 
@@ -1931,11 +1973,11 @@
     if (el('toggleEma')) el('toggleEma').addEventListener('change', drawMarketCandleChart);
     if (el('toggleVwap')) el('toggleVwap').addEventListener('change', drawMarketCandleChart);
     if (el('chartZoomInBtn')) el('chartZoomInBtn').addEventListener('click', function () {
-      chartState.zoom = Math.min(3.0, chartState.zoom * 1.25);
+      chartState.zoom = Math.min(16.0, (chartState.zoom || 1.0) * 1.25);
       drawMarketCandleChart();
     });
     if (el('chartZoomOutBtn')) el('chartZoomOutBtn').addEventListener('click', function () {
-      chartState.zoom = Math.max(0.5, chartState.zoom / 1.25);
+      chartState.zoom = Math.max(0.4, (chartState.zoom || 1.0) / 1.25);
       drawMarketCandleChart();
     });
     if (el('chartResetBtn')) el('chartResetBtn').addEventListener('click', function () {
@@ -2347,7 +2389,7 @@
       '<td class="' + putCls + '">' + intCell(r.putOi) + '</td>';
   }
 
-  function renderOptionsChainView() {
+  function renderOptionsChainView(forceProbe) {
     var symbol = el('optionsSymbol') ? el('optionsSymbol').value : 'NIFTY';
     var filter = el('optMoneynessFilter') ? el('optMoneynessFilter').value : 'near';
     var setupCard = el('liveOptionsSetupCard');
@@ -2356,8 +2398,7 @@
     var emptyNotice = el('optionsChainEmptyNotice');
     var tableWrap = el('optionsTableWrap');
 
-    chrome.storage.local.get('tlMarket', function (res) {
-      var snap = res && res.tlMarket;
+    var paintFromSnapshot = function (snap) {
       // The chain lives on snap.optionChain. Gating on snap.analysis.oi meant
       // this table reported "unavailable" even with a full live chain in
       // hand, because the analysis payload has no oi block.
@@ -2405,9 +2446,14 @@
         if (tableWrap) tableWrap.style.display = 'none';
         if (el('optSpotPrice')) el('optSpotPrice').textContent = '—';
         if (el('optCallThetaVal')) el('optCallThetaVal').textContent = '—';
+        if (el('optCallThetaSub')) el('optCallThetaSub').textContent = 'Awaiting live feed';
         if (el('optPutThetaVal')) el('optPutThetaVal').textContent = '—';
+        if (el('optPutThetaSub')) el('optPutThetaSub').textContent = 'Awaiting live feed';
         if (el('optHourlyDecay')) el('optHourlyDecay').textContent = '—';
-        return;
+        if (el('optPcrVal')) el('optPcrVal').textContent = '—';
+        if (el('optPcrBias')) el('optPcrBias').textContent = 'Awaiting live feed';
+        if (el('optMaxPain')) el('optMaxPain').textContent = '—';
+        return false;
       }
 
       if (setupCard) setupCard.style.display = 'none';
@@ -2426,8 +2472,28 @@
         ? snap.spot
         : (chainRows.length && Number(chainRows[0].spot) > 0 ? Number(chainRows[0].spot) : null);
       renderChainTable();
-    });
+      return true;
+    };
 
+    chrome.storage.local.get('tlMarket', function (res) {
+      var snap = res && res.tlMarket;
+      var hasChain = paintFromSnapshot(snap);
+      if (!hasChain || forceProbe === true) {
+        if (modeBadge) {
+          modeBadge.textContent = 'Probing Chain...';
+          modeBadge.style.cssText = 'background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);color:#60a5fa';
+        }
+        chrome.runtime.sendMessage({
+          type: 'TL_CHECK_MARKET_FEED',
+          symbol: symbol,
+          resolution: '15'
+        }, function (resp) {
+          if (resp && resp.ok && resp.data) {
+            paintFromSnapshot(resp.data);
+          }
+        });
+      }
+    });
   }
 
   function renderChainTable() {
@@ -2512,8 +2578,10 @@
       };
       var decaySub = function (theta, price) {
         if (theta == null) return 'Greeks unavailable from feed';
-        if (!price) return 'Premium unavailable from feed';
-        return '~' + Math.round((theta / price) * 100) + '% decay / day';
+        if (!price || price <= 0) return 'Premium unavailable from feed';
+        var pct = Math.round((Math.abs(theta) / price) * 100);
+        if (!isFinite(pct) || pct > 500) return 'High intraday decay';
+        return '~' + pct + '% decay / day';
       };
       if (el('optCallThetaVal')) el('optCallThetaVal').textContent = fmtTheta(atmCallTheta);
       if (el('optCallThetaSub')) el('optCallThetaSub').textContent = decaySub(atmCallTheta, atmCallPrice);
@@ -2562,10 +2630,9 @@
   }
 
 
-  if (el('optionsRefreshBtn')) el('optionsRefreshBtn').addEventListener('click', renderOptionsChainView);
-  if (el('optionsSymbol')) el('optionsSymbol').addEventListener('change', renderOptionsChainView);
+  if (el('optionsRefreshBtn')) el('optionsRefreshBtn').addEventListener('click', function () { renderOptionsChainView(true); });
+  if (el('optionsSymbol')) el('optionsSymbol').addEventListener('change', function () { renderOptionsChainView(true); });
   if (el('optMoneynessFilter')) el('optMoneynessFilter').addEventListener('change', renderChainTable);
-  if (el('optMoneynessFilter')) el('optMoneynessFilter').addEventListener('change', renderOptionsChainView);
 
   // ---------------------------------------------------- AI assistant ----
 
