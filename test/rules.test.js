@@ -710,6 +710,28 @@ test('Pro and Pro+ entitlements remain distinct across aliases', () => {
   assert.strictEqual(plusSettings.marketSource, 'live');
 });
 
+test('The market source is not a setting: it is always the server feed', () => {
+  // There is no broker-tab tap and no demo feed, so no entitlement level may
+  // rewrite marketSource to a value that has no implementation behind it.
+  assert.strictEqual(R.DEFAULT_SETTINGS.marketSource, 'live', 'the default source is the server feed');
+
+  const pro = { key: 'x', active: true, plan: 'pro_monthly' };
+  const plus = { key: 'x', active: true, plan: 'pro_plus_ai' };
+  const free = null;
+
+  for (const [label, licence, expectedEnabled] of [['free', free, false], ['pro', pro, false], ['pro+', plus, true]]) {
+    const s = R.effectiveSettings({ marketEnabled: true, marketSource: 'live' }, licence);
+    assert.strictEqual(s.marketSource, 'live', label + ': the source stays the server feed');
+    assert.strictEqual(s.marketEnabled, expectedEnabled, label + ': only Pro+ may read the market tabs');
+  }
+
+  // A stored value from before the broker tap was deleted is rewritten, not honoured.
+  for (const stale of ['broker', 'demo', '', null, undefined, 'BROKER']) {
+    const s = R.effectiveSettings({ marketEnabled: true, marketSource: stale }, plus);
+    assert.strictEqual(s.marketSource, 'live', 'stale source ' + JSON.stringify(stale) + ' must be rewritten');
+  }
+});
+
 
 test('journal archiving preserves ID-less legacy rows and deduplicates explicit IDs across types', () => {
   const journal = { version: 2, months: {} };

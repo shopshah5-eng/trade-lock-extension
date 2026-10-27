@@ -235,3 +235,22 @@ test('product copy does not quote invented index-level prices', () => {
       `${rel} quotes an index-sized rupee amount in product copy`);
   }
 });
+
+test('No demo: no shipped file can select a broker-tab or demo market source', () => {
+  // marketSource is not a user choice any more. A leftover 'broker' default in
+  // the rules layer silently re-labelled the feed for every non-Pro+ user.
+  for (const rel of ['lib/rules.js', 'background.js', 'options/options.js']) {
+    const src = read(rel);
+    assert.strictEqual(/marketSource\s*:\s*'broker'/.test(src), false,
+      `${rel} still defaults marketSource to the removed broker tap`);
+    assert.strictEqual(/marketSource\s*=\s*'broker'/.test(src), false,
+      `${rel} still rewrites marketSource to the removed broker tap`);
+  }
+  assert.ok(/marketSource:\s*'live'/.test(read('lib/rules.js')), 'the rules layer defaults to the server feed');
+  // The fake broker page stays: it is the DOM e2e detection runs against, and
+  // it is not part of the packaged extension.
+  const fixture = path.join(root, 'demo/fake-broker.html');
+  assert.ok(fs.existsSync(fixture), 'the detection fixture stays');
+  const pkg = fs.readFileSync(path.join(root, 'scripts/package-extension.js'), 'utf8');
+  assert.strictEqual(pkg.includes('fake-broker'), false, 'the fixture must never be packaged');
+});
