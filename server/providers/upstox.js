@@ -242,12 +242,29 @@ function createClient({ accessToken }, fetchImpl, base) {
       }
     },
 
-    /** Put/call chain for one expiry. Falls back to the nearest weekly expiry keyword. */
+    /** Put/call chain for one expiry. Resolves the nearest available weekly expiry date from contracts. */
     async optionChain({ instrumentKey, expiry }) {
       const key = requireInstrumentKey(instrumentKey);
+      let expiryDate = (typeof expiry === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(expiry)) ? expiry : null;
+      if (!expiryDate) {
+        try {
+          const contractData = await get('/v2/option/contract', { instrument_key: key });
+          const rows = (contractData && contractData.data) || [];
+          if (Array.isArray(rows) && rows.length > 0) {
+            const expiries = [...new Set(rows.map((r) => r && r.expiry).filter(Boolean))].sort();
+            const today = istDate(new Date());
+            expiryDate = expiries.find((e) => e >= today) || expiries[0] || null;
+          }
+        } catch (e) {
+          // If contract lookup is unavailable (e.g. offline test stub), proceed to fallback
+        }
+      }
+      if (!expiryDate) {
+        expiryDate = (typeof expiry === 'string' && expiry && expiry !== 'current_week') ? expiry : istDate(new Date());
+      }
       const data = await get('/v2/option/chain', {
         instrument_key: key,
-        expiry_date: expiry || 'current_week',
+        expiry_date: expiryDate,
       });
       return normalizeOptionChain(data);
     },
