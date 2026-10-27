@@ -580,7 +580,7 @@
         mEl.style.background = 'rgba(76,141,255,.10)';
         mEl.style.borderColor = 'rgba(76,141,255,.35)';
         mEl.style.color = '#b9d2ff';
-        mEl.textContent = '\u{1F4CA} ' +  + (marketSnap.symbol || '') + ' ' + marketSnap.analysis.price +
+        mEl.textContent = '\u{1F4CA} ' + (marketSnap.symbol || '') + ' ' + marketSnap.analysis.price +
           ' · ' + marketSnap.analysis.trend + ' · VWAP ' + marketSnap.analysis.vwap;
       } else {
         mEl.style.display = 'none';
