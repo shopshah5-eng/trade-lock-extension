@@ -23,6 +23,8 @@ process.env.SUPABASE_SERVICE_KEY = '';
 process.env.SUPABASE_KEY = '';
 process.env.FYERS_APP_ID = '';
 process.env.FYERS_ACCESS_TOKEN = '';
+process.env.UPSTOX_ANALYTICS_TOKEN = '';
+process.env.UPSTOX_ACCESS_TOKEN = '';
 
 const originalFetch = global.fetch;
 let orderSequence = 0;
