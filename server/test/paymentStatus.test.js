@@ -242,7 +242,7 @@ test('server/.env.example documents every variable the server reads', () => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name !== 'test' && entry.name !== 'node_modules' && !entry.name.startsWith('.')) walk(full);
+        if (entry.name !== 'test') walk(full);
       } else if (entry.name.endsWith('.js')) {
         for (const m of fs.readFileSync(full, 'utf8').matchAll(/process\.env\.([A-Z_0-9]+)/g)) {
           used.add(m[1]);

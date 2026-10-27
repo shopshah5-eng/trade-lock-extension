@@ -65,13 +65,13 @@ All paid durations are **prepaid access periods**, not auto-renewing subscriptio
 | Free | ₹0 | No server key required | Manual journal, trade-count rule, Mode A lock, journal/CSV export |
 | Pro 30-day | ₹199 | 3 | Free + automatic table detection, loss/profit/streak/risk rules, journal analytics, paid enforcement modes |
 | Pro 365-day | ₹1,499 | 3 | Same Pro entitlements for 365 days |
-| Pro+ 30-day | ₹399 | 5 | Pro + simulated market/options workspace, authorized live-market routes and discipline coach |
+| Pro+ 30-day | ₹399 | 5 | Pro + live market/options workspace, authorized live-market routes and discipline coach |
 | Pro+ 365-day | ₹3,999 | 5 | Same Pro+ entitlements for 365 days |
 | Founder Lifetime | ₹2,999 | 5 | Pro+ entitlements without a time expiry |
 
 `server/plans.js` is the payment server's canonical plan catalogue. `lib/rules.js` applies extension entitlements. Pro does **not** inherit Pro+ market authorization.
 
-The Options market/chart/options-chain workspace uses clearly labelled deterministic simulated data. The broker-tab market HUD can use the public demo endpoint or, for an active Pro+ key, authorized live/analyze endpoints. Local briefs remain available if an AI provider is not configured or fails; public demo analysis cannot invoke remote AI.
+The Market, Options and Charts tabs have exactly one data source: `GET /api/market/live` on the licence server, which needs a Pro+ key. There is no second source and no simulated fallback — with no feed every panel shows an em-dash and says what is missing. Set the market credential (`UPSTOX_ANALYTICS_TOKEN`, or `FYERS_APP_ID` + `FYERS_ACCESS_TOKEN`) on the server and the tabs fill in; if the extension is pointed at the hosted default while you run the server locally, the market tab offers a one-click switch to `http://localhost:8787`. Local briefs remain available if an AI provider is not configured or fails.
 
 ## Install a release candidate
 
@@ -148,7 +148,7 @@ The paid E2E starts an isolated demo license server and does not contact real pa
 | `lib/market.js` | Deterministic indicators, chart windows, Greeks, OI and VIX calculations |
 | `content/lock.js` | HUD, detector polling, overlay, tamper handling, input policy |
 | `popup/` | Accessible session controls and Side Panel/Full Tab launchers |
-| `options/` | Rules, journal, analytics, simulated market workspace, licensing |
+| `options/` | Rules, journal, analytics, live market workspace, licensing |
 | `server/` | Checkout, webhooks, persistence, support, market and email providers |
 | `test/`, `server/test/` | Pure, mocked API, real-background and browser regression harnesses |
 | `scripts/package-extension.js` | Allowlisted unpacked/ZIP release-candidate builder |

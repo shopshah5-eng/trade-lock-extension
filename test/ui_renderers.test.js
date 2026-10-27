@@ -42,16 +42,12 @@ function extractVar(name) {
 }
 
 const IDS = [
-  'tickerNiftyPrice', 'tickerNiftyChg', 'tickerNiftySrc',
-  'tickerBankPrice', 'tickerBankChg', 'tickerBankSrc',
-  'tickerFinPrice', 'tickerFinChg', 'tickerFinSrc',
-  'tickerSensexPrice', 'tickerSensexChg', 'tickerSensexSrc',
   'overviewLiveBadge', 'vixVal', 'vixChg', 'vixRank', 'vixSkew',
-  'vixAlertStatus', 'vixRegimeBadge', 'brokerSupportTbody',
+  'vixAlertStatus', 'vixRegimeBadge',
   'marketResult', 'marketPcrVal', 'marketPcrBias', 'marketMaxPainVal',
 ];
 
-/** Fresh fake DOM plus the four renderers bound to it. */
+/** Fresh fake DOM plus the renderers bound to it. */
 function harness() {
   const nodes = {};
   for (const id of IDS) {
@@ -71,26 +67,21 @@ function harness() {
     };
   }
 
-  const sandbox = { TLDetect: require(path.join(ROOT, 'lib', 'detector.js')) };
   const code = [
-    extractVar('TICKER_CELLS'),
     extract('renderOverviewFeedBadge'),
-    extract('renderTickerStrip'),
     extract('renderVolatilityPanel'),
-    extract('renderBrokerSupport'),
     extract('renderMarketOiCards'),
     extract('chainRowHtml'),
   ].join('\n');
 
   const factory = new Function(
-    'el', 'escapeHtml', 'globalThis', 'isFinite', 'Number', 'Boolean', 'M', 'chartState',
-    `${code}\nreturn { renderTickerStrip, renderVolatilityPanel, renderBrokerSupport, renderMarketOiCards, chainRowHtml };`
+    'el', 'escapeHtml', 'isFinite', 'Number', 'Boolean', 'M', 'chartState',
+    `${code}\nreturn { renderOverviewFeedBadge, renderVolatilityPanel, renderMarketOiCards, chainRowHtml };`
   );
 
   const fns = factory(
     (id) => nodes[id] || null,
     (s) => String(s),
-    sandbox,
     isFinite,
     Number,
     Boolean,
@@ -100,71 +91,40 @@ function harness() {
   return Object.assign(fns, { nodes });
 }
 
-test('Ticker strip shows blanks, not invented prices, with no feed', () => {
+test('The feed badge never claims LIVE without data', () => {
   const ui = harness();
-  ui.renderTickerStrip(null);
+  ui.renderOverviewFeedBadge(null);
 
-  for (const id of ['tickerNiftyPrice', 'tickerBankPrice', 'tickerFinPrice', 'tickerSensexPrice']) {
-    assert.strictEqual(ui.nodes[id].textContent, '—', `${id} must be blank without a feed`);
-  }
-  for (const id of ['tickerNiftySrc', 'tickerBankSrc']) {
-    assert.strictEqual(ui.nodes[id].textContent, 'NO FEED', `${id} must admit there is no feed`);
-  }
   assert.ok(ui.nodes.overviewLiveBadge.innerHTML.includes('NO FEED'),
-    'the dashboard badge must not claim LIVE without data');
+    'the badge must not claim LIVE without data');
   assert.ok(ui.nodes.overviewLiveBadge.style.cssText.includes('148,163,184'),
     'the offline badge must be grey, not the amber default');
 });
 
-test('Ticker strip renders broker-tab quotes and labels the source', () => {
-  const ui = harness();
-  ui.renderTickerStrip({
-    source: 'broker',
-    provider: 'Active Broker Tab (Zerodha Kite)',
-    quotes: {
-      NIFTY: { price: 24605.35, changePercent: 0.42 },
-      BANKNIFTY: { price: 52130.5, changePercent: -0.31 },
-    },
-  });
-
-  assert.strictEqual(ui.nodes.tickerNiftyPrice.textContent, '24,605.35');
-  assert.strictEqual(ui.nodes.tickerNiftyChg.textContent, '+0.42%');
-  assert.strictEqual(ui.nodes.tickerNiftySrc.textContent, 'BROKER');
-  assert.strictEqual(ui.nodes.tickerBankPrice.textContent, '52,130.50');
-  assert.strictEqual(ui.nodes.tickerBankChg.textContent, '-0.31%');
-  // A symbol the broker tab did not report stays blank rather than borrowing
-  // another index's price.
-  assert.strictEqual(ui.nodes.tickerFinPrice.textContent, '—');
-  assert.strictEqual(ui.nodes.tickerFinSrc.textContent, 'NO FEED');
-  assert.ok(ui.nodes.overviewLiveBadge.innerHTML.includes('BROKER FEED'));
-});
-
-test('Feed badge returns to the offline state without stale styling', () => {
+test('A recovered feed clears the offline styling instead of layering over it', () => {
   const ui = harness();
   // Offline first, so the inline grey styles are set...
-  ui.renderTickerStrip(null);
+  ui.renderOverviewFeedBadge(null);
   assert.ok(ui.nodes.overviewLiveBadge.style.cssText.length > 0);
   // ...then a feed arrives: the inline styles must be cleared, not layered over.
-  ui.renderTickerStrip({ source: 'live', spot: 24700, provider: 'Upstox', quotes: null });
+  ui.renderOverviewFeedBadge({ source: 'live', spot: 24700, provider: 'Upstox' });
   assert.strictEqual(ui.nodes.overviewLiveBadge.style.cssText, '',
     'a recovered feed must not keep the offline colours');
   assert.strictEqual(ui.nodes.overviewLiveBadge.className, 'demo-badge-green');
   assert.ok(ui.nodes.overviewLiveBadge.innerHTML.includes('LIVE FEED'));
   // And back again.
-  ui.renderTickerStrip(null);
+  ui.renderOverviewFeedBadge(null);
   assert.strictEqual(ui.nodes.overviewLiveBadge.className, 'demo-badge');
   assert.ok(ui.nodes.overviewLiveBadge.innerHTML.includes('NO FEED'));
 });
 
-test('Ticker strip uses the server spot for a live feed', () => {
+test('A snapshot from the removed broker tap is not reported as a live feed', () => {
+  // tlMarket used to carry source:'broker' quotes scraped from a browser tab.
+  // That path is gone; a snapshot that still claims it must read as no feed.
   const ui = harness();
-  ui.renderTickerStrip({ source: 'live', spot: 24700, provider: 'Upstox', quotes: null });
-
-  assert.strictEqual(ui.nodes.tickerNiftyPrice.textContent, '24,700.00');
-  assert.strictEqual(ui.nodes.tickerNiftySrc.textContent, 'LIVE');
-  assert.ok(ui.nodes.overviewLiveBadge.innerHTML.includes('LIVE FEED'));
-  // Only NIFTY is served by that endpoint; the rest must not be fabricated.
-  assert.strictEqual(ui.nodes.tickerBankPrice.textContent, '—');
+  ui.renderOverviewFeedBadge({ source: 'broker', quotes: { NIFTY: { price: 24600 } } });
+  assert.ok(ui.nodes.overviewLiveBadge.innerHTML.includes('NO FEED'));
+  assert.strictEqual(ui.nodes.overviewLiveBadge.className, 'demo-badge');
 });
 
 test('Volatility panel renders a real VIX and ATM IV skew', () => {
@@ -196,31 +156,6 @@ test('Volatility panel flags a VIX spike and clears with no feed', () => {
   assert.strictEqual(ui.nodes.vixVal.textContent, '—');
   assert.strictEqual(ui.nodes.vixAlertStatus.textContent, '—');
   assert.ok(ui.nodes.vixRegimeBadge.textContent.includes('no feed'));
-});
-
-test('Broker support matrix is generated from the adapters, not hand-written', () => {
-  const ui = harness();
-  ui.renderBrokerSupport();
-  const html = ui.nodes.brokerSupportTbody.innerHTML;
-
-  const rows = (html.match(/<tr>/g) || []).length;
-  assert.ok(rows >= 8, `expected every supported broker, got ${rows}`);
-  // The synthetic test broker is for the test suite only.
-  assert.ok(!html.includes('Synthetic'), 'the synthetic test broker must never be shown to users');
-  // Exactly the two adapters that are genuinely verified may claim so.
-  assert.strictEqual((html.match(/>Verified</g) || []).length, 2,
-    'only Zerodha Kite and Sahi are detection-verified');
-  assert.ok(html.includes('Zerodha Kite'));
-  assert.ok(html.includes('Sahi'));
-  // No adapter has verified order-level restriction, so the last column of
-  // every row must say so.
-  const cells = html.split('</tr>').filter((r) => r.includes('<td'));
-  for (const row of cells) {
-    const tds = row.split('<td').slice(1);
-    assert.strictEqual(tds.length, 3, 'each broker row has a name plus two statuses');
-    assert.ok(!tds[2].includes('>Verified<'),
-      'no broker may claim verified order restriction until it is tested');
-  }
 });
 
 test('Every el() reference on the options page resolves to a real element', () => {

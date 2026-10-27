@@ -95,38 +95,16 @@
     }
   }
 
+  /*
+   * Restricted domains: the only thing left on this tab. The broker card grid
+   * that used to live here advertised per-broker capabilities that drifted from
+   * the adapters actually shipped, so it was removed rather than maintained.
+   */
   function renderSitesView() {
     if (el('blockedHosts')) {
       el('blockedHosts').value = (currentSettings && currentSettings.blockedHosts)
         ? currentSettings.blockedHosts.join('\n')
         : '';
-    }
-    if (chrome.tabs && chrome.tabs.query) {
-      chrome.tabs.query({}, function (tabs) {
-        var openUrls = (tabs || []).map(function (t) { return (t.url || '').toLowerCase(); });
-        var cards = document.querySelectorAll('.brokers-grid .broker-card');
-        cards.forEach(function (card) {
-          var hostEl = card.querySelector('.b-host');
-          if (!hostEl) return;
-          var host = hostEl.textContent.trim().toLowerCase();
-          var isOpen = openUrls.some(function (u) {
-            try { return new URL(u).hostname.toLowerCase().indexOf(host) !== -1; } catch (e) { return false; }
-          });
-          var existingLive = card.querySelector('.broker-live-tag');
-          if (isOpen) {
-            if (!existingLive) {
-              var liveTag = document.createElement('span');
-              liveTag.className = 'badge broker-live-tag';
-              liveTag.style.cssText = 'background:rgba(16,185,129,0.2);color:#34d399;font-size:10px;margin-left:6px;padding:1px 6px;border:1px solid rgba(16,185,129,0.3)';
-              liveTag.textContent = '● Open Tab Monitored';
-              var bInfo = card.querySelector('div');
-              if (bInfo) bInfo.appendChild(liveTag);
-            }
-          } else if (existingLive) {
-            existingLive.remove();
-          }
-        });
-      });
     }
   }
 
@@ -252,8 +230,9 @@
     toggleFullSiteAckBox(s.enforcementMode || 'warning');
     if (el('marketOpen')) el('marketOpen').value = minutesToHHMM(s.marketOpenMin);
     if (el('marketSymbol') && s.marketSymbol) el('marketSymbol').value = s.marketSymbol;
-    if (!s.marketSource || s.marketSource === 'demo') s.marketSource = 'broker';
-    if (el('marketSource') && s.marketSource) el('marketSource').value = s.marketSource;
+    // One live path: the server feed. The old broker-tab tap is gone - it could
+    // only parse tab titles, so it never connected to a real terminal.
+    s.marketSource = 'live';
     if (el('planTradesMirror')) el('planTradesMirror').value = s.maxTradesPerDay || '';
     updatePlanSummary();
     if (el('holidays')) el('holidays').value = (s.holidays || []).join('\n');
@@ -304,7 +283,7 @@
       if (el('openTimeLabel')) el('openTimeLabel').textContent = minutesToHHMM(s.marketOpenMin) + ' IST';
     }
     if (el('marketSymbol')) s.marketSymbol = el('marketSymbol').value;
-    if (el('marketSource')) s.marketSource = el('marketSource').value === 'live' ? 'live' : 'broker';
+    s.marketSource = 'live';
     if (el('holidays')) s.holidays = parseLines(el('holidays').value).filter(function (d) { return /^\d{4}-\d{2}-\d{2}$/.test(d); });
     if (el('blockedHosts')) s.blockedHosts = parseLines(el('blockedHosts').value);
     return s;
@@ -425,7 +404,7 @@
     if (!t) return;
 
     if (!state || !state.session) {
-      t.innerHTML = row('Session', 'not started yet — open a broker tab', true);
+      t.innerHTML = row('Session', 'not started yet — open a broker terminal', true);
       return;
     }
     var s = state.session;
@@ -843,7 +822,13 @@
    */
   function ensureApiPermission(apiBase) {
     var origin;
-    try { origin = new URL(apiBase).origin + '/*'; } catch (e) { return Promise.resolve(true); }
+    try {
+      // Match patterns have no port component: "http://localhost:8787/*" is not
+      // a valid pattern and chrome.permissions rejects it, so a locally-run
+      // server could never be granted. Keep scheme + host only.
+      var u = new URL(apiBase);
+      origin = u.protocol + '//' + u.hostname + '/*';
+    } catch (e) { return Promise.resolve(true); }
     if (!chrome.permissions || !chrome.permissions.request) return Promise.resolve(true);
     return chrome.permissions.contains({ origins: [origin] }).then(function (has) {
       if (has) return true;
@@ -1000,12 +985,12 @@
       currentLicense = res.tlLicense || null;
       setText('overviewFocusText', res.tlDailyFocus || 'Stick strictly to predefined setups. Never revenge trade.');
       var s = R.effectiveSettings(res.tlSettings, currentLicense, Date.now());
-      if (!s.marketSource || s.marketSource === 'demo') {
-        s.marketSource = 'broker';
-      }
+      s.marketSource = 'live';
       currentSettings = s;
-      if (res.tlSettings && res.tlSettings.marketSource === 'demo') {
-        res.tlSettings.marketSource = 'broker';
+      // Migrate a stored broker/demo source so the service worker stops looking
+      // for a broker tab nobody is going to find.
+      if (res.tlSettings && res.tlSettings.marketSource !== 'live') {
+        res.tlSettings.marketSource = 'live';
         chrome.storage.local.set({ tlSettings: res.tlSettings });
       }
       /*
@@ -1016,9 +1001,7 @@
        * Entitlement filtering still happens at enforcement time in the service worker.
        */
       var stored = Object.assign({}, R.DEFAULT_SETTINGS, res.tlSettings || {});
-      if (!stored.marketSource || stored.marketSource === 'demo') {
-        stored.marketSource = 'broker';
-      }
+      stored.marketSource = 'live';
       if (!dirty) fill(stored);
       renderLicense(currentLicense, s);
       maybeRevalidate(currentLicense, s);
@@ -1037,23 +1020,9 @@
       currentJournal = Array.isArray(res.tlJournal) ? res.tlJournal : [];
       renderMonthlyJournal();
       renderOverviewJournalSummary(currentState, currentJournal);
-      renderTickerStrip(res.tlMarket);
-      renderBrokerSupport();
+      renderOverviewFeedBadge(res.tlMarket);
     });
   }
-
-  /*
-   * Index ticker strip. Free/Pro read quotes scraped from the user's open broker
-   * tab; Pro+ gets them from the server feed. With neither, every cell shows an
-   * em-dash and the badge admits there is no source — it never shows a price we
-   * did not receive.
-   */
-  var TICKER_CELLS = [
-    { sym: 'NIFTY', price: 'tickerNiftyPrice', chg: 'tickerNiftyChg', src: 'tickerNiftySrc' },
-    { sym: 'BANKNIFTY', price: 'tickerBankPrice', chg: 'tickerBankChg', src: 'tickerBankSrc' },
-    { sym: 'FINNIFTY', price: 'tickerFinPrice', chg: 'tickerFinChg', src: 'tickerFinSrc' },
-    { sym: 'SENSEX', price: 'tickerSensexPrice', chg: 'tickerSensexChg', src: 'tickerSensexSrc' }
-  ];
 
   /*
    * India VIX panel. Every value comes from the provider: VIX level and change
@@ -1125,47 +1094,6 @@
    * never drift from what the code actually does. Status is derived with the
    * same rules the detector uses, and nothing here is hand-written hopeful copy.
    */
-  function renderBrokerSupport() {
-    var tbody = el('brokerSupportTbody');
-    var profiles = globalThis.TLDetect && globalThis.TLDetect.BROKER_PROFILES;
-    if (!tbody || !profiles) return;
-
-    function badge(ok, okText, badText) {
-      return ok
-        ? '<span class="badge" style="background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3)">' + okText + '</span>'
-        : '<span class="badge" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3)">' + badText + '</span>';
-    }
-
-    var seen = {};
-    var names = Object.keys(profiles).filter(function (host) {
-      // The synthetic test broker ships for the adapter tests, not for users.
-      if (host === 'fake-broker.local' || (profiles[host] || {}).synthetic) return false;
-      // Sahi is registered under several hosts; show each product once.
-      var root = host.split('.').slice(-2).join('.');
-      if (seen[root]) return false;
-      seen[root] = true;
-      return true;
-    }).sort(function (a, b) {
-      var pa = profiles[a] || {}, pb = profiles[b] || {};
-      var va = pa.detectionStatus === 'DETECTION_VERIFIED' ? 0 : 1;
-      var vb = pb.detectionStatus === 'DETECTION_VERIFIED' ? 0 : 1;
-      if (va !== vb) return va - vb;
-      return String(pa.name || a).localeCompare(String(pb.name || b));
-    });
-
-    tbody.innerHTML = names.map(function (host) {
-      var p = profiles[host] || {};
-      // Same predicate the detector uses for order-level enforcement.
-      var restrictionVerified = Boolean(p.newOrderRestrictionTested && p.riskReducingActionBehaviorTested);
-      var detectionVerified = p.detectionStatus === 'DETECTION_VERIFIED';
-      return '<tr>' +
-        '<td style="font-weight:600">' + escapeHtml(p.name || host) +
-          '<div style="font-size:10.5px;color:var(--muted);font-weight:400">' + escapeHtml(host) + '</div></td>' +
-        '<td>' + badge(detectionVerified, 'Verified', 'Not verified') + '</td>' +
-        '<td>' + badge(restrictionVerified, 'Verified', 'Full-screen lock') + '</td>' +
-        '</tr>';
-    }).join('');
-  }
 
   /*
    * Dashboard "feed" badge. It must never claim LIVE unless data actually
@@ -1177,10 +1105,8 @@
     var badge = el('overviewLiveBadge');
     if (!badge) return;
 
-    var hasQuotes = Boolean(snap && snap.quotes && Object.keys(snap.quotes).length);
-    var isLive = Boolean(snap && snap.source === 'live' &&
+    var online = Boolean(snap && snap.source === 'live' &&
       (snap.spot != null || (snap.analysis && snap.analysis.ok)));
-    var online = hasQuotes || isLive;
 
     // Reset every stateful property before applying the current one.
     badge.style.cssText = '';
@@ -1190,7 +1116,7 @@
       // .demo-badge-green carries its own green styling and has no ::before
       // dot, so the pulse span below is the only dot.
       badge.className = 'demo-badge-green';
-      badge.innerHTML = '<span class="live-pulse-dot"></span> ' + (isLive ? 'LIVE FEED' : 'BROKER FEED');
+      badge.innerHTML = '<span class="live-pulse-dot"></span> LIVE FEED';
       badge.title = (snap && snap.provider) || '';
       return;
     }
@@ -1199,58 +1125,9 @@
     badge.className = 'demo-badge';
     badge.style.cssText = 'background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25)';
     badge.textContent = 'NO FEED';
-    badge.title = 'Open a supported broker tab, or connect a market feed on the server.';
+    badge.title = 'No live market feed. Check the server credential on the Plans tab.';
   }
 
-  function renderTickerStrip(snap) {
-    renderOverviewFeedBadge(snap);
-    var quotes = (snap && snap.quotes) || null;
-    // A Pro+ snapshot carries analysis only, so fall back to its spot price.
-    var livePx = snap && snap.source === 'live' && snap.spot != null
-      ? { NIFTY: { price: snap.spot, changePercent: null } } : null;
-    var provider = snap && snap.provider ? String(snap.provider) : '';
-
-    TICKER_CELLS.forEach(function (cell) {
-      var q = quotes ? quotes[cell.sym] : null;
-      if (!q && livePx) q = livePx[cell.sym];
-      var priceEl = el(cell.price);
-      var chgEl = el(cell.chg);
-      var srcEl = el(cell.src);
-
-      if (q && Number(q.price) > 0) {
-        if (priceEl) {
-          priceEl.textContent = Number(q.price).toLocaleString('en-IN', {
-            minimumFractionDigits: 2, maximumFractionDigits: 2
-          });
-        }
-        var pct = Number(q.changePercent);
-        if (chgEl) {
-          if (isFinite(pct) && pct !== 0) {
-            var sign = pct > 0 ? '+' : '';
-            chgEl.textContent = sign + pct.toFixed(2) + '%';
-            chgEl.style.color = pct >= 0 ? 'var(--tl-green)' : '#f87171';
-          } else {
-            chgEl.textContent = '';
-          }
-        }
-        if (srcEl) {
-          srcEl.textContent = snap.source === 'live' ? 'LIVE' : 'BROKER';
-          srcEl.className = 'badge';
-          srcEl.style.cssText = 'font-size:9px;background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3)';
-          srcEl.title = provider || '';
-        }
-      } else {
-        if (priceEl) priceEl.textContent = '—';
-        if (chgEl) { chgEl.textContent = '—'; chgEl.style.color = ''; }
-        if (srcEl) {
-          srcEl.textContent = 'NO FEED';
-          srcEl.className = 'badge';
-          srcEl.style.cssText = 'font-size:9px;background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25)';
-          srcEl.title = 'Open a supported broker tab to see live index quotes.';
-        }
-      }
-    });
-  }
 
   function renderOverviewJournalSummary(state, journal) {
     var emptyEl = el('ovJournalEmpty');
@@ -1415,6 +1292,10 @@
       setText('overviewChartPrice', '—');
       setText('overviewChartChange', '—');
       setText('overviewChartSource', 'Live feed disconnected · connect a market feed on the server');
+      if (el('overviewOhlcSummary')) {
+        el('overviewOhlcSummary').innerHTML =
+          '<span>O <b>—</b></span><span>H <b>—</b></span><span>L <b>—</b></span><span>Prev <b>—</b></span>';
+      }
       return;
     }
     var candles = chartState.candles.slice(-42).filter(function (c) {
@@ -1431,24 +1312,25 @@
     setText('overviewChartPrice', Number(last.c).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     setText('overviewChartChange', (change >= 0 ? '+' : '') + change.toFixed(2) + ' (' + (changePct >= 0 ? '+' : '') + changePct.toFixed(2) + '%)');
     if (el('overviewChartChange')) el('overviewChartChange').className = change >= 0 ? 'pos' : 'neg';
-    setText('overviewChartSource', 'Live Broker Market Stream · ' + cfg.name);
 
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(['tlBrokerMarket', 'tlMarket'], function (res) {
-        var quotes = (res && res.tlBrokerMarket && res.tlBrokerMarket.quotes) || (res && res.tlMarket && res.tlMarket.quotes);
-        if (quotes) {
-          var sym = chartState.symbol || 'NIFTY';
-          var q = quotes[sym] || quotes.NIFTY || quotes.BANKNIFTY || Object.values(quotes)[0];
-          if (q && q.price) {
-            setText('overviewChartPrice', Number(q.price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-            var isP = (q.change || 0) >= 0;
-            setText('overviewChartChange', (isP ? '+' : '') + (q.change || 0).toFixed(2) + ' (' + (isP ? '+' : '') + (q.changePercent || 0).toFixed(2) + '%)');
-            if (el('overviewChartChange')) el('overviewChartChange').className = isP ? 'price-change-pill pos' : 'price-change-pill neg';
-            setText('overviewChartSource', 'Live Broker Market Stream · ' + (q.name || sym));
-          }
-        }
-      });
+    // The O/H/L/Prev row was static markup with em-dashes in every slot; it had
+    // no writer at all. Fill it from the candles already on screen.
+    if (el('overviewOhlcSummary')) {
+      var fmtOhlc = function (v) {
+        return Number.isFinite(Number(v))
+          ? Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : '—';
+      };
+      var prevC = candles.length > 1 ? candles[candles.length - 2] : null;
+      el('overviewOhlcSummary').innerHTML =
+        '<span>O <b>' + fmtOhlc(last.o) + '</b></span>' +
+        '<span>H <b>' + fmtOhlc(last.h) + '</b></span>' +
+        '<span>L <b>' + fmtOhlc(last.l) + '</b></span>' +
+        '<span>Prev <b>' + (prevC ? fmtOhlc(prevC.c) : '—') + '</b></span>';
     }
+    // The header is driven by the candles that were just drawn - the same
+    // numbers, not a second lookup that could disagree with the chart.
+    setText('overviewChartSource', 'Live feed · ' + cfg.name);
     if (el('overviewSymbol')) el('overviewSymbol').value = chartState.symbol;
     if (el('overviewTimeframe') && Array.from(el('overviewTimeframe').options).some(function (o) { return o.value === chartState.timeframe; })) {
       el('overviewTimeframe').value = chartState.timeframe;
@@ -1661,117 +1543,9 @@
     svg.innerHTML = html;
   }
 
-  function getMarketSource() {
-    var val = (el('marketSource') && el('marketSource').value) || (currentSettings && currentSettings.marketSource) || 'broker';
-    if (val === 'live') return 'live';
-    return 'broker';
-  }
+  function getMarketSource() { return 'live'; }
 
-  function probeDirectBrokerTabs(callback) {
-    if (typeof chrome === 'undefined' || !chrome.tabs || !chrome.tabs.query) {
-      if (callback) callback(null);
-      return;
-    }
-    chrome.tabs.query({}, function (tabs) {
-      if (!tabs || !tabs.length) {
-        if (callback) callback(null);
-        return;
-      }
-      var quotesFound = {};
-      var broker = 'Fyers Web';
-      var Det = window.TLDetector || (typeof D !== 'undefined' ? D : null);
-      for (var i = 0; i < tabs.length; i++) {
-        var t = tabs[i];
-        var title = t.title || '';
-        var url = t.url || t.pendingUrl || '';
-        var scanned = null;
-        if (title && Det && Det.scanMarketQuotes) {
-          scanned = Det.scanMarketQuotes({ title: title });
-        }
-        if (scanned && Object.keys(scanned).length > 0) {
-          Object.assign(quotesFound, scanned);
-          if (title.toUpperCase().includes('FYERS') || (url && url.includes('fyers'))) broker = 'Fyers Web';
-          else if (title.includes('Kite') || (url && url.includes('zerodha'))) broker = 'Zerodha Kite';
-          else if (url && url.includes('upstox')) broker = 'Upstox';
-          else if (url && url.includes('dhan')) broker = 'Dhan';
-        }
-      }
-      if (Object.keys(quotesFound).length > 0) {
-        var payload = {
-          quotes: quotesFound,
-          brokerName: broker,
-          lastUpdated: Date.now()
-        };
-        var primaryQuote = quotesFound.NIFTY || quotesFound.BANKNIFTY || Object.values(quotesFound)[0];
-        var snap = {
-          fetchedAt: Date.now(),
-          source: 'broker',
-          symbol: primaryQuote ? primaryQuote.symbol : 'NIFTY',
-          provider: 'Active Broker Tab (' + broker + ')',
-          quotes: quotesFound,
-          price: primaryQuote ? primaryQuote.price : null,
-          change: primaryQuote ? primaryQuote.change : 0,
-          changePercent: primaryQuote ? primaryQuote.changePercent : 0
-        };
-        chrome.storage.local.set({ tlBrokerMarket: payload, tlMarket: snap });
-        if (callback) callback(payload);
-      } else {
-        if (callback) callback(null);
-      }
-    });
-  }
 
-  function drawLiveBrokerSvg(svg, quote, provider) {
-    if (!svg || !quote) return;
-    var width = 740;
-    var height = 320;
-    var isPos = (quote.change || 0) >= 0;
-    var priceStr = '₹' + quote.price.toLocaleString('en-IN', { minimumFractionDigits: 2 });
-    var chgStr = (isPos ? '+' : '') + (quote.change || 0).toFixed(2) + ' (' + (isPos ? '+' : '') + (quote.changePercent || 0).toFixed(2) + '%)';
-    var color = isPos ? '#10b981' : '#ef4444';
-    var borderColor = isPos ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
-
-    var html =
-      '<defs>' +
-        '<linearGradient id="liveBrokerGrad" x1="0" y1="0" x2="0" y2="1">' +
-          '<stop offset="0%" stop-color="' + (isPos ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)') + '" />' +
-          '<stop offset="100%" stop-color="rgba(10,14,26,0.95)" />' +
-        '</linearGradient>' +
-      '</defs>' +
-      '<rect x="0" y="0" width="' + width + '" height="' + height + '" fill="url(#liveBrokerGrad)" rx="12" />' +
-      '<rect x="0" y="0" width="' + width + '" height="' + height + '" fill="none" stroke="' + borderColor + '" stroke-width="1.5" rx="12" />' +
-
-      // Reference lines
-      '<line x1="40" y1="80" x2="700" y2="80" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="4,4" />' +
-      '<line x1="40" y1="160" x2="700" y2="160" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="4,4" />' +
-      '<line x1="40" y1="240" x2="700" y2="240" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="4,4" />' +
-
-      // Center Live Badge
-      '<circle cx="280" cy="55" r="5" fill="' + color + '">' +
-        '<animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite" />' +
-      '</circle>' +
-      '<text x="295" y="59" fill="' + color + '" font-size="12" font-weight="700" letter-spacing="1">LIVE BROKER MARKET FEED ACTIVE</text>' +
-
-      // Big Price
-      '<text x="370" y="125" text-anchor="middle" fill="#ffffff" font-size="36" font-weight="800" font-family="Inter, sans-serif">' + priceStr + '</text>' +
-
-      // Change Pill
-      '<rect x="285" y="142" width="170" height="28" rx="14" fill="' + (isPos ? 'rgba(16,185,129,0.18)' : 'rgba(239,68,68,0.18)') + '" stroke="' + borderColor + '" stroke-width="1" />' +
-      '<text x="370" y="161" text-anchor="middle" fill="' + color + '" font-size="13" font-weight="700">' + chgStr + '</text>' +
-
-      // Meta info
-      '<text x="370" y="210" text-anchor="middle" fill="#94a3b8" font-size="12">' +
-        'Source: ' + escapeHtml(provider) + ' · Zero API keys or tokens required' +
-      '</text>' +
-      '<text x="370" y="235" text-anchor="middle" fill="#64748b" font-size="11.5">' +
-        'Interactive candlestick charting is running live in your open broker tab' +
-      '</text>' +
-      '<text x="370" y="270" text-anchor="middle" fill="#38bdf8" font-size="11">' +
-        '● Real-time tick quotes synced directly from Google Chrome' +
-      '</text>';
-
-    svg.innerHTML = html;
-  }
 
   function renderDedicatedChartsView() {
     var svg = el('dedicatedChartsSvg');
@@ -1779,150 +1553,63 @@
     var symbol = (el('chartsSymbolSelect') && el('chartsSymbolSelect').value) || (el('marketSymbol') && el('marketSymbol').value) || 'NIFTY';
     var activePill = document.querySelector('#chartsTimeframePills .tf-btn.active');
     var tf = (activePill && activePill.getAttribute('data-tf')) || '15m';
-    var source = getMarketSource();
-
     var offlineNotice = el('chartsOfflineNotice');
     var calloutBanner = el('chartsCalloutBanner');
     var modeBadge = el('chartsModeBadge');
     var statusText = el('chartsStatusText');
 
-    if (calloutBanner) calloutBanner.style.display = 'none';
-
-    if (source === 'live') {
-      chrome.storage.local.get('tlMarket', function (res) {
-        var snap = res && res.tlMarket;
-        // The background refreshes one configured symbol on a timer and rewrites
-        // tlMarket. If the user is looking at a different index, that snapshot
-        // is not for this chart - drawing it would put NIFTY candles under a
-        // BANKNIFTY heading. Same-symbol is part of "is this live".
-        var sameSymbol = Boolean(snap) &&
-          String(snap.symbol || '').toUpperCase() === String(symbol).toUpperCase();
-        var liveCandles = (snap && Array.isArray(snap.candles)) ? snap.candles : [];
-        var hasLive = Boolean(snap && snap.source === 'live' && sameSymbol &&
-          ((snap.candleCount > 0) || liveCandles.length));
-        if (!hasLive) {
-          if (offlineNotice) {
-            offlineNotice.style.display = 'block';
-            var why = (snap && snap.source === 'live' && !sameSymbol)
-              ? 'The stored snapshot is for ' + escapeHtml(String(snap.symbol || 'another index')) +
-                ', so it is not drawn over ' + escapeHtml(symbol) + '.'
-              : 'Live exchange candles are not connected or server credentials are missing.';
-            offlineNotice.innerHTML =
-              '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#fca5a5">Live Exchange Chart Unavailable</div>' +
-              '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">' + why +
-              ' Trade Lock does not fabricate live candles.</div>';
-          }
-          if (svg) svg.style.display = 'none';
-          if (modeBadge) {
-            modeBadge.innerHTML = '<span class="badge-dot-live" style="background:#ef4444"></span> LIVE FEED OFFLINE';
-            modeBadge.style.color = '#fca5a5';
-          }
-          if (statusText) statusText.textContent = 'Live Feed: Offline';
-          if (calloutBanner) calloutBanner.style.display = 'none';
-          return;
+    chrome.storage.local.get('tlMarket', function (res) {
+      var snap = res && res.tlMarket;
+      // The background refreshes one configured symbol on a timer and rewrites
+      // tlMarket. If the user is looking at a different index, that snapshot
+      // is not for this chart - drawing it would put NIFTY candles under a
+      // BANKNIFTY heading. Same-symbol is part of "is this live".
+      var sameSymbol = Boolean(snap) &&
+        String(snap.symbol || '').toUpperCase() === String(symbol).toUpperCase();
+      var liveCandles = (snap && Array.isArray(snap.candles)) ? snap.candles : [];
+      var hasLive = Boolean(snap && snap.source === 'live' && sameSymbol &&
+        ((snap.candleCount > 0) || liveCandles.length));
+      if (!hasLive) {
+        if (offlineNotice) {
+          offlineNotice.style.display = 'block';
+          var why = (snap && snap.source === 'live' && !sameSymbol)
+            ? 'The stored snapshot is for ' + escapeHtml(String(snap.symbol || 'another index')) +
+              ', so it is not drawn over ' + escapeHtml(symbol) + '.'
+            : 'Live exchange candles are not connected or server credentials are missing.';
+          offlineNotice.innerHTML =
+            '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#fca5a5">Live Exchange Chart Unavailable</div>' +
+            '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">' + why +
+            ' Trade Lock does not fabricate live candles.</div>';
         }
-
-        if (offlineNotice) offlineNotice.style.display = 'none';
-        if (svg) svg.style.display = 'block';
-        if (calloutBanner) calloutBanner.style.display = 'none';
+        if (svg) svg.style.display = 'none';
         if (modeBadge) {
-          modeBadge.innerHTML = '<span class="badge-dot-live" style="background:#10b981"></span> VERIFIED LIVE FEED';
-          modeBadge.style.color = '#34d399';
+          modeBadge.innerHTML = '<span class="badge-dot-live" style="background:#ef4444"></span> LIVE FEED OFFLINE';
+          modeBadge.style.color = '#fca5a5';
         }
-        if (statusText) statusText.textContent = 'Provider: ' + (snap.provider || 'market feed') + ' · ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
-
-        // Draw from the snapshot, not from whatever the Market tab last left in
-        // chartState. Opening Charts first used to show a green "live" badge over
-        // a blank panel because nothing had filled chartState.candles yet.
-        chartState.candles = liveCandles;
-        chartState.symbol = symbol;
-        chartState.panOffset = 0;
-        drawDedicatedSvgChart(svg, liveCandles);
-        if (el('marketCandleCanvas')) drawMarketCandleChart();
-      });
-      return;
-    }
-
-    // Live Broker Tap (Approach B) - primary mode
-    var applyLiveQuotes = function (quotes, provider) {
-      if (!quotes) return false;
-      var q = quotes[symbol] || quotes.NIFTY || quotes.BANKNIFTY || Object.values(quotes)[0];
-      if (!q || !q.price) return false;
+        if (statusText) statusText.textContent = 'Live Feed: Offline';
+        if (calloutBanner) calloutBanner.style.display = 'none';
+        return;
+      }
 
       if (offlineNotice) offlineNotice.style.display = 'none';
-      if (calloutBanner) calloutBanner.style.display = 'none';
       if (svg) svg.style.display = 'block';
-
-      var isPos = (q.change || 0) >= 0;
+      if (calloutBanner) calloutBanner.style.display = 'none';
       if (modeBadge) {
-        modeBadge.innerHTML = '<span class="badge-dot-live" style="background:#10b981"></span> LIVE BROKER TAP · ' + escapeHtml(provider || 'Fyers Web');
+        modeBadge.innerHTML = '<span class="badge-dot-live" style="background:#10b981"></span> VERIFIED LIVE FEED';
         modeBadge.style.color = '#34d399';
       }
-      if (statusText) statusText.textContent = 'Streaming live from ' + (provider || 'Fyers Web') + ' in Chrome';
+      if (statusText) statusText.textContent = 'Provider: ' + (snap.provider || 'market feed') + ' · ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
 
-      if (el('chartsSymbolDisplay')) el('chartsSymbolDisplay').textContent = (q.name || symbol) + ' (NSE)';
-      if (el('chartsChangeDisplay')) {
-        el('chartsChangeDisplay').textContent = (isPos ? '+' : '') + (q.change || 0).toFixed(2) + ' (' + (isPos ? '+' : '') + (q.changePercent || 0).toFixed(2) + '%)';
-        el('chartsChangeDisplay').className = 'symbol-change ' + (isPos ? 'pos' : 'neg');
-        el('chartsChangeDisplay').style.color = isPos ? 'var(--tl-green)' : 'var(--tl-red)';
-      }
-      if (el('chartsOhlcDisplay')) {
-        el('chartsOhlcDisplay').textContent = 'LTP: ₹' + q.price.toLocaleString('en-IN', { minimumFractionDigits: 2 }) + ' · Source: ' + (provider || 'Fyers Web') + ' · Updated: ' + new Date().toLocaleTimeString('en-IN') + ' IST';
-      }
-      if (el('chartsRsiVal')) el('chartsRsiVal').textContent = isPos ? 'Bullish Bias' : 'Bearish Bias';
-      if (el('chartsVwapVal')) el('chartsVwapVal').textContent = '₹' + q.price.toLocaleString('en-IN', { minimumFractionDigits: 2 });
-      if (el('chartsAtrVal')) el('chartsAtrVal').textContent = 'Live Feed Active';
-      if (el('chartsTrendVal')) {
-        el('chartsTrendVal').textContent = isPos ? 'UPWARD BIAS' : 'DOWNWARD BIAS';
-        el('chartsTrendVal').style.color = isPos ? 'var(--tl-green)' : 'var(--tl-red)';
-      }
-
-      drawLiveBrokerSvg(svg, q, provider || 'Fyers Web');
-      return true;
-    };
-
-    // 1. Check local storage
-    chrome.storage.local.get(['tlBrokerMarket', 'tlMarket'], function (res) {
-      var bm = res && res.tlBrokerMarket;
-      if (bm && bm.quotes && Object.keys(bm.quotes).length > 0) {
-        if (applyLiveQuotes(bm.quotes, bm.brokerName || 'Fyers Web')) return;
-      }
-      var tm = res && res.tlMarket;
-      if (tm && tm.quotes && Object.keys(tm.quotes).length > 0) {
-        if (applyLiveQuotes(tm.quotes, tm.provider || 'Active Broker Tab')) return;
-      }
-
-      // 2. Query open broker tabs directly in Chrome
-      probeDirectBrokerTabs(function (direct) {
-        if (direct && direct.quotes && applyLiveQuotes(direct.quotes, direct.brokerName)) {
-          return;
-        }
-
-        // 3. Query background service worker
-        chrome.runtime.sendMessage({ type: 'TL_CHECK_MARKET_FEED', source: 'broker', symbol: symbol }, function (resp) {
-          if (!chrome.runtime.lastError && resp && resp.connected && resp.quotes) {
-            if (applyLiveQuotes(resp.quotes, resp.provider || 'Fyers Web')) return;
-          }
-
-          // If no quotes found yet, show waiting state (never disconnected/simulated)
-          if (modeBadge) {
-            modeBadge.innerHTML = '<span class="badge-dot-live" style="background:#f59e0b"></span> WAITING FOR BROKER TAB';
-            modeBadge.style.color = '#fbbf24';
-          }
-          if (statusText) statusText.textContent = 'Keep your broker tab (trade.fyers.in, kite.zerodha.com) open in Chrome';
-          if (offlineNotice) {
-            offlineNotice.style.display = 'block';
-            offlineNotice.innerHTML =
-              '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#fbbf24">Waiting for Active Broker Tab</div>' +
-              '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Keep your trading platform (Fyers Web, Zerodha Kite, Upstox, Dhan) open in Google Chrome. Trade Lock will sync live quotes automatically.</div>' +
-              '<button type="button" id="chartsRetryBtn" class="primary" style="padding:6px 16px;font-size:12px">Check Broker Tab Again</button>';
-            var rbtn = el('chartsRetryBtn');
-            if (rbtn) rbtn.addEventListener('click', renderDedicatedChartsView);
-          }
-          if (svg) svg.style.display = 'none';
-        });
-      });
+      // Draw from the snapshot, not from whatever the Market tab last left in
+      // chartState. Opening Charts first used to show a green "live" badge over
+      // a blank panel because nothing had filled chartState.candles yet.
+      chartState.candles = liveCandles;
+      chartState.symbol = symbol;
+      chartState.panOffset = 0;
+      drawDedicatedSvgChart(svg, liveCandles);
+      if (el('marketCandleCanvas')) drawMarketCandleChart();
     });
+
   }
 
 
@@ -2346,6 +2033,49 @@
 
   // ---------------------------------------------------- Market & OI Dashboard ----
 
+  /*
+   * Turn a feed refusal into the one sentence that says what to do about it.
+   * The old card listed broker names and a mode label and never mentioned the
+   * actual cause, so a disconnected feed looked like a missing browser tab even
+   * when the server simply had no token.
+   */
+  function isLocal(base) {
+    return /localhost|127\.0\.0\.1/.test(String(base || ''));
+  }
+
+  function feedProblem(err, resp, apiBase) {
+    var problem = String(err || 'offline');
+    if (problem === 'market_feed_not_configured') {
+      return {
+        detail: 'The feed server is running but has no market-data credential, so it cannot fetch candles or the option chain.',
+        action: 'Set UPSTOX_ANALYTICS_TOKEN (or FYERS_APP_ID + FYERS_ACCESS_TOKEN) on the server and restart it.'
+      };
+    }
+    if (problem === 'invalid_license' || problem === 'license_required' || problem === 'forbidden'
+      || (resp && resp.statusCode === 403)) {
+      return {
+        detail: 'The feed server rejected this licence. Live market data is part of Pro+.',
+        action: 'Activate a Pro+ key on the Plans tab.'
+      };
+    }
+    if (problem === 'unknown_symbol') {
+      return {
+        detail: 'The feed server does not recognise the selected instrument.',
+        action: 'Pick one of NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, SENSEX or BANKEX.'
+      };
+    }
+    if (problem === 'upstream_error' || problem === 'provider_error' || (resp && resp.statusCode >= 500)) {
+      return {
+        detail: 'The feed server reached the provider but did not get usable data back.',
+        action: 'Check the provider credential and quota, then try again.'
+      };
+    }
+    return {
+      detail: 'Trade Lock could not reach the feed server at ' + apiBase + ', so there are no live candles or option chain to show.',
+      action: 'Start the server (npm start) or correct the server URL on the Plans tab.'
+    };
+  }
+
   function renderDisconnectedMarketState(symbol, err, hint) {
     var oiContainer = el('oiBarsContainer');
     if (oiContainer) {
@@ -2370,10 +2100,19 @@
         ctx.fillText('Live Exchange Feed Disconnected (' + escapeHtml(String(err || 'OFFLINE').toUpperCase()) + ')', width / 2, height / 2 - 10);
         ctx.fillStyle = '#94a3b8';
         ctx.font = '11px Inter, sans-serif';
-        ctx.fillText('Keep your broker tab open in Google Chrome (trade.fyers.in, kite.zerodha.com)', width / 2, height / 2 + 14);
+        ctx.fillText('No live candles available - nothing is simulated', width / 2, height / 2 + 14);
       }
     }
     if (el('marketSpotVal')) el('marketSpotVal').textContent = '—';
+    // Clear the panels the live path would have filled. A card that keeps the
+    // previous snapshot's numbers is indistinguishable from a live one.
+    chartState.candles = [];
+    chartState.optionRows = [];
+    chartState.fullOptionRows = [];
+    chartState.chainSpot = null;
+    if (el('chartCandleCount')) el('chartCandleCount').textContent = 'no candles';
+    if (el('marketUpdatedTimestamp')) el('marketUpdatedTimestamp').textContent = '';
+    renderVolatilityPanel(null, [], null);
     if (el('marketThetaVal')) el('marketThetaVal').textContent = 'Live Feed Disconnected';
     if (el('marketPcrVal')) el('marketPcrVal').textContent = '—';
     if (el('marketMaxPainVal')) el('marketMaxPainVal').textContent = '—';
@@ -2388,298 +2127,144 @@
   function renderMarketAndOiDashboard() {
     var symbol = el('marketSymbol') ? el('marketSymbol').value : 'NIFTY';
     var tf = el('marketTimeframe') ? el('marketTimeframe').value : '15m';
-    var source = (el('marketSource') && el('marketSource').value) || (currentSettings && currentSettings.marketSource) || 'broker';
-    var expiry = el('marketExpiry') ? el('marketExpiry').value : 'current';
-
     var setupCard = el('liveMarketSetupCard');
     var badgeEl = el('marketTimestampBadge');
     var timeEl = el('marketUpdatedTimestamp');
     var noteEl = el('marketNote');
-    if (source === 'broker') {
-      if (noteEl) noteEl.textContent = 'Syncing quotes from active broker tab...';
-      chrome.runtime.sendMessage({ type: 'TL_CHECK_MARKET_FEED', source: 'broker', symbol: symbol }, function (resp) {
-        var tickerStrip = el('brokerTickerStrip');
-        if (chrome.runtime.lastError || !resp || !resp.connected || !resp.quotes) {
-          var err = (resp && resp.error) || 'no_broker_tab';
-          var hint = (resp && resp.hint) || 'Open your broker tab (Zerodha Kite, Fyers, Upstox, Dhan, Angel One) in Chrome to stream live quotes automatically.';
-          if (tickerStrip) tickerStrip.style.display = 'none';
-          if (setupCard) {
-            setupCard.style.display = 'block';
-            setupCard.className = 'live-setup-card';
-            setupCard.innerHTML =
-              '<div class="live-setup-head">' +
-                '<span class="live-setup-title">📡 Waiting for Active Broker Tab</span>' +
-                '<span class="badge warn" style="font-size:10px">Approach B: Browser Market Tap</span>' +
-              '</div>' +
-              '<div class="live-setup-body">' +
-                'Trade Lock syncs real live market quotes directly from your open broker tab in Google Chrome. ' +
-                'Zero developer tokens, zero Fyers API keys, and no 24/7 background servers required.' +
-              '</div>' +
-              '<div class="live-setup-meta">' +
-                '<span><b>Supported Brokers:</b> Zerodha Kite, Upstox, Fyers Web, Dhan, Angel One, Groww</span>' +
-                '<span><b>Status:</b> ' + (err === 'no_broker_tab' ? 'NO ACTIVE BROKER TAB DETECTED' : escapeHtml(String(err).toUpperCase())) + '</span>' +
-                '<span><b>Last Checked:</b> ' + new Date().toLocaleTimeString('en-IN') + ' IST</span>' +
-              '</div>' +
-              '<div class="live-setup-actions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
-                '<a href="https://kite.zerodha.com" target="_blank" rel="noopener noreferrer" class="primary" style="text-decoration:none;display:inline-block;padding:7px 14px;font-size:12px;background:#ff5722;color:#fff;border-radius:6px;font-weight:600">Open Zerodha Kite</a>' +
-                '<a href="https://trade.fyers.in" target="_blank" rel="noopener noreferrer" class="primary" style="text-decoration:none;display:inline-block;padding:7px 14px;font-size:12px;background:#2563eb;color:#fff;border-radius:6px;font-weight:600">Open Fyers Web</a>' +
-                '<a href="https://web.dhan.co" target="_blank" rel="noopener noreferrer" class="primary" style="text-decoration:none;display:inline-block;padding:7px 14px;font-size:12px;background:#10b981;color:#fff;border-radius:6px;font-weight:600">Open Dhan</a>' +
-                '<a href="https://upstox.com" target="_blank" rel="noopener noreferrer" class="primary" style="text-decoration:none;display:inline-block;padding:7px 14px;font-size:12px;background:#6366f1;color:#fff;border-radius:6px;font-weight:600">Open Upstox</a>' +
-                '<button type="button" id="retryBrokerFeedBtn" class="ghost" style="padding:6px 14px;font-size:12px">Check Again</button>' +
-              '</div>';
 
-            var retryBrokerBtn = el('retryBrokerFeedBtn');
-            if (retryBrokerBtn) retryBrokerBtn.addEventListener('click', renderMarketAndOiDashboard);
-          }
+    if (noteEl) noteEl.textContent = 'Probing live exchange connection...';
+    chrome.runtime.sendMessage({ type: 'TL_CHECK_MARKET_FEED', symbol: symbol, resolution: tf.replace(/[^0-9]/g, '') || '15' }, function (resp) {
+      if (chrome.runtime.lastError || !resp || !resp.connected) {
+        var err = (resp && resp.error) || 'offline';
+        var hint = (resp && resp.hint) || 'Backend broker credentials (FYERS_APP_ID, FYERS_ACCESS_TOKEN) or Pro+ subscription required.';
+        if (setupCard) {
+          setupCard.style.display = 'block';
+          var apiBase = (currentSettings && currentSettings.licenseApiBase) || 'http://localhost:8787';
+          var why = feedProblem(err, resp, apiBase);
+          setupCard.className = 'live-setup-card';
+          setupCard.innerHTML =
+            '<div class="live-setup-head">' +
+              '<span class="live-setup-title">Live feed not connected</span>' +
+              '<span class="badge danger" style="font-size:10px">' + escapeHtml(String(err).toUpperCase()) + '</span>' +
+            '</div>' +
+            '<div class="live-setup-body">' + escapeHtml(why.detail) + '</div>' +
+            '<div class="live-setup-meta">' +
+              '<span><b>Feed:</b> ' + escapeHtml(apiBase) + '</span>' +
+              (why.action ? '<span><b>Fix:</b> ' + escapeHtml(why.action) + '</span>' : '') +
+              '<span><b>Last Checked:</b> ' + new Date().toLocaleTimeString('en-IN') + ' IST</span>' +
+            '</div>' +
+            '<div class="live-setup-actions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+              '<button type="button" id="retryLiveFeedBtn" class="primary" style="padding:7px 16px;font-size:12px">Try Again</button>' +
+              (isLocal(apiBase) ? '' :
+                '<button type="button" id="useLocalServerBtn" class="ghost" style="padding:7px 16px;font-size:12px">Use the server on this computer</button>') +
+            '</div>';
 
-          if (badgeEl) {
-            badgeEl.className = 'badge warn';
-            badgeEl.style.cssText = 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-size:11px';
-            badgeEl.innerHTML = '⏳ Waiting for Broker Tab · Kite / Fyers / Dhan / Upstox';
-          }
-          if (timeEl) timeEl.textContent = 'Last Probe: ' + new Date().toLocaleTimeString('en-IN') + ' IST';
-          if (noteEl) noteEl.textContent = 'Waiting for broker tab in Chrome';
+          var retryBtn = el('retryLiveFeedBtn');
+          if (retryBtn) retryBtn.addEventListener('click', renderMarketAndOiDashboard);
 
-          renderDisconnectedMarketState(symbol, err, hint);
-          return;
-        }
-
-        // Broker quotes connected!
-        if (setupCard) setupCard.style.display = 'none';
-        if (tickerStrip) tickerStrip.style.display = 'grid';
-
-        if (el('marketSimulatedTopCallout')) el('marketSimulatedTopCallout').style.display = 'none';
-        if (el('marketSimulatedSubCallout')) el('marketSimulatedSubCallout').style.display = 'none';
-
-        var quotes = resp.quotes;
-        var fetchedAt = resp.fetchedAt || Date.now();
-        var isStale = (Date.now() - fetchedAt) > 60000;
-        var provider = resp.provider || 'Broker Tab';
-
-        if (el('marketModelBadge')) {
-          el('marketModelBadge').textContent = 'Live Broker Tap (' + (resp.quotes && resp.quotes.NIFTY ? 'NIFTY' : 'Active') + ')';
-          el('marketModelBadge').className = 'badge pro';
-          el('marketModelBadge').style.cssText = 'background:rgba(16,185,129,0.18);border:1px solid rgba(16,185,129,0.3);color:#34d399';
-        }
-        if (el('marketSubtitleDesc')) {
-          el('marketSubtitleDesc').textContent = 'Live quotes streaming in real time from ' + provider + ' in Google Chrome.';
+          // The bundled default points at the hosted deployment. Someone who
+          // is running the server locally gets a one-click way to move the
+          // feed origin, including the host permission Chrome requires
+          // before the service worker may call it.
+          var localBtn = el('useLocalServerBtn');
+          if (localBtn) localBtn.addEventListener('click', function () {
+            var target = 'http://localhost:8787';
+            ensureApiPermission(target).then(function (granted) {
+              if (!granted) {
+                if (noteEl) noteEl.textContent = 'Chrome blocked access to ' + target;
+                return;
+              }
+              chrome.storage.local.get('tlSettings', function (res) {
+                var next = Object.assign({}, res.tlSettings || {}, { licenseApiBase: target });
+                chrome.storage.local.set({ tlSettings: next }, function () {
+                  if (el('licApi')) el('licApi').value = target;
+                  currentSettings = Object.assign({}, currentSettings || {}, { licenseApiBase: target });
+                  renderMarketAndOiDashboard();
+                  if (el('optionsSymbol')) renderOptionsChainView();
+                  if (el('chartsSymbolSelect')) renderDedicatedChartsView();
+                });
+              });
+            });
+          });
         }
 
         if (badgeEl) {
-          badgeEl.className = isStale ? 'badge warn' : 'badge pro';
-          badgeEl.style.cssText = isStale
-            ? 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-size:11px'
-            : 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399;font-size:11px';
-          badgeEl.innerHTML = isStale
-            ? '⚠️ STALE QUOTES (>60s) · ' + escapeHtml(provider)
-            : '🟢 LIVE BROKER TAP · ' + escapeHtml(provider);
+          badgeEl.className = 'badge danger';
+          badgeEl.style.cssText = 'background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;font-size:11px';
+          badgeEl.innerHTML = '● Live Feed Disconnected · Provider Unreachable';
         }
-        if (timeEl) timeEl.textContent = 'Tick Time: ' + new Date(fetchedAt).toLocaleTimeString('en-IN') + ' IST';
-        if (noteEl) noteEl.textContent = 'Live quotes streaming from ' + provider;
+        if (timeEl) timeEl.textContent = 'Last Probe: ' + new Date().toLocaleTimeString('en-IN') + ' IST';
+        if (noteEl) noteEl.textContent = 'Live exchange WebSocket feed is not connected (' + err + ')';
 
-        function updateTickerItem(prefix, q) {
-          var priceEl = el(prefix + 'Price');
-          var chgEl = el(prefix + 'Chg');
-          if (q && q.price) {
-            if (priceEl) priceEl.textContent = '₹' + q.price.toLocaleString('en-IN', { minimumFractionDigits: 2 });
-            if (chgEl) {
-              var isPos = q.change >= 0;
-              chgEl.style.color = isPos ? '#34d399' : '#f87171';
-              chgEl.textContent = (isPos ? '+' : '') + q.change.toFixed(2) + ' (' + (isPos ? '+' : '') + q.changePercent.toFixed(2) + '%)';
-            }
-          } else {
-            if (priceEl) priceEl.textContent = '—';
-            if (chgEl) chgEl.textContent = 'Waiting for tick';
-          }
-        }
-        updateTickerItem('tickerNifty', quotes.NIFTY);
-        updateTickerItem('tickerBank', quotes.BANKNIFTY);
-        updateTickerItem('tickerFin', quotes.FINNIFTY);
-        updateTickerItem('tickerSensex', quotes.SENSEX);
+        renderDisconnectedMarketState(symbol, err, hint);
+        return;
+      }
 
-        var activeQuote = quotes[symbol] || quotes.NIFTY || Object.values(quotes)[0];
-        if (activeQuote && el('marketSpotVal')) {
-          el('marketSpotVal').textContent = '₹' + activeQuote.price.toLocaleString('en-IN', { minimumFractionDigits: 2 });
-          if (el('marketExchangeSub')) {
-            el('marketExchangeSub').textContent = 'Sync: ' + provider;
-          }
-        }
-        if (el('chartHeaderSymbol')) el('chartHeaderSymbol').textContent = (activeQuote ? activeQuote.name : symbol) + ' [LIVE BROKER]';
-        if (el('chartIntervalBadge')) el('chartIntervalBadge').textContent = 'TICK · STREAMING';
-        if (el('chartCandleCount')) el('chartCandleCount').textContent = 'Live quotes from ' + provider;
-        if (el('chartTimestampRange')) el('chartTimestampRange').textContent = 'Source: Active Broker Tab (' + provider + ')';
-        if (el('marketThetaVal')) el('marketThetaVal').textContent = 'Streaming Live';
-        if (el('marketPcrVal')) el('marketPcrVal').textContent = '—';
-        if (el('marketMaxPainVal')) el('marketMaxPainVal').textContent = '—';
+      // Live feed connected!
+      if (setupCard) setupCard.style.display = 'none';
+      var snap = resp.data;
+      var isStale = (Date.now() - snap.fetchedAt) > 60000;
+      if (badgeEl) {
+        badgeEl.className = isStale ? 'badge warn' : 'badge pro';
+        badgeEl.style.cssText = isStale
+          ? 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-size:11px'
+          : 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399;font-size:11px';
+        badgeEl.innerHTML = isStale
+          ? '⚠️ STALE FEED (>60s) · ' + escapeHtml(snap.provider || 'market feed')
+          : '🟢 LIVE FEED CONNECTED · ' + escapeHtml(snap.provider || 'market feed');
+      }
+      if (timeEl) timeEl.textContent = 'Tick Time: ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
+      if (noteEl) noteEl.textContent = 'Live feed active';
+      // The title badge is the at-a-glance state of the card; it said "No Feed"
+      // above a fully populated screen until this line existed.
+      if (el('marketModelBadge')) {
+        el('marketModelBadge').textContent = 'Live';
+        el('marketModelBadge').className = 'badge pro';
+        el('marketModelBadge').style.cssText = '';
+      }
 
-        var canvas = el('marketCandleCanvas');
-        if (canvas) {
-          var ctx = canvas.getContext('2d');
-          if (ctx) {
-            var rect = canvas.getBoundingClientRect();
-            var width = rect.width || canvas.parentElement.clientWidth || 600;
-            var height = rect.height || 320;
-            ctx.fillStyle = '#060913';
-            ctx.fillRect(0, 0, width, height);
+      // Hand the real chain to the options view. Without this the strike table
+      // had no source and always rendered as "disconnected".
+      // The chart renders from chartState.candles; nothing ever wrote it, so
+      // the Pro+ canvas always fell back to "no market candle data".
+      chartState.candles = Array.isArray(snap.candles) ? snap.candles : [];
+      chartState.panOffset = 0;
+      chartState.chainSpot = (typeof snap.spot === 'number' && snap.spot > 0) ? snap.spot : null;
+      chartState.optionRows = Array.isArray(snap.optionChain) ? snap.optionChain : [];
+      chartState.fullOptionRows = chartState.optionRows;
 
-            ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-            ctx.lineWidth = 1;
-            for (var x = 40; x < width; x += 60) {
-              ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
-            }
-            for (var y = 30; y < height; y += 40) {
-              ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
-            }
+      // The Spot Price card was only ever written with an em-dash, so a
+      // connected feed still showed "Spot Price —". It is the first number a
+      // trader looks at, so it comes straight off the snapshot.
+      var spotVal = (typeof snap.spot === 'number' && snap.spot > 0) ? snap.spot : null;
+      if (el('marketSpotVal')) {
+        el('marketSpotVal').textContent = spotVal == null
+          ? '—'
+          : '₹' + spotVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+      if (el('marketExchangeSub')) {
+        el('marketExchangeSub').textContent = spotVal == null
+          ? '—'
+          : (snap.provider || 'market feed') + ' · ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
+      }
+      if (el('chartCandleCount')) {
+        el('chartCandleCount').textContent = chartState.candles.length
+          ? chartState.candles.length + ' candles'
+          : 'no candles';
+      }
 
-            ctx.fillStyle = 'rgba(16,185,129,0.08)';
-            ctx.strokeStyle = 'rgba(16,185,129,0.25)';
-            ctx.beginPath();
-            if (ctx.roundRect) ctx.roundRect(width / 2 - 190, height / 2 - 65, 380, 130, 10);
-            else ctx.rect(width / 2 - 190, height / 2 - 65, 380, 130);
-            ctx.fill();
-            ctx.stroke();
+      renderVolatilityPanel(snap.vix, chartState.optionRows, chartState.chainSpot);
 
-            ctx.fillStyle = '#34d399';
-            ctx.font = 'bold 15px Inter, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('🟢 LIVE BROKER MARKET TAP ACTIVE', width / 2, height / 2 - 32);
+      // Paint the two charts from the candles we just stored. The overview card
+      // and the Market candle canvas were only ever drawn by the *disconnected*
+      // path, so a connected feed left both blank with "feed disconnected" text.
+      renderOverviewChart();
+      if (el('marketCandleCanvas')) drawMarketCandleChart();
 
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 22px Inter, sans-serif';
-            var priceText = activeQuote ? (activeQuote.name + ': ₹' + activeQuote.price.toLocaleString('en-IN', { minimumFractionDigits: 2 })) : 'Live Quotes Active';
-            ctx.fillText(priceText, width / 2, height / 2 + 2);
+      if (snap.analysis) renderMarketData(snap);
+      renderOptionsChainView();
+    });
 
-            ctx.fillStyle = '#94a3b8';
-            ctx.font = '12px Inter, sans-serif';
-            ctx.fillText('Source: ' + provider + ' · Zero API keys or tokens required', width / 2, height / 2 + 32);
-            ctx.fillText('Updated: ' + new Date(fetchedAt).toLocaleTimeString('en-IN') + ' IST', width / 2, height / 2 + 50);
-          }
-        }
-      });
-      return;
-    }
-
-    if (source === 'live') {
-      if (noteEl) noteEl.textContent = 'Probing live exchange connection...';
-      chrome.runtime.sendMessage({ type: 'TL_CHECK_MARKET_FEED', symbol: symbol, resolution: tf.replace(/[^0-9]/g, '') || '15' }, function (resp) {
-        if (chrome.runtime.lastError || !resp || !resp.connected) {
-          var err = (resp && resp.error) || 'offline';
-          var hint = (resp && resp.hint) || 'Backend broker credentials (FYERS_APP_ID, FYERS_ACCESS_TOKEN) or Pro+ subscription required.';
-          if (setupCard) {
-            setupCard.style.display = 'block';
-            var apiBase = (currentSettings && currentSettings.licenseApiBase) || 'http://localhost:8787';
-            var fyersLoginUrl = (apiBase && !apiBase.includes('netlify.app')) ? (apiBase + '/api/fyers/login') : 'http://localhost:8787/api/fyers/login';
-            setupCard.className = 'live-setup-card';
-            setupCard.innerHTML =
-              '<div class="live-setup-head">' +
-                '<span class="live-setup-title">🔴 Live Exchange Feed: Disconnected / Setup Required</span>' +
-                '<span class="badge danger" style="font-size:10px">Provider: server market feed</span>' +
-              '</div>' +
-              '<div class="live-setup-body">' +
-                'Live exchange WebSocket feed is not connected. Live market tick data requires verified broker API access. ' + escapeHtml(hint) +
-                ' To protect trading discipline, Trade Lock refuses to fabricate live ticks.' +
-              '</div>' +
-              '<div class="live-setup-meta">' +
-                '<span><b>Provider:</b> server market feed</span>' +
-                '<span><b>Endpoint:</b> /api/market/live</span>' +
-                '<span><b>Status:</b> ' + escapeHtml(String(err).toUpperCase()) + '</span>' +
-                '<span><b>Last Checked:</b> ' + new Date().toLocaleTimeString('en-IN') + ' IST</span>' +
-              '</div>' +
-              '<div class="live-setup-actions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
-                '<a href="' + escapeHtml(fyersLoginUrl) + '" target="_blank" rel="noopener noreferrer" class="primary" style="text-decoration:none;display:inline-block;padding:7px 16px;font-size:12px;background:#2563eb;color:#fff;border-radius:6px;font-weight:600">Connect Fyers (1-Click Login)</a>' +
-                '<button type="button" id="retryLiveFeedBtn" class="ghost" style="padding:6px 14px;font-size:12px">Retry Connection</button>' +
-              '</div>';
-
-            var retryBtn = el('retryLiveFeedBtn');
-            if (retryBtn) retryBtn.addEventListener('click', renderMarketAndOiDashboard);
-          }
-
-          if (badgeEl) {
-            badgeEl.className = 'badge danger';
-            badgeEl.style.cssText = 'background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;font-size:11px';
-            badgeEl.innerHTML = '● Live Feed Disconnected · Provider Unreachable';
-          }
-          if (timeEl) timeEl.textContent = 'Last Probe: ' + new Date().toLocaleTimeString('en-IN') + ' IST';
-          if (noteEl) noteEl.textContent = 'Live exchange WebSocket feed is not connected (' + err + ')';
-
-          renderDisconnectedMarketState(symbol, err, hint);
-          return;
-        }
-
-        // Live feed connected!
-        if (setupCard) setupCard.style.display = 'none';
-        var snap = resp.data;
-        var isStale = (Date.now() - snap.fetchedAt) > 60000;
-        if (badgeEl) {
-          badgeEl.className = isStale ? 'badge warn' : 'badge pro';
-          badgeEl.style.cssText = isStale
-            ? 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-size:11px'
-            : 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399;font-size:11px';
-          badgeEl.innerHTML = isStale
-            ? '⚠️ STALE FEED (>60s) · ' + escapeHtml(snap.provider || 'market feed')
-            : '🟢 LIVE FEED CONNECTED · ' + escapeHtml(snap.provider || 'market feed');
-        }
-        if (timeEl) timeEl.textContent = 'Tick Time: ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
-        if (noteEl) noteEl.textContent = 'Live feed active';
-
-        // Hand the real chain to the options view. Without this the strike table
-        // had no source and always rendered as "disconnected".
-        // The chart renders from chartState.candles; nothing ever wrote it, so
-        // the Pro+ canvas always fell back to "no market candle data".
-        chartState.candles = Array.isArray(snap.candles) ? snap.candles : [];
-        chartState.panOffset = 0;
-        chartState.chainSpot = (typeof snap.spot === 'number' && snap.spot > 0) ? snap.spot : null;
-        chartState.optionRows = Array.isArray(snap.optionChain) ? snap.optionChain : [];
-        chartState.fullOptionRows = chartState.optionRows;
-
-        renderVolatilityPanel(snap.vix, chartState.optionRows, chartState.chainSpot);
-
-        if (snap.analysis) renderMarketData(snap);
-        renderOptionsChainView();
-      });
-      return;
-    }
-
-    // ---------------------------------------------------------------- offline ----
-    // No verified feed is connected. Render an explicit offline state and stop:
-    // no spot price, no candles, no OI, no theta, no modelled numbers.
-    // Every number on this screen must come from a real provider.
-    if (setupCard) setupCard.style.display = 'none';
-    if (el('marketSimulatedTopCallout')) el('marketSimulatedTopCallout').style.display = 'none';
-    if (el('marketSimulatedSubCallout')) el('marketSimulatedSubCallout').style.display = 'none';
-    if (el('marketModelBadge')) {
-      el('marketModelBadge').textContent = 'No Feed';
-      el('marketModelBadge').className = 'badge danger';
-      el('marketModelBadge').style.cssText = '';
-    }
-    if (el('marketSubtitleDesc')) {
-      el('marketSubtitleDesc').textContent = 'Open a supported broker tab, or connect a market feed on the server, to see live open interest, PCR and price structure.';
-    }
-    if (badgeEl) {
-      badgeEl.className = 'badge danger';
-      badgeEl.style.cssText = 'background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;font-size:11px';
-      badgeEl.innerHTML = '○ NO MARKET FEED CONNECTED · nothing simulated';
-    }
-    if (timeEl) timeEl.textContent = '';
-    if (noteEl) noteEl.textContent = '';
-
-    var offlineCfg = getInstrumentConfig(symbol);
-    if (el('marketSpotVal')) el('marketSpotVal').textContent = '—';
-    if (el('marketExchangeSub')) {
-      el('marketExchangeSub').textContent = offlineCfg.exchange + ' ' + offlineCfg.name;
-    }
-    if (el('marketThetaVal')) el('marketThetaVal').textContent = '—';
-
-    chartState.candles = [];
-    chartState.optionRows = [];
-    chartState.fullOptionRows = [];
-    chartState.chainSpot = null;
-    renderVolatilityPanel(null, [], null);
-    chartState.symbol = symbol;
-    chartState.timeframe = tf;
-    chartState.panOffset = 0;
-    renderOverviewChart();
-    renderDisconnectedMarketState(symbol, 'no_feed', 'Connect a market feed to load real quotes.');
   }
 
   if (el('marketBtn')) {
@@ -2688,21 +2273,7 @@
     });
   }
   if (el('marketSymbol')) el('marketSymbol').addEventListener('change', renderMarketAndOiDashboard);
-  if (el('marketExpiry')) el('marketExpiry').addEventListener('change', renderMarketAndOiDashboard);
   if (el('marketTimeframe')) el('marketTimeframe').addEventListener('change', renderMarketAndOiDashboard);
-  if (el('marketSource')) {
-    el('marketSource').addEventListener('change', function () {
-      var src = el('marketSource').value;
-      if (currentSettings) currentSettings.marketSource = src;
-      chrome.storage.local.get('tlSettings', function (res) {
-        var s = Object.assign({}, res.tlSettings || {}, { marketSource: src });
-        chrome.storage.local.set({ tlSettings: s });
-      });
-      renderMarketAndOiDashboard();
-      if (el('optionsSymbol')) renderOptionsChainView();
-      if (el('chartsSymbolSelect')) renderDedicatedChartsView();
-    });
-  }
 
   if (el('saveBlockedHostsBtn')) {
     el('saveBlockedHostsBtn').addEventListener('click', function () {
@@ -2781,113 +2352,85 @@
 
   function renderOptionsChainView() {
     var symbol = el('optionsSymbol') ? el('optionsSymbol').value : 'NIFTY';
-    var expiry = el('optionsExpiry') ? el('optionsExpiry').value : 'current';
     var filter = el('optMoneynessFilter') ? el('optMoneynessFilter').value : 'near';
-    var source = (el('marketSource') && el('marketSource').value) || (currentSettings && currentSettings.marketSource) || 'broker';
-
     var setupCard = el('liveOptionsSetupCard');
     var simCallout = el('optionsSimulatedCallout');
     var modeBadge = el('optionsModeBadge');
     var emptyNotice = el('optionsChainEmptyNotice');
     var tableWrap = el('optionsTableWrap');
 
-    if (source === 'live') {
-      chrome.storage.local.get('tlMarket', function (res) {
-        var snap = res && res.tlMarket;
-        // The chain lives on snap.optionChain. Gating on snap.analysis.oi meant
-        // this table reported "unavailable" even with a full live chain in
-        // hand, because the analysis payload has no oi block.
-        var chainRows = snap && Array.isArray(snap.optionChain) ? snap.optionChain : [];
-        // Strikes from another index are worse than no strikes: every number
-        // looks plausible while the levels belong to a different instrument.
-        // The background refreshes one configured symbol on a timer, so the
-        // stored snapshot is not necessarily the one this tab is showing.
-        var sameSymbol = Boolean(snap) &&
-          String(snap.symbol || '').toUpperCase() === String(symbol).toUpperCase();
-        var hasLiveChain = Boolean(snap && snap.source === 'live' && sameSymbol &&
-          (chainRows.length || (snap.analysis && snap.analysis.oi)));
-        if (!hasLiveChain) {
-          if (setupCard) {
-            setupCard.style.display = 'block';
-            setupCard.className = 'live-setup-card warn';
-            setupCard.innerHTML =
-              '<div class="live-setup-head">' +
-                '<span class="live-setup-title">⚠️ Live Options Chain Unavailable</span>' +
-                '<span class="badge danger" style="font-size:10px">Exchange Feed Offline</span>' +
-              '</div>' +
-              '<div class="live-setup-body">' +
-                'A live index quote alone does not supply a complete live options chain with individual strikes, IV, and Greeks. ' +
-                'Live strike-by-strike options require a configured broker data API with options entitlements. ' +
-                'To prevent trading on unreliable data, Trade Lock refuses to fabricate live strikes.' +
-              '</div>' +
-            '</div>';
-          }
-          if (simCallout) simCallout.style.display = 'none';
-          if (modeBadge) {
-            modeBadge.textContent = 'Live Feed Offline';
-            modeBadge.style.cssText = 'background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5';
-          }
-          if (emptyNotice) {
-            emptyNotice.style.display = 'block';
-            var chainWhy = (snap && snap.source === 'live' && !sameSymbol)
-              ? 'The stored chain is for ' + escapeHtml(String(snap.symbol || 'a different index')) +
-                ', so it is not shown against ' + escapeHtml(symbol) + '.'
-              : 'No live strike-by-strike options feed received.';
-            emptyNotice.innerHTML =
-              '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#fca5a5">Live Options Feed Unavailable</div>' +
-              '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">' + chainWhy +
-              ' Trade Lock will not invent synthetic strike data under Live mode.</div>';
-          }
-          if (tableWrap) tableWrap.style.display = 'none';
-          if (el('optSpotPrice')) el('optSpotPrice').textContent = '—';
-          if (el('optCallThetaVal')) el('optCallThetaVal').textContent = '—';
-          if (el('optPutThetaVal')) el('optPutThetaVal').textContent = '—';
-          if (el('optHourlyDecay')) el('optHourlyDecay').textContent = '—';
-          return;
+    chrome.storage.local.get('tlMarket', function (res) {
+      var snap = res && res.tlMarket;
+      // The chain lives on snap.optionChain. Gating on snap.analysis.oi meant
+      // this table reported "unavailable" even with a full live chain in
+      // hand, because the analysis payload has no oi block.
+      var chainRows = snap && Array.isArray(snap.optionChain) ? snap.optionChain : [];
+      // Strikes from another index are worse than no strikes: every number
+      // looks plausible while the levels belong to a different instrument.
+      // The background refreshes one configured symbol on a timer, so the
+      // stored snapshot is not necessarily the one this tab is showing.
+      var sameSymbol = Boolean(snap) &&
+        String(snap.symbol || '').toUpperCase() === String(symbol).toUpperCase();
+      var hasLiveChain = Boolean(snap && snap.source === 'live' && sameSymbol &&
+        (chainRows.length || (snap.analysis && snap.analysis.oi)));
+      if (!hasLiveChain) {
+        if (setupCard) {
+          setupCard.style.display = 'block';
+          setupCard.className = 'live-setup-card warn';
+          setupCard.innerHTML =
+            '<div class="live-setup-head">' +
+              '<span class="live-setup-title">⚠️ Live Options Chain Unavailable</span>' +
+              '<span class="badge danger" style="font-size:10px">Exchange Feed Offline</span>' +
+            '</div>' +
+            '<div class="live-setup-body">' +
+              'A live index quote alone does not supply a complete live options chain with individual strikes, IV, and Greeks. ' +
+              'Live strike-by-strike options need a feed credential with options entitlements. ' +
+              'To prevent trading on unreliable data, Trade Lock refuses to fabricate live strikes.' +
+            '</div>' +
+          '</div>';
         }
-
-        if (setupCard) setupCard.style.display = 'none';
         if (simCallout) simCallout.style.display = 'none';
-        if (emptyNotice) emptyNotice.style.display = 'none';
-        if (tableWrap) tableWrap.style.display = 'block';
         if (modeBadge) {
-          modeBadge.textContent = 'Live Exchange Chain';
-          modeBadge.style.cssText = 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399';
+          modeBadge.textContent = 'Live Feed Offline';
+          modeBadge.style.cssText = 'background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5';
         }
-
-        // Hand the feed's chain to the table, then paint it.
-        chartState.optionRows = chainRows;
-        chartState.fullOptionRows = chainRows;
-        chartState.chainSpot = (typeof snap.spot === 'number' && snap.spot > 0)
-          ? snap.spot
-          : (chainRows.length && Number(chainRows[0].spot) > 0 ? Number(chainRows[0].spot) : null);
-        renderChainTable();
-      });
-      return;
-    }
-
-    if (setupCard) setupCard.style.display = 'none';
-    if (simCallout) simCallout.style.display = 'none';
-    if (emptyNotice) emptyNotice.style.display = 'none';
-    if (tableWrap) tableWrap.style.display = 'block';
-    if (modeBadge) {
-      modeBadge.textContent = 'Live Broker Mode';
-      modeBadge.style.cssText = 'background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);color:#34d399';
-    }
-
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(['tlBrokerMarket', 'tlMarket'], function (res) {
-        var quotes = (res && res.tlBrokerMarket && res.tlBrokerMarket.quotes) || (res && res.tlMarket && res.tlMarket.quotes);
-        if (quotes) {
-          var q = quotes[symbol] || quotes.NIFTY || quotes.BANKNIFTY || Object.values(quotes)[0];
-          if (q && q.price && el('optSpotPrice')) {
-            el('optSpotPrice').textContent = '₹' + Number(q.price).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-          }
+        if (emptyNotice) {
+          emptyNotice.style.display = 'block';
+          var chainWhy = (snap && snap.source === 'live' && !sameSymbol)
+            ? 'The stored chain is for ' + escapeHtml(String(snap.symbol || 'a different index')) +
+              ', so it is not shown against ' + escapeHtml(symbol) + '.'
+            : 'No live strike-by-strike options feed received.';
+          emptyNotice.innerHTML =
+            '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#fca5a5">Live Options Feed Unavailable</div>' +
+            '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">' + chainWhy +
+            ' Trade Lock will not invent synthetic strike data under Live mode.</div>';
         }
-      });
-    }
+        if (tableWrap) tableWrap.style.display = 'none';
+        if (el('optSpotPrice')) el('optSpotPrice').textContent = '—';
+        if (el('optCallThetaVal')) el('optCallThetaVal').textContent = '—';
+        if (el('optPutThetaVal')) el('optPutThetaVal').textContent = '—';
+        if (el('optHourlyDecay')) el('optHourlyDecay').textContent = '—';
+        return;
+      }
 
-    renderChainTable();
+      if (setupCard) setupCard.style.display = 'none';
+      if (simCallout) simCallout.style.display = 'none';
+      if (emptyNotice) emptyNotice.style.display = 'none';
+      if (tableWrap) tableWrap.style.display = 'block';
+      if (modeBadge) {
+        modeBadge.textContent = 'Live Exchange Chain';
+        modeBadge.style.cssText = 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399';
+      }
+
+      // Hand the feed's chain to the table, then paint it.
+      chartState.optionRows = chainRows;
+      chartState.fullOptionRows = chainRows;
+      chartState.chainSpot = (typeof snap.spot === 'number' && snap.spot > 0)
+        ? snap.spot
+        : (chainRows.length && Number(chainRows[0].spot) > 0 ? Number(chainRows[0].spot) : null);
+      renderChainTable();
+    });
+
   }
 
   function renderChainTable() {
@@ -2895,20 +2438,44 @@
      * Fills the strike table, the ATM greeks cards and PCR / max pain from
      * chartState. Live mode used to `return` before reaching this code, so the
      * options tab showed a green "Live Exchange Chain" badge above an empty
-     * table. Extracted so both the live and broker-tap paths can call it.
+     * table. Kept separate so a repaint of the chain does not refetch the feed.
      */
+      // The rows in chartState belong to whatever index the selector shows;
+      // `symbol` used to be a renderOptionsChainView local, so this line threw
+      // a ReferenceError the moment a real chain arrived and the table stayed
+      // empty under a green "live" badge.
+      var symbol = (el('optionsSymbol') && el('optionsSymbol').value) || chartState.symbol || 'NIFTY';
       var cfg = getInstrumentConfig(symbol);
-      var rows = Array.isArray(chartState.fullOptionRows) ? chartState.fullOptionRows : [];
+      var allRows = Array.isArray(chartState.fullOptionRows) ? chartState.fullOptionRows : [];
       // Spot comes from the feed. No feed, no spot - never a built-in base price.
       var spot = (typeof chartState.chainSpot === 'number' && chartState.chainSpot > 0)
         ? chartState.chainSpot
-        : (rows.length && Number(rows[0].spot) > 0 ? Number(rows[0].spot) : null);
+        : (allRows.length && Number(allRows[0].spot) > 0 ? Number(allRows[0].spot) : null);
+
+      // Strike spacing comes from the chain itself; there is no built-in step.
+      var step = 0;
+      for (var si = 1; si < allRows.length; si++) {
+        var gap = Math.abs(Number(allRows[si].strike) - Number(allRows[si - 1].strike));
+        if (gap > 0 && (step === 0 || gap < step)) step = gap;
+      }
+      if (!step && cfg && cfg.step) step = cfg.step;
+
+      // The strike-range selector used to be read into a variable nobody used,
+      // so "Near ATM" and "Wide" drew the same table. It now trims the chain.
+      var rows = allRows;
+      if (allRows.length && spot != null && step > 0) {
+        var span = (el('optMoneynessFilter') && el('optMoneynessFilter').value === 'wide') ? 10 : 5;
+        rows = allRows.filter(function (r) {
+          return Math.abs(Number(r.strike) - spot) <= span * step;
+        });
+        if (!rows.length) rows = allRows;
+      }
 
       if (!rows.length) {
         if (el('optCallThetaVal')) el('optCallThetaVal').textContent = '—';
-        if (el('optCallThetaSub')) el('optCallThetaSub').textContent = 'Live broker feed required';
+        if (el('optCallThetaSub')) el('optCallThetaSub').textContent = 'Live feed required';
         if (el('optPutThetaVal')) el('optPutThetaVal').textContent = '—';
-        if (el('optPutThetaSub')) el('optPutThetaSub').textContent = 'Live broker feed required';
+        if (el('optPutThetaSub')) el('optPutThetaSub').textContent = 'Live feed required';
         if (el('optHourlyDecay')) el('optHourlyDecay').textContent = '—';
         if (el('optPcrVal')) el('optPcrVal').textContent = '—';
         if (el('optPcrBias')) el('optPcrBias').textContent = 'Awaiting Live Feed';
@@ -2988,14 +2555,6 @@
       if (!tbody) return;
       tbody.innerHTML = '';
 
-      // Strike spacing comes from the chain itself; there is no built-in step.
-      var step = 0;
-      for (var si = 1; si < rows.length; si++) {
-        var gap = Math.abs(Number(rows[si].strike) - Number(rows[si - 1].strike));
-        if (gap > 0 && (step === 0 || gap < step)) step = gap;
-      }
-      if (!step && cfg && cfg.step) step = cfg.step;
-
       rows.forEach(function (r) {
         var isAtm = spot != null && step > 0 && Math.abs(r.strike - spot) < step;
         var tr = document.createElement('tr');
@@ -3008,7 +2567,7 @@
 
   if (el('optionsRefreshBtn')) el('optionsRefreshBtn').addEventListener('click', renderOptionsChainView);
   if (el('optionsSymbol')) el('optionsSymbol').addEventListener('change', renderOptionsChainView);
-  if (el('optionsExpiry')) el('optionsExpiry').addEventListener('change', renderOptionsChainView);
+  if (el('optMoneynessFilter')) el('optMoneynessFilter').addEventListener('change', renderChainTable);
   if (el('optMoneynessFilter')) el('optMoneynessFilter').addEventListener('change', renderOptionsChainView);
 
   // ---------------------------------------------------- AI assistant ----
@@ -3059,13 +2618,13 @@
         resp = '⚠️ LIVE MARKET DATA UNAVAILABLE\n\n' +
                'No verified exchange feed is connected, so there is no option chain to analyse.\n\n' +
                'Trade Lock will not fabricate PCR, open interest walls, or max pain levels.\n\n' +
-               '• Pro+ users: connect a market feed on the server (Upstox Analytics Token or Fyers).\n' +
-               '• Free/Pro users: open a supported broker tab to read live quotes from your own session.\n\n' +
+               '• Pro+ users: set UPSTOX_ANALYTICS_TOKEN (or Fyers credentials) on the feed server and restart it.\n' +
+               '• Free/Pro users: the Market, Options and Charts tabs are part of Pro+.\n\n' +
                '🛡️ Risk Policy: Authoritative trading locks are executed strictly by the rules engine and cannot be altered by AI.';
       } else if (query.indexOf('support') !== -1 || query.indexOf('resistance') !== -1 || query.indexOf('structure') !== -1 || query.indexOf('pivot') !== -1) {
         resp = '⚠️ LIVE MARKET DATA UNAVAILABLE\n\n' +
                'No verified live exchange feed is currently connected.\n\n' +
-               'Trade Lock refuses to invent artificial price support or resistance levels. Connect your live broker feed to compute pivot points and technical structures.\n\n' +
+               'Trade Lock refuses to invent artificial price support or resistance levels. The server feed supplies the candles these levels are computed from.\n\n' +
                '🛡️ Discipline Policy: Manual and automated discipline locks remain fully active regardless of live feed connection status.';
       } else {
         resp = 'Discipline & Risk Engine Guidance · ' + timeStr + ':\n' +
@@ -3297,7 +2856,7 @@
           '<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:var(--text)">No trade records found for ' + monthLabel(selectedMonthKey) + '</div>' +
           '<div style="font-size:12.5px;color:var(--muted);max-width:440px;margin:0 auto 16px;line-height:1.5">' +
             (isCur
-              ? 'Trades executed in supported broker terminals (Zerodha, Upstox, Angel One, Dhan, etc.) are monitored automatically, or you can log manual trades below.'
+              ? 'Trades executed in a supported broker terminal are monitored automatically, or you can log manual trades below.'
               : 'No historical trades were recorded for this month.') +
           '</div>' +
           '<button type="button" id="jEmptyAddTradeBtn" class="primary" style="padding:7px 18px;font-size:12.5px">+ Add Trade Entry</button>' +
@@ -3784,7 +3343,7 @@
 
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener(function (changes, area) {
-      if (area === 'local' && (changes.tlBrokerMarket || changes.tlMarket)) {
+      if (area === 'local' && changes.tlMarket) {
         if (el('tab-charts') && el('tab-charts').classList.contains('active')) {
           renderDedicatedChartsView();
         }

@@ -24,15 +24,6 @@
   .plan-card .p-sub { font-size: 11px; color: var(--dim); margin-bottom: 12px; }
   .plan-card ul { margin: 0 0 16px; padding-left: 18px; font-size: 11.5px; color: var(--muted); line-height: 1.6; }
 
-  /* Supported Brokers Grid */
-  .brokers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 12px; }
-  .broker-card {
-    background: rgba(0, 0, 0, .25); border: 1px solid var(--line); border-radius: 10px;
-    padding: 10px 12px; display: flex; align-items: center; justify-content: space-between;
-  }
-  .broker-card .b-info { font-size: 12px; font-weight: 650; }
-  .broker-card .b-host { font-size: 10.5px; color: var(--dim); }
-
   /* Prompt Chips */
   .prompt-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
   .prompt-chip {
@@ -303,7 +294,7 @@
               <svg class="tl-icon" aria-hidden="true"><use href="#i-chart"></use></svg>
             </button>
           </div>
-          <span class="demo-badge" id="overviewLiveBadge" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25)" title="Open a supported broker tab, or connect a market feed on the server.">
+          <span class="demo-badge" id="overviewLiveBadge" style="background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25)" title="No live market feed.">
             <span class="live-pulse-dot" style="background:#94a3b8"></span> NO FEED
           </span>
           <span id="overviewChartTitle" style="display:none">Market Overview</span>
@@ -617,7 +608,7 @@
         <input type="checkbox" id="autoDetect">
         <span class="track"></span>
         <span class="txt"><span class="t">Auto-detect from trading web terminals</span>
-        <span class="s">Monitors Kite, Upstox, Angel One, Dhan, 5paisa and supported platforms.</span></span>
+        <span class="s">Monitors supported broker terminals. Anything it cannot read is reported as unverified, never assumed.</span></span>
       </label>
       <label class="switch">
         <input type="checkbox" id="countAutoTrades">
@@ -631,25 +622,7 @@
         <span class="txt"><span class="t">Count detected risk toward daily risk budget</span>
         <span class="s">Reads broker P&amp;L column or calculates quantity × price.</span></span>
       </label>
-      <div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,0.02)">
-        <div style="font-size:12.5px;font-weight:700;margin-bottom:4px">Which brokers are verified for auto-detection?</div>
-        <p class="desc" style="margin:0 0 10px">Trade Lock reads the broker's own order and position tables — it never places orders. Below is what has actually been tested, generated from the shipped adapter profiles rather than marketing copy. Automatic detection is a Pro feature; on Free you log each trade yourself.</p>
-        <div style="overflow-x:auto">
-          <table class="comparison-table" id="brokerSupportTable">
-            <thead>
-              <tr>
-                <th style="width:34%">Broker</th>
-                <th style="width:33%">Trade detection</th>
-                <th style="width:33%">Order restriction</th>
-              </tr>
-            </thead>
-            <tbody id="brokerSupportTbody">
-              <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:14px">Loading adapter profiles…</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="desc" style="margin:10px 0 0"><b>Detection</b> means fills are read correctly from the broker's tables. <b>Order restriction</b> means new-order interception is implemented and tested. Where restriction is unavailable, the full-screen discipline lock is used instead — enforcement still works, it is simply not order-level.</p>
-      </div>
+      <p class="desc" style="margin:14px 0 0">Order-level restriction is verified on Zerodha Kite and Sahi only. Every other broker falls back to the full-screen discipline lock, and the popup says so when you are on one of them.</p>
       <label class="switch">
         <input type="checkbox" id="showHud">
         <span class="track"></span>
@@ -714,21 +687,13 @@
 
   <!-- ======================================================== TAB: MARKET & OI -->
   <div class="tab-content" id="tab-market">
-    <div class="callout warn" id="marketSimulatedTopCallout" style="display:none;margin-bottom:14px;border-left:4px solid #f59e0b;background:rgba(245,158,11,0.08);color:#fef3c7;">
-      ⚠️ <b>NO MARKET FEED CONNECTED:</b>
-      No verified live options-chain broker feed is currently connected. Spot prices, open interest, changes in OI and pivots remain blank until a real feed is available — nothing below is simulated.
-    </div>
-
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:8px">
         <div>
-          <h2 style="margin:0">Market &amp; Open Interest (OI) Intelligence <span class="badge pro" id="marketModelBadge">Active Broker Feed</span></h2>
+          <h2 style="margin:0">Market &amp; Open Interest (OI) Intelligence <span class="badge" id="marketModelBadge" style="background:rgba(148,163,184,.12);color:#94a3b8">No Feed</span></h2>
           <p class="desc" id="marketSubtitleDesc" style="margin:2px 0 0">Open interest distribution, Call/Put walls, Put-Call Ratio (PCR), and multi-timeframe price structure for Indian indices.</p>
         </div>
-        <span class="badge" id="marketTimestampBadge" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399;font-size:11px">Source: Active Broker Tab · <span id="marketUpdatedTimestamp">Awaiting feed</span></span>
-      </div>
-      <div class="callout" id="marketSimulatedSubCallout" style="display:none;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;margin-bottom:14px;font-size:12px">
-        ⚠️ <b>NO MARKET FEED CONNECTED:</b> Open interest, charts and Greeks stay blank until a real feed is available. Trade Lock does not simulate market numbers.
+        <span class="badge" id="marketTimestampBadge" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399;font-size:11px">Source: Live feed · <span id="marketUpdatedTimestamp">Awaiting feed</span></span>
       </div>
 
       <div class="grid4" style="margin-bottom:14px">
@@ -741,14 +706,6 @@
             <option value="MIDCPNIFTY">MIDCPNIFTY (NSE)</option>
             <option value="SENSEX">BSE SENSEX (BSE)</option>
             <option value="BANKEX">BSE BANKEX (BSE)</option>
-          </select>
-        </label>
-        <label class="field">
-          <span class="k">Expiry</span>
-          <select id="marketExpiry">
-            <option value="current" selected>Current Weekly Expiry</option>
-            <option value="next">Next Weekly Expiry</option>
-            <option value="monthly">Monthly Expiry</option>
           </select>
         </label>
         <label class="field">
@@ -768,44 +725,13 @@
             <option value="1w">Weekly (1W)</option>
           </select>
         </label>
-        <label class="field">
-          <span class="k">Data Source</span>
-          <select id="marketSource">
-            <option value="broker" selected>Active Broker Tab (Auto-Sync from Kite, Upstox, Fyers, Dhan)</option>
-            <option value="live">Server Market Feed (Upstox / Fyers)</option>
-          </select>
-        </label>
       </div>
 
       <!-- Truthful Live Provider Setup & Disconnected State Card -->
       <div id="liveMarketSetupCard" class="live-setup-card" style="display:none;margin-bottom:16px;"></div>
 
-      <!-- Active Broker Live Watchlist Ticker (Approach B) -->
-      <div id="brokerTickerStrip" class="grid4" style="margin-bottom:16px;display:none;">
-        <div class="stat-card" style="border-left:3px solid #38bdf8">
-          <span class="stat-lbl" style="display:flex;justify-content:space-between">NIFTY 50 <span id="tickerNiftySrc" class="badge" style="font-size:9px">NO FEED</span></span>
-          <span class="stat-val" id="tickerNiftyPrice">—</span>
-          <span class="stat-sub" id="tickerNiftyChg">—</span>
-        </div>
-        <div class="stat-card" style="border-left:3px solid #a855f7">
-          <span class="stat-lbl" style="display:flex;justify-content:space-between">BANK NIFTY <span id="tickerBankSrc" class="badge" style="font-size:9px">NO FEED</span></span>
-          <span class="stat-val" id="tickerBankPrice">—</span>
-          <span class="stat-sub" id="tickerBankChg">—</span>
-        </div>
-        <div class="stat-card" style="border-left:3px solid #10b981">
-          <span class="stat-lbl" style="display:flex;justify-content:space-between">FIN NIFTY <span id="tickerFinSrc" class="badge" style="font-size:9px">NO FEED</span></span>
-          <span class="stat-val" id="tickerFinPrice">—</span>
-          <span class="stat-sub" id="tickerFinChg">—</span>
-        </div>
-        <div class="stat-card" style="border-left:3px solid #f59e0b">
-          <span class="stat-lbl" style="display:flex;justify-content:space-between">BSE SENSEX <span id="tickerSensexSrc" class="badge" style="font-size:9px">NO FEED</span></span>
-          <span class="stat-val" id="tickerSensexPrice">—</span>
-          <span class="stat-sub" id="tickerSensexChg">—</span>
-        </div>
-      </div>
-
       <div class="actions" style="margin-bottom:16px">
-        <button id="marketBtn" class="primary">Compute &amp; Refresh Market &amp; Chart</button>
+        <button id="marketBtn" class="primary">Refresh live data</button>
         <span class="kv" id="marketNote"></span>
       </div>
 
@@ -815,7 +741,7 @@
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <span style="font-weight:750;font-size:14px;color:#fff;" id="chartHeaderSymbol">NIFTY 50</span>
             <span class="badge" id="chartIntervalBadge" style="background:rgba(59,130,246,0.2);color:#93c5fd;font-size:11px">15m</span>
-            <span id="chartCandleCount" style="font-size:11px;color:var(--muted)">60 candles</span>
+            <span id="chartCandleCount" style="font-size:11px;color:var(--muted)">no candles</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;color:#94a3b8">
@@ -886,7 +812,7 @@
           <div class="stat-card">
             <span class="stat-lbl">IV Rank / Percentile</span>
             <span class="stat-val" id="vixRank">—</span>
-            <span class="stat-sub">Awaiting a real VIX feed</span>
+            <span class="stat-sub">Needs a VIX history window</span>
           </div>
           <div class="stat-card">
             <span class="stat-lbl">Call IV vs Put IV</span>
@@ -959,7 +885,7 @@
           </select>
         </label>
         <button type="button" id="chartsRefreshBtn" class="primary" style="padding:7px 16px;font-size:12px">Refresh Chart</button>
-        <span id="chartsStatusText" style="font-size:11.5px;color:var(--muted);align-self:center;margin-left:auto">Syncing live quotes from broker tab...</span>
+        <span id="chartsStatusText" style="font-size:11.5px;color:var(--muted);align-self:center;margin-left:auto">No live feed yet</span>
       </div>
 
       <div class="callout" id="chartsCalloutBanner" style="display:none !important;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.22);color:#93c5fd;margin-bottom:16px;font-size:12px">
@@ -1044,14 +970,6 @@
             <option value="MIDCPNIFTY">MIDCPNIFTY (NSE)</option>
             <option value="SENSEX">BSE SENSEX (BSE)</option>
             <option value="BANKEX">BSE BANKEX (BSE)</option>
-          </select>
-        </label>
-        <label class="field">
-          <span class="k">Expiry</span>
-          <select id="optionsExpiry">
-            <option value="current" selected>Current Weekly Expiry</option>
-            <option value="next">Next Weekly Expiry</option>
-            <option value="monthly">Monthly Expiry</option>
           </select>
         </label>
         <label class="field">
@@ -1330,56 +1248,9 @@
   <!-- ======================================================== TAB: SITES -->
   <div class="tab-content" id="tab-sites">
     <div class="card">
-      <h2>Supported Trading Websites &amp; Brokers</h2>
-      <p class="desc">Trade Lock monitors order activity and enforces session discipline across supported Indian web terminals.</p>
+      <h2>Restricted domains</h2>
+      <p class="desc">The discipline overlay works on the broker and charting terminals listed in the manifest. Add any other host you want covered below.</p>
       
-      <div class="brokers-grid">
-        <div class="broker-card">
-          <div><div class="b-info">Zerodha Kite</div><div class="b-host">kite.zerodha.com</div></div>
-          <span class="badge pro" title="DOM-level order submission suppression and discipline overlay verified">Discipline Overlay &amp; Tested Restriction</span>
-        </div>
-        <div class="broker-card">
-          <div><div class="b-info">Upstox</div><div class="b-host">upstox.com</div></div>
-          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
-        </div>
-        <div class="broker-card">
-          <div><div class="b-info">Angel One</div><div class="b-host">angelone.in</div></div>
-          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
-        </div>
-        <div class="broker-card">
-          <div><div class="b-info">Dhan</div><div class="b-host">dhan.co</div></div>
-          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
-        </div>
-        <div class="broker-card">
-          <div><div class="b-info">5paisa</div><div class="b-host">5paisa.com</div></div>
-          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
-        </div>
-        <div class="broker-card">
-          <div><div class="b-info">Fyers Web</div><div class="b-host">trade.fyers.in</div></div>
-          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
-        </div>
-        <div class="broker-card">
-          <div><div class="b-info">Groww</div><div class="b-host">groww.in</div></div>
-          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
-        </div>
-        <div class="broker-card">
-          <div><div class="b-info">Shoonya</div><div class="b-host">shoonya.com</div></div>
-          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
-        </div>
-        <div class="broker-card">
-          <div><div class="b-info">Kotak Neo</div><div class="b-host">kotakneo.com</div></div>
-          <span class="badge pro" title="Order book fill detection and full-screen discipline overlay verified">Discipline Overlay &amp; Monitoring</span>
-        </div>
-        <div class="broker-card">
-          <div><div class="b-info">Sahi Web</div><div class="b-host">web.sahi.com</div></div>
-          <span class="badge pro" style="background:rgba(59,130,246,0.18);color:#60a5fa" title="Order monitoring active; direct order-button blocking unavailable on Sahi">Monitoring Only</span>
-        </div>
-        <div class="broker-card">
-          <div><div class="b-info">TradingView</div><div class="b-host">tradingview.com</div></div>
-          <span class="badge free" title="Chart restriction; order entry elsewhere unaffected">Charting Only</span>
-        </div>
-      </div>
-
       <div class="callout green" style="margin-top:16px">
         🛡️ <b>Discipline Lock &amp; Risk-Reduction Policy:</b>
         When a discipline lock activates, an opaque full-screen lock covers the trading terminal to protect you from impulsive overtrading. Broker enforcement applies directly inside Chrome on this computer; mobile apps and other devices remain unconstrained. If you need to manage or close an open emergency position, follow your broker’s standard phone, web, or mobile exit procedures.
@@ -1603,8 +1474,8 @@
             <tr>
               <td>Automatic broker fill detection</td>
               <td><span class="feat-no">— Pro only</span></td>
-              <td><span class="feat-yes">✓ Supported Brokers</span></td>
-              <td><span class="feat-yes">✓ Supported Brokers</span></td>
+              <td><span class="feat-yes">✓ Tested adapters</span></td>
+              <td><span class="feat-yes">✓ Tested adapters</span></td>
             </tr>
             <tr>
               <td>Monthly trading journal &amp; daily breakdown</td>

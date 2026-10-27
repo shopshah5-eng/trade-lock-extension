@@ -453,7 +453,12 @@ test('AI Grounding: options.js refuses unverified live market figures and promin
 
   // The Options tab must still warn clearly that there is no feed.
   assert.ok(optionsHtml.includes('NO OPTION CHAIN CONNECTED'), 'Options tab must show a no-feed callout');
-  assert.ok(optionsHtml.includes('NO MARKET FEED CONNECTED'), 'Market tab must show a no-feed callout');
+  // The Market tab warns from the state it actually rendered: a permanent
+  // "NO FEED" banner in the markup contradicts a connected feed.
+  assert.ok(optionsJs.includes('<span class="live-setup-title">Live feed not connected</span>'),
+    'the market tab must say the feed is not connected');
+  assert.strictEqual(optionsHtml.includes('NO MARKET FEED CONNECTED'), false,
+    'a static no-feed banner cannot be correct once the feed connects');
 });
 
 // ---------------------------------------- 10. Lock UX & Sahi Capability Consistency ----
@@ -473,8 +478,15 @@ test('Lock UX & Sahi Consistency: Mode A is described as full-screen discipline 
   // Background must never process reset messages
   assert.strictEqual(backgroundJs.includes("msg.type === 'TL_RESET'"), false, 'background.js must never process reset messages');
 
-  // Sahi must be labeled Monitoring Only
-  assert.ok(optionsHtml.includes('Monitoring Only'), 'Sahi badge must be Monitoring Only');
+  // Broker claims must stay narrow: the only two adapters with verified
+  // order-level restriction are named, and no marketing grid of broker names
+  // ("Monitoring Only", "Verified" badges) is shipped to imply more.
+  assert.ok(optionsHtml.includes('Order-level restriction is verified on Zerodha Kite and Sahi only'),
+    'the risk rules tab must name the two verified adapters');
+  assert.strictEqual(optionsHtml.includes('brokers-grid'), false,
+    'no broker grid: a static list of names cannot stay honest');
+  assert.strictEqual(optionsHtml.includes('Monitoring Only'), false,
+    'a badge that says Monitoring Only on a broker we never tested must not come back');
 });
 
 // ---------------------------------------- 11. Centralized Lock Authorization & Bypass Prevention ----
@@ -570,14 +582,15 @@ test('Build 11: Market & OI is honestly labeled as Simulated Demo Data without f
   const optionsHtml = fs.readFileSync(path.join(rootDir, 'options/options.html'), 'utf8');
   const optionsJs = fs.readFileSync(path.join(rootDir, 'options/options.js'), 'utf8');
 
-  // The market section must state plainly that no feed is connected.
-  assert.ok(optionsHtml.includes('NO MARKET FEED CONNECTED'), 'options.html must clearly display a no-feed warning');
+  // The disconnected state is rendered from the response, not baked into the
+  // markup: the same elements have to say "live" when the feed answers.
+  assert.ok(optionsJs.includes('<span class="live-setup-title">Live feed not connected</span>'),
+    'options.js must clearly display a no-feed warning');
   assert.strictEqual(optionsHtml.includes('Real-time open interest distribution'), false, 'options.html must NOT claim real-time data without a feed');
 
   // options.js must render an explicit offline state instead of simulated numbers.
-  assert.ok(optionsJs.includes("renderDisconnectedMarketState(symbol, 'no_feed'"), 'options.js must render an offline state');
+  assert.ok(optionsJs.includes("renderDisconnectedMarketState(symbol, err, hint)"), 'options.js must render an offline state');
   assert.strictEqual(optionsJs.includes('generateSampleCandles'), false, 'sample candle generator must be deleted');
-  assert.ok(optionsJs.includes('Live exchange WebSocket feed is not connected'), 'options.js must warn when unconnected live source is selected');
   // The offline path must clear any stale candles rather than reuse them.
   assert.ok(optionsJs.includes('chartState.candles = [];'), 'offline state must clear candles');
 });
@@ -637,9 +650,13 @@ test('Build 11 RC: Expiry selection is wired through and no Demo Render Time lab
   const optionsJs = fs.readFileSync(path.join(rootDir, 'options/options.js'), 'utf8');
   const optionsHtml = fs.readFileSync(path.join(rootDir, 'options/options.html'), 'utf8');
 
-  // Expiry selection must affect DTE, theta and premiums
-  assert.ok(optionsJs.includes("var expiry = el('marketExpiry') ? el('marketExpiry').value : 'current'"), 'marketExpiry must be read');
-  assert.ok(optionsJs.includes("var expiry = el('optionsExpiry') ? el('optionsExpiry').value : 'current'"), 'optionsExpiry must be read');
+  // Expiry is whatever the provider returns. The two expired selectors were
+  // removed rather than kept as controls that changed nothing; what still has a
+  // local effect is the strike-range filter, and it must actually filter.
+  assert.strictEqual(optionsHtml.includes('id="marketExpiry"'), false, 'a dead expiry selector must not ship');
+  assert.strictEqual(optionsHtml.includes('id="optionsExpiry"'), false, 'a dead expiry selector must not ship');
+  assert.ok(optionsJs.includes("el('optMoneynessFilter').value === 'wide'"),
+    'the strike-range selector must change what the table shows');
   // Locally modelled DTE/premium scaling is gone: every price must come from a feed.
   assert.strictEqual(optionsJs.includes('dteFactor'), false, 'simulated DTE scaling must be removed');
 

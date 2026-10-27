@@ -57,6 +57,17 @@ Use `dist/trade-lock-extension/` or the ZIP in a clean Chrome profile:
       `kite.zerodha.com` and Sahi, absent on non-broker tabs, and absent with auto-detect off.
 - [ ] Open Charts before ever opening Market & OI: the chart must draw from the stored snapshot.
       A green "live feed" badge over an empty panel is the exact bug this guards against.
+- [ ] Market, Options and Charts have exactly one source (`GET /api/market/live`). With no market
+      credential on the server, every panel must show an em-dash and the Market tab must name the
+      setting to add; there is no simulator, no broker-tab fallback and no "Approach B".
+- [ ] With `UPSTOX_ANALYTICS_TOKEN` set (or Fyers credentials) and a Pro+ key, open Market,
+      Options and Charts in that order: spot, VIX, the strike table and the candle chart must all
+      populate, the card badge must read Live, and the Overview chart must show price plus O/H/L.
+- [ ] Run the suite in `npm test` *and* `test/live_feed_render.test.js`: the latter renders the page
+      in a plain VM context, which is the only way a `ReferenceError` inside a render callback
+      surfaces (linkedom resolves unknown globals and hides it).
+- [ ] Confirm the Sites tab is only the restricted-domains editor: no broker card grid, no
+      "open this broker" buttons, and no per-broker capability table anywhere in Options.
 - [ ] With a live snapshot loaded for one index, switch the Options symbol and the Charts symbol
       to a different one: no strike ladder and no candles from the first index may appear, and the
       notice must name the index being held back.

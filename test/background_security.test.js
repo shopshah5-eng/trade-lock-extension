@@ -77,12 +77,16 @@ function createBackground(initial = {}, fetchImpl) {
       });
     });
   }
+  /** Dispatch a message whose handler is expected to be absent. */
+  function fire(message) {
+    listener(message, { id: 'trade-lock-test', url: 'chrome-extension://trade-lock-test/popup/popup.html' }, () => {});
+  }
   function emitStateChange(oldValue, newValue) {
     data.tlState = newValue;
     assert.strictEqual(typeof storageListener, 'function');
     storageListener({ tlState: { oldValue, newValue } }, 'local');
   }
-  return { data, dnrUpdates, scriptExecutions, tabMessages, send, emitStateChange, flush: () => new Promise(r => setTimeout(r, 10)) };
+  return { data, dnrUpdates, scriptExecutions, tabMessages, send, fire, emitStateChange, flush: () => new Promise(r => setTimeout(r, 10)) };
 }
 
 function lockedState(manual = false) {
@@ -199,52 +203,27 @@ test('real background synchronizes DNR after a direct storage lock transition', 
   assert.strictEqual(bg.dnrUpdates.at(-1).addRules.length, 1);
 });
 
-test('real background accepts and sanitizes TL_BROKER_MARKET_TICK from broker tabs', async () => {
+test('the removed broker-tab tap no longer accepts ticks or answers for them', async () => {
+  // Approach B scraped index prices out of the user's open broker tab. It only
+  // ever read tab titles, so an open Fyers terminal reported "NO ACTIVE BROKER
+  // TAB DETECTED" while the page showed live prices. Removed rather than
+  // patched: the server feed is the one market source now.
   const bg = createBackground();
-  const tickResult = await bg.send({
+
+  bg.fire({
     type: 'TL_BROKER_MARKET_TICK',
     url: 'https://kite.zerodha.com/dashboard',
-    quotes: {
-      NIFTY: { price: 24850.55, change: 120.25, changePercent: 0.49 },
-      BANKNIFTY: { price: 51230.10, change: -85.50, changePercent: -0.17 },
-      MALICIOUS: { price: 999999999 } // not in allowed symbols list
-    }
+    quotes: { NIFTY: { price: 24850.55, change: 120.25, changePercent: 0.49 } },
   });
 
-  assert.strictEqual(tickResult.ok, true);
-  assert.strictEqual(tickResult.brokerName, 'Zerodha Kite');
-  assert.ok(tickResult.quotes.NIFTY);
-  assert.strictEqual(tickResult.quotes.NIFTY.price, 24850.55);
-  assert.ok(!tickResult.quotes.MALICIOUS);
-
-  // Check stored in background data
   await bg.flush();
-  assert.ok(bg.data.tlBrokerMarket);
-  assert.strictEqual(bg.data.tlBrokerMarket.brokerName, 'Zerodha Kite');
-  assert.strictEqual(bg.data.tlBrokerMarket.quotes.NIFTY.price, 24850.55);
-});
+  assert.ok(!bg.data.tlBrokerMarket, 'nothing may be cached from a broker tab');
 
-test('real background serves broker market quotes through TL_CHECK_MARKET_FEED', async () => {
-  const bg = createBackground();
-  // Before any tick
-  const beforeTick = await bg.send({ type: 'TL_CHECK_MARKET_FEED', source: 'broker', symbol: 'NIFTY' });
-  assert.strictEqual(beforeTick.ok, false);
-  assert.strictEqual(beforeTick.error, 'no_broker_tab');
-
-  // After tick
-  await bg.send({
-    type: 'TL_BROKER_MARKET_TICK',
-    url: 'https://web.dhan.co/market',
-    quotes: { NIFTY: { price: 24900.0, change: 50.0, changePercent: 0.2 } }
-  });
-  await bg.flush();
-
-  const afterTick = await bg.send({ type: 'TL_CHECK_MARKET_FEED', source: 'broker', symbol: 'NIFTY' });
-  assert.strictEqual(afterTick.ok, true);
-  assert.strictEqual(afterTick.connected, true);
-  assert.strictEqual(afterTick.source, 'broker');
-  assert.match(afterTick.provider, /Dhan/);
-  assert.strictEqual(afterTick.quotes.NIFTY.price, 24900);
+  // Asking for broker data must fall through to the real feed (and fail there,
+  // because this stub has no server), never answer from a cached broker tab.
+  const feed = await bg.send({ type: 'TL_CHECK_MARKET_FEED', source: 'broker', symbol: 'NIFTY' });
+  assert.strictEqual(feed.connected, false);
+  assert.notStrictEqual(feed.error, 'no_broker_tab', 'broker mode must not exist as a state');
 });
 
 test('real background keeps the live candle series, chain, spot and VIX', async () => {

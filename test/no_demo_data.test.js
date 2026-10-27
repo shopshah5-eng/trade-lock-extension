@@ -42,7 +42,7 @@ test('No demo: no shipped file claims or renders simulated market data', () => {
 
 test('No demo: the offline market path clears state instead of reusing stale numbers', () => {
   const options = read('options/options.js');
-  assert.ok(options.includes("renderDisconnectedMarketState(symbol, 'no_feed'"),
+  assert.ok(options.includes('renderDisconnectedMarketState(symbol, err, hint)'),
     'market view must fall back to the explicit offline state');
   assert.ok(options.includes('chartState.candles = [];'), 'offline state must clear candles');
   assert.ok(options.includes('chartState.optionRows = [];'), 'offline state must clear the option chain');
@@ -56,8 +56,12 @@ test('No demo: a feed-less market view never prints a price', () => {
   // The offline branch must blank the spot/theta fields rather than derive them.
   assert.ok(/marketSpotVal'\)\) el\('marketSpotVal'\)\.textContent = '—'/.test(options),
     'offline state must blank the spot price');
-  assert.ok(/marketThetaVal'\)\) el\('marketThetaVal'\)\.textContent = '—'/.test(options),
-    'offline state must blank theta');
+  assert.ok(/marketThetaVal'\)\) el\('marketThetaVal'\)\.textContent = 'Live Feed Disconnected'/.test(options),
+    'offline state must not leave a theta number on screen');
+  // The reverse of the disconnected state has to exist too: a badge that can
+  // only ever say "No Feed" sat above a fully populated screen.
+  assert.ok(/el\('marketModelBadge'\)\.textContent = 'Live'/.test(options),
+    'the market badge must be able to say Live');
 });
 
 // ------------------------------------------------------------ popup / hud ----
@@ -151,20 +155,39 @@ test('No demo: the free tier never promises enforcement it does not perform', ()
     'free users must be told the capital plan is not enforced');
 });
 
-test('No demo: the ticker strip and VIX panel render only from a live source', () => {
+test('No demo: the VIX panel renders only from a live source', () => {
   const options = read('options/options.js');
   const html = read('options/options.html');
-  // Both panels had markup with no writer, so they sat on stale hardcoded values.
-  for (const id of ['tickerNiftyPrice', 'tickerBankPrice', 'tickerFinPrice', 'tickerSensexPrice',
-    'vixVal', 'vixChg', 'vixSkew', 'vixAlertStatus', 'vixRegimeBadge']) {
+  for (const id of ['vixVal', 'vixChg', 'vixSkew', 'vixAlertStatus', 'vixRegimeBadge']) {
     assert.ok(html.includes('id="' + id + '"'), `${id} must exist in the markup`);
   }
-  assert.ok(options.includes('function renderTickerStrip'), 'the ticker strip needs a renderer');
   assert.ok(options.includes('function renderVolatilityPanel'), 'the VIX panel needs a renderer');
-  // No writer may hardcode a price; unknown sources degrade to an em-dash.
-  assert.ok(options.includes("srcEl.textContent = 'NO FEED'"), 'missing feed must be labelled, not guessed');
   assert.ok(options.includes("el('vixRank').textContent = '—'"),
     'IV rank must stay blank rather than invented (needs a year of VIX history)');
+});
+
+test('No demo: the market tab has one feed and no broker-tab shortcut', () => {
+  const options = read('options/options.js');
+  const html = read('options/options.html');
+  const background = read('background.js');
+  const content = read('content/lock.js');
+
+  // The broker-tab tap scraped prices out of an open terminal. It only ever
+  // read tab titles, so it reported "NO ACTIVE BROKER TAB DETECTED" with a
+  // broker tab plainly open. Removed entirely rather than left as a fallback
+  // that would win on a machine with no server and silently show tab titles.
+  for (const [file, text] of [['options/options.js', options], ['options/options.html', html],
+    ['background.js', background], ['content/lock.js', content]]) {
+    for (const token of ['TL_BROKER_MARKET_TICK', 'tlBrokerMarket', 'probeOpenBrokerTabs',
+      'scanMarketQuotes', 'brokerTickerStrip', 'Approach B']) {
+      assert.ok(!text.includes(token), `${file} still references the removed broker tap: ${token}`);
+    }
+  }
+
+  // One data source, chosen for you.
+  assert.ok(!html.includes('id="marketSource"'), 'there is nothing to pick any more');
+  assert.ok(options.includes("function getMarketSource() { return 'live'; }"),
+    'every renderer must resolve to the server feed');
 });
 
 test('Live: the chart receives real candles, not just a count', () => {

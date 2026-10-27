@@ -172,9 +172,15 @@ test('Chrome Side Panel Integration: manifest declares side_panel and minimum ve
 test('Broker Capability Audit: Honest labeling is maintained across UI', () => {
   const optionsHtml = fs.readFileSync(path.join(rootDir, 'options/options.html'), 'utf8');
 
-  // Sahi Web must strictly be labeled Monitoring Only
-  assert.ok(optionsHtml.includes('Sahi Web — MONITORING ONLY') || optionsHtml.includes('Monitoring Only'), 'Sahi must be labeled Monitoring Only');
-  assert.strictEqual(optionsHtml.includes('Sahi Web — Full Order Blocking'), false, 'Sahi must never claim Full Order Blocking without broker-specific engine');
+  // Exactly two adapters have verified order-level restriction; say so and
+  // nothing more. A per-broker badge list was removed because it drifted from
+  // the adapter profiles that actually run.
+  assert.strictEqual(optionsHtml.includes('Sahi Web — Full Order Blocking'), false,
+    'Sahi must never claim Full Order Blocking without broker-specific engine');
+  assert.ok(optionsHtml.includes('Order-level restriction is verified on Zerodha Kite and Sahi only'),
+    'the verified set must be stated explicitly');
+  assert.strictEqual(optionsHtml.includes('brokerSupportTbody'), false,
+    'the broker table is gone; the popup discloses coverage where it matters');
 
   // License server section hides localhost from ordinary users in a details element
   assert.ok(optionsHtml.includes('<details') && optionsHtml.includes('Developer Server Override'), 'options.html must contain expandable dev override details');

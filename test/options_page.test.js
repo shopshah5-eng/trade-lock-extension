@@ -175,15 +175,6 @@ async function bootPage(store) {
       if (!tbody) return [];
       return [...tbody.querySelectorAll('tr')].map((tr) => tr.textContent.replace(/\s+/g, ' ').trim());
     },
-    brokerRows() {
-      const tbody = document.getElementById('brokerSupportTbody');
-      return tbody ? tbody.querySelectorAll('tr').length : 0;
-    },
-    setMarketSource(value) {
-      const select = document.getElementById('marketSource');
-      assert.ok(select, 'missing #marketSource');
-      select.value = value;
-    },
   };
   return page;
 }
@@ -203,7 +194,6 @@ function baseStore(market) {
 
 test('With a live feed the options page renders the chain, PCR, ticker and VIX', async () => {
   const page = await bootPage(baseStore(LIVE_SNAPSHOT));
-  page.setMarketSource('live');
   await page.clickTab('market');
   await page.clickTab('options');
 
@@ -228,34 +218,35 @@ test('With a live feed the options page renders the chain, PCR, ticker and VIX',
   assert.strictEqual(page.text('marketPcrBias'), 'Bullish Sentiment');
   assert.strictEqual(page.text('marketMaxPainVal'), '24,600');
 
-  // Index strip and volatility panel.
-  assert.strictEqual(page.text('tickerNiftyPrice'), '24,653.00');
-  assert.strictEqual(page.text('tickerNiftySrc'), 'LIVE');
+  // Spot and the volatility panel. There is no index strip any more: it could
+  // only ever fill the one index the feed returns and printed NO FEED on the
+  // other three cards.
+  assert.strictEqual(page.text('marketSpotVal'), '₹24,653.00');
   assert.strictEqual(page.text('vixVal'), '14.32');
   assert.ok(page.text('vixRegimeBadge').includes('Calm'));
-
-  // Broker matrix is generated, not hand-written.
-  assert.strictEqual(page.brokerRows(), 8);
 
   assert.deepStrictEqual(page.errors, [], 'the page must load without throwing');
 });
 
 test('With no feed every panel says so instead of showing a number', async () => {
   const page = await bootPage(baseStore(null));
-  page.setMarketSource('live');
   await page.clickTab('market');
   await page.clickTab('options');
 
-  assert.strictEqual(page.text('tickerNiftyPrice'), '—');
-  assert.strictEqual(page.text('tickerNiftySrc'), 'NO FEED');
+  assert.strictEqual(page.text('marketSpotVal'), '—');
   assert.strictEqual(page.text('vixVal'), '—');
   assert.ok(page.text('vixRegimeBadge').includes('no feed'));
   assert.strictEqual(page.text('marketPcrVal'), '—');
   assert.strictEqual(page.text('optPcrVal'), '—');
 
-  const rows = page.chainRowTexts();
-  assert.strictEqual(rows.length, 1, 'the empty chain shows one explanatory row');
-  assert.ok(rows[0].includes('Disconnected'));
+  // No chain: the table is hidden and the notice carries the reason. There is
+  // no placeholder row, because a row of em-dashes invites people to read it as
+  // a real strike.
+  assert.strictEqual(page.chainRowTexts().length, 0, 'no invented strikes');
+  const notice = page.document.getElementById('optionsChainEmptyNotice');
+  assert.strictEqual(notice.style.display, 'block');
+  assert.match(notice.textContent, /no live strike-by-strike options feed/i);
+  assert.strictEqual(page.document.getElementById('optionsTableWrap').style.display, 'none');
 
   assert.deepStrictEqual(page.errors, []);
 });
@@ -366,15 +357,35 @@ test('The options table refuses a chain that belongs to another index', async ()
   // instrument is worse than an empty table, because someone will trade it.
   const foreign = Object.assign({}, LIVE_SNAPSHOT, { symbol: 'BANKNIFTY' });
   const page = await bootPage(baseStore(foreign));
-  page.setMarketSource('live');
   await page.clickTab('options');
 
-  const rows = page.chainRowTexts();
-  assert.strictEqual(rows.length, 1, 'only the explanatory row may render');
-  assert.ok(!rows[0].includes('24,600'), 'no strike from the other index may appear');
+  assert.strictEqual(page.chainRowTexts().length, 0, 'no strike from the other index may appear');
 
   const notice = page.document.getElementById('optionsChainEmptyNotice');
   assert.strictEqual(notice.style.display, 'block');
   assert.match(notice.textContent.replace(/\s+/g, ' '), /BANKNIFTY/);
   assert.deepStrictEqual(page.errors, []);
+});
+
+test('A refused feed says why, and offers the local server when the default is remote', async () => {
+  const page = await bootPage(baseStore(null));
+  await page.clickTab('market');
+
+  const card = page.document.getElementById('liveMarketSetupCard');
+  assert.strictEqual(card.style.display, 'block', 'the setup card must appear when there is no feed');
+
+  const text = card.textContent.replace(/\s+/g, ' ');
+  // No broker marketing, no mode jargon: the reason and the fix.
+  assert.ok(!/broker/i.test(text), 'the card must not talk about broker tabs: ' + text);
+  assert.ok(!/approach/i.test(text), 'no "Approach B" jargon');
+  assert.match(text, /Try Again/, 'there must be a retry');
+
+  // The bundled default is the hosted origin, so the local-server shortcut is
+  // offered; it is what makes a locally-run server reachable at all.
+  const localBtn = page.document.getElementById('useLocalServerBtn');
+  assert.ok(localBtn, 'a locally-run server needs a one-click switch');
+
+  // The stored query in the card names the origin it tried.
+  assert.ok(card.textContent.includes('localhost:8787') || card.textContent.includes('netlify.app'),
+    'the card must show which origin it probed');
 });

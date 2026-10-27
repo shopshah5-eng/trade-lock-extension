@@ -268,11 +268,7 @@ async function requireProPlus(req) {
   const key = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
   if (!key) return null;
   const hash = L.hashKey(key);
-  let lic = store.licenses[hash];
-  if (supabase.isConfigured()) {
-    const remote = await supabase.fetchLicense(hash);
-    if (remote) lic = cacheLicense(remote);
-  }
+  const lic = supabase.isConfigured() ? await supabase.fetchLicense(hash) : store.licenses[hash];
   if (!lic || !L.licenseStatus(lic).active) return null;
   const plan = getPlan(lic.plan);
   return plan && plan.proPlus ? lic : null;
