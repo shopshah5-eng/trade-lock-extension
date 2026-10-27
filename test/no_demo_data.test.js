@@ -186,8 +186,10 @@ test('No demo: the market tab has one feed and no broker-tab shortcut', () => {
 
   // One data source, chosen for you.
   assert.ok(!html.includes('id="marketSource"'), 'there is nothing to pick any more');
-  assert.ok(options.includes("function getMarketSource() { return 'live'; }"),
-    'every renderer must resolve to the server feed');
+  assert.strictEqual(options.includes('getMarketSource'), false,
+    'there is no source selector left to abstract over');
+  assert.ok(/marketSource:\s*'live'/.test(read('lib/rules.js')),
+    'the market source must be hard-wired to live');
 });
 
 test('Live: the chart receives real candles, not just a count', () => {

@@ -298,9 +298,6 @@ function serve(root) {
   await marketPage.goto('chrome-extension://' + extId + '/options/options.html#market', { waitUntil: 'domcontentloaded' });
   await sleep(600);
 
-  // Switch data source to live
-  await marketPage.select('#marketSource', 'live');
-
   // Wait for the asynchronous probe to complete and reveal the setup card
   await marketPage.waitForFunction(() => {
     const card = document.getElementById('liveMarketSetupCard');

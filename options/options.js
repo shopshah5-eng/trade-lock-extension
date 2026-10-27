@@ -1543,10 +1543,6 @@
     svg.innerHTML = html;
   }
 
-  function getMarketSource() { return 'live'; }
-
-
-
   function renderDedicatedChartsView() {
     var svg = el('dedicatedChartsSvg');
     if (!svg) return;
