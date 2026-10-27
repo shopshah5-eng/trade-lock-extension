@@ -144,6 +144,10 @@ function serve(root) {
   const extId = initialExtTarget ? initialExtTarget.url().split('/')[2] : 'unknown';
   console.log('extension loaded, id ' + extId + '\n');
 
+  const swTarget = await browser.waitForTarget(
+    (t) => t.type() === 'service_worker' && t.url().includes('/background.js'), { timeout: 20000 });
+  const sw = await swTarget.worker();
+
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
   page.on('console', (m) => console.log('    [page] ' + m.type() + ': ' + m.text()));
@@ -162,7 +166,7 @@ function serve(root) {
   // With the widget off there is no #tl-market row to poll; the extension must
   // simply stay invisible while the user trades normally.
   // ------------------------------------- 1b. explicit opt-in shows it ----
-  await page.evaluate(() => new Promise((resolve) => {
+  await sw.evaluate(() => new Promise((resolve) => {
     chrome.storage.local.get('tlSettings', (res) => {
       chrome.storage.local.set({ tlSettings: Object.assign({}, res.tlSettings || {}, { showHud: true }) }, resolve);
     });
@@ -177,9 +181,6 @@ function serve(root) {
 
   // ------------------------------------- 2. auto-detect reads the book ----
   console.log('\n2. Auto-detect reads the order book');
-  const swTarget = await browser.waitForTarget(
-    (t) => t.type() === 'service_worker' && t.url().includes('/background.js'), { timeout: 20000 });
-  const sw = await swTarget.worker();
   try {
     const cdp = await swTarget.createCDPSession();
     cdp.on('Runtime.consoleAPICalled', (e) => {
@@ -420,7 +421,7 @@ function serve(root) {
     JSON.stringify(wide));
   check('wide workspace has no horizontal overflow and uses desktop nav', wide.scrollWidth <= wide.viewport && wide.mobileNav === 'none');
   check('overview has six quick actions and a rendered chart', wide.quickActions === 6 && wide.chartRendered);
-  check('overview chart is prominently labelled', /LIVE BROKER FEED|NO MARKET FEED|SIMULATED/.test(wide.demoLabel));
+  check('overview chart is prominently labelled', /LIVE|NO FEED|STALE/.test(wide.demoLabel));
   await optionsPage.screenshot({ path: path.join(SHOTS, 'options-wide.png'), fullPage: true });
 
   await optionsPage.select('#overviewSymbol', 'BANKNIFTY');

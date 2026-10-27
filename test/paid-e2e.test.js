@@ -117,6 +117,11 @@ function serveFixture() {
     const sw = await swt.worker();
     const getStored = () => sw.evaluate(() => new Promise(resolve =>
       chrome.storage.local.get(['tlState', 'tlSettings', 'tlLicense'], value => resolve(value))));
+    await sw.evaluate(() => new Promise(resolve => {
+      chrome.storage.local.get('tlSettings', res => {
+        chrome.storage.local.set({ tlSettings: Object.assign({}, res.tlSettings || {}, { showHud: true }) }, resolve);
+      });
+    }));
 
     const page = await browser.newPage();
     await page.goto(PAGE, { waitUntil: 'domcontentloaded' });
