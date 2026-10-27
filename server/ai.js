@@ -6,7 +6,8 @@
  * never break because an AI provider is down.
  */
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
-const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
+const GEMINI_CANDIDATE_MODELS = [DEFAULT_GEMINI_MODEL, 'gemini-3.5-flash-lite', 'gemini-flash-latest'];
 
 function localBrief(a, coach) {
   if (!a || !a.ok) return 'Not enough market data for a brief yet.';
@@ -46,34 +47,38 @@ async function summarize({ apiKey, geminiApiKey, model, geminiModel, analysis, c
   const f = fetchImpl || fetch;
 
   // 1. Try Google Gemini API if key is present
-  const gKey = geminiApiKey || process.env.GEMINI_API_KEY;
+  const gKey = (geminiApiKey || process.env.GEMINI_API_KEY || '').trim().replace(/^['`"]+|['`"]+$/g, '');
   if (allowRemote && gKey) {
-    try {
-      const gModel = geminiModel || DEFAULT_GEMINI_MODEL;
-      const sysInstruction = 'You are a trading-discipline assistant for an Indian retail trader. ' +
-        'Use ONLY the numbers provided. Never give buy/sell recommendations or price predictions. ' +
-        'Explain key levels, OI context and behavioural risks in under 140 words, plain language, ₹ formatting where relevant. ' +
-        'End with one discipline reminder tied to the coach data.';
-      const payload = { market: analysis, coach: coach || null };
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${encodeURIComponent(gKey)}`;
-      const res = await f(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: sysInstruction }] },
-          contents: [{ role: 'user', parts: [{ text: 'Market analysis JSON:\n' + JSON.stringify(payload) }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: 350 }
-        })
-      });
-      const data = await res.json();
-      const text = data && data.candidates && data.candidates[0] &&
-        data.candidates[0].content && data.candidates[0].content.parts &&
-        data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text;
-      if (res.ok && text) {
-        return { text: text.trim(), source: 'gemini:' + gModel };
+    const modelsToTry = geminiModel ? [geminiModel] : GEMINI_CANDIDATE_MODELS;
+    const sysInstruction = 'You are a trading-discipline assistant for an Indian retail trader. ' +
+      'Use ONLY the numbers provided. Never give buy/sell recommendations or price predictions. ' +
+      'Explain key levels, OI context and behavioural risks in under 140 words, plain language, ₹ formatting where relevant. ' +
+      'End with one discipline reminder tied to the coach data.';
+    const payload = { market: analysis, coach: coach || null };
+
+    for (const gModel of modelsToTry) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${encodeURIComponent(gKey)}`;
+        const res = await f(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: sysInstruction }] },
+            contents: [{ role: 'user', parts: [{ text: 'Market analysis JSON:\n' + JSON.stringify(payload) }] }],
+            generationConfig: { temperature: 0.4, maxOutputTokens: 350 }
+          }),
+          signal: AbortSignal.timeout(9000)
+        });
+        const data = await res.json();
+        const text = data && data.candidates && data.candidates[0] &&
+          data.candidates[0].content && data.candidates[0].content.parts &&
+          data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text;
+        if (res.ok && text) {
+          return { text: text.trim(), source: 'gemini:' + gModel };
+        }
+      } catch (e) {
+        // Try next candidate model
       }
-    } catch (e) {
-      // Fall through to OpenRouter or local brief
     }
   }
 
@@ -89,7 +94,8 @@ async function summarize({ apiKey, geminiApiKey, model, geminiModel, analysis, c
           'HTTP-Referer': process.env.PUBLIC_BASE_URL || 'http://localhost:8787',
           'X-Title': 'Trade Lock'
         },
-        body: JSON.stringify({ model: model || DEFAULT_MODEL, messages: buildMessages(analysis, coach), max_tokens: 350, temperature: 0.4 })
+        body: JSON.stringify({ model: model || DEFAULT_MODEL, messages: buildMessages(analysis, coach), max_tokens: 350, temperature: 0.4 }),
+        signal: AbortSignal.timeout(9000)
       });
       const data = await r.json();
       const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
@@ -103,4 +109,84 @@ async function summarize({ apiKey, geminiApiKey, model, geminiModel, analysis, c
   return { text: fallback(), source: 'local' };
 }
 
-module.exports = { localBrief, buildMessages, summarize, DEFAULT_MODEL, DEFAULT_GEMINI_MODEL };
+async function chat({ message, history, analysis, coach, geminiApiKey, apiKey, geminiModel, model }, fetchImpl) {
+  const f = fetchImpl || fetch;
+  const gKey = (geminiApiKey || process.env.GEMINI_API_KEY || '').trim().replace(/^['`"]+|['`"]+$/g, '');
+
+  const sysInstruction = 'You are the Trade Lock AI Trading Coach and discipline auditor for an Indian retail trader. ' +
+    'Provide sharp, objective, disciplined feedback based on the user\'s trading session and current market levels. ' +
+    'Strictly follow trading discipline: NEVER give stock tips, buy/sell calls, or speculate on future prices. ' +
+    'Always reinforce risk management (position sizing, sticking to max daily loss, stopping after losing streaks). ' +
+    'Keep responses concise, conversational, and direct (under 130 words).';
+
+  const contextData = {
+    market: analysis || null,
+    session: coach || null
+  };
+
+  // 1. Try Gemini
+  if (gKey) {
+    const modelsToTry = geminiModel ? [geminiModel] : GEMINI_CANDIDATE_MODELS;
+    const prompt = `Trader context JSON: ${JSON.stringify(contextData)}\n\nTrader message: "${message}"`;
+
+    for (const gModel of modelsToTry) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${encodeURIComponent(gKey)}`;
+        const res = await f(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: sysInstruction }] },
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.5, maxOutputTokens: 350 }
+          }),
+          signal: AbortSignal.timeout(9000)
+        });
+        const data = await res.json();
+        const text = data && data.candidates && data.candidates[0] &&
+          data.candidates[0].content && data.candidates[0].content.parts &&
+          data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text;
+        if (res.ok && text) {
+          return { text: text.trim(), source: 'gemini:' + gModel };
+        }
+      } catch (e) {
+        // Try next model
+      }
+    }
+  }
+
+  // 2. Try OpenRouter
+  const oKey = apiKey || process.env.OPENROUTER_API_KEY;
+  if (oKey) {
+    try {
+      const r = await f('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + oKey,
+          'HTTP-Referer': process.env.PUBLIC_BASE_URL || 'http://localhost:8787',
+          'X-Title': 'Trade Lock'
+        },
+        body: JSON.stringify({
+          model: model || DEFAULT_MODEL,
+          messages: [
+            { role: 'system', content: sysInstruction },
+            { role: 'user', content: `Context: ${JSON.stringify(contextData)}\n\nMessage: ${message}` }
+          ],
+          max_tokens: 350,
+          temperature: 0.5
+        })
+      });
+      const data = await r.json();
+      const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      if (r.ok && text) return { text: text.trim(), source: 'openrouter:' + (model || DEFAULT_MODEL) };
+    } catch (e) {
+      // Fall through
+    }
+  }
+
+  // 3. Fallback: Local rule-based coaching
+  return { text: localBrief(analysis, coach), source: 'local' };
+}
+
+module.exports = { localBrief, buildMessages, summarize, chat, DEFAULT_MODEL, DEFAULT_GEMINI_MODEL };

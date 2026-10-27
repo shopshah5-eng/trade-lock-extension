@@ -319,6 +319,55 @@ async function razorpayCreateOrder(plan, email) {
   return data;
 }
 
+async function razorpayCreateSubscription(plan, email) {
+  let planId = plan.razorpayPlanId || process.env['RAZORPAY_PLAN_' + plan.id.toUpperCase()];
+  const auth = Buffer.from(KEY_ID + ':' + KEY_SECRET).toString('base64');
+  if (!planId) {
+    // Attempt dynamic auto-creation of plan on Razorpay
+    try {
+      const planRes = await providerFetch('https://api.razorpay.com/v1/plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Basic ' + auth },
+        body: JSON.stringify({
+          period: 'monthly',
+          interval: 1,
+          item: {
+            name: plan.name,
+            amount: plan.amount,
+            currency: 'INR',
+            description: plan.tagline || 'Trade Lock Monthly Subscription'
+          }
+        })
+      });
+      const pData = await planRes.json();
+      if (planRes.ok && pData.id) {
+        planId = pData.id;
+        plan.razorpayPlanId = planId;
+      }
+    } catch (e) {
+      // Fall through to error check below
+    }
+  }
+
+  if (!planId) {
+    throw new Error('Razorpay subscription plan ID not configured for ' + plan.id + '. Set RAZORPAY_PLAN_' + plan.id.toUpperCase() + ' in server/.env');
+  }
+  const r = await providerFetch('https://api.razorpay.com/v1/subscriptions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Basic ' + auth },
+    body: JSON.stringify({
+      plan_id: planId,
+      total_count: 120,
+      quantity: 1,
+      customer_notify: 1,
+      notes: { product: 'trade-lock', plan: plan.id, email: email || '' },
+    }),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error('Razorpay: ' + (data.error && data.error.description || r.status));
+  return data;
+}
+
 const inFlightOrders = new Set();
 
 // -------------------------------------------------------------- routes ----
@@ -415,16 +464,60 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { orderId: order.id, amount: order.amount, currency: order.currency, plan: plan.id }, req);
     }
 
+    if (req.method === 'POST' && url.pathname === '/api/create-subscription') {
+      if (isRateLimited(req, 20, 60000)) return json(res, 429, { error: 'rate_limited' }, req);
+      const { plan: planId, email } = await readJson(req);
+      const plan = getPlan(canonicalPlanId(planId));
+      if (!plan || !isAvailable(plan.id)) return json(res, 400, { error: 'unknown_plan' }, req);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || '')) return json(res, 400, { error: 'valid_email_required' }, req);
+      const normalizedEmail = String(email).toLowerCase().trim();
+
+      if (demoCheckoutEnabled()) {
+        const subId = 'sub_DEMO_' + Date.now().toString(36);
+        store.orders[subId] = {
+          email: normalizedEmail,
+          plan: plan.id,
+          amount: plan.amount,
+          currency: plan.currency,
+          status: 'demo_subscription',
+          createdAt: Date.now()
+        };
+        await persistOrder(subId, store.orders[subId]);
+        return json(res, 200, { demo: true, subscriptionId: subId, amount: plan.amount, currency: plan.currency, plan: plan.id }, req);
+      }
+      if (!razorpayConfigured()) return json(res, 503, {
+        error: 'payments_not_configured',
+        detail: 'Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET on the licence server to take payments.',
+      }, req);
+
+      try {
+        const sub = await razorpayCreateSubscription(plan, normalizedEmail);
+        store.orders[sub.id] = {
+          email: normalizedEmail,
+          plan: plan.id,
+          amount: plan.amount,
+          currency: plan.currency,
+          status: 'created_subscription',
+          createdAt: Date.now()
+        };
+        await persistOrder(sub.id, store.orders[sub.id]);
+        return json(res, 200, { subscriptionId: sub.id, amount: plan.amount, currency: plan.currency, plan: plan.id, keyId: KEY_ID }, req);
+      } catch (err) {
+        return json(res, 502, { error: 'subscription_creation_failed', detail: err.message }, req);
+      }
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/verify-payment') {
       if (isRateLimited(req, 20, 60000)) return json(res, 429, { error: 'rate_limited', detail: 'Too many requests' }, req);
       if (!paymentPersistenceReady()) return json(res, 503, { error: 'payment_persistence_not_configured' }, req);
-      const { orderId, paymentId, signature, email, plan: planId } = await readJson(req);
-      if (!orderId || !paymentId || String(orderId).length > 128 || String(paymentId).length > 128) {
-        return json(res, 400, { error: 'invalid_request', detail: 'orderId and paymentId are required' }, req);
+      const { orderId, subscriptionId, paymentId, signature, email, plan: planId } = await readJson(req);
+      const targetId = orderId || subscriptionId;
+      if (!targetId || !paymentId || String(targetId).length > 128 || String(paymentId).length > 128) {
+        return json(res, 400, { error: 'invalid_request', detail: 'orderId or subscriptionId and paymentId are required' }, req);
       }
 
-      let order = supabase.isConfigured() ? await supabase.fetchOrder(orderId) : store.orders[orderId];
-      if (order && supabase.isConfigured()) store.orders[orderId] = order;
+      let order = supabase.isConfigured() ? await supabase.fetchOrder(targetId) : store.orders[targetId];
+      if (order && supabase.isConfigured()) store.orders[targetId] = order;
       if (!order) return json(res, 400, { error: 'unknown_order' }, req);
       if (email && String(email).toLowerCase().trim() !== String(order.email).toLowerCase().trim()) {
         return json(res, 400, { error: 'email_mismatch', detail: 'Supplied email does not match order record' }, req);
@@ -432,18 +525,21 @@ const server = http.createServer(async (req, res) => {
       if (planId && canonicalPlanId(planId) !== canonicalPlanId(order.plan)) {
         return json(res, 400, { error: 'plan_mismatch', detail: 'Supplied plan does not match order record' }, req);
       }
-      if (inFlightOrders.has(orderId)) {
+      if (inFlightOrders.has(targetId)) {
         return json(res, 409, { error: 'fulfillment_in_progress', retryAfterMs: 1000 }, req);
       }
-      inFlightOrders.add(orderId);
+      inFlightOrders.add(targetId);
 
       try {
         if (demoCheckoutEnabled()) {
-          if (!String(orderId).startsWith('order_DEMO_') ||
-            (order.status !== 'demo' && !(order.status === 'paid' && order.fulfillmentStatus === 'FULFILLED'))) {
+          if (!String(targetId).startsWith('order_DEMO_') && !String(targetId).startsWith('sub_DEMO_')) {
             return json(res, 400, { error: 'bad_demo_order' }, req);
           }
-        } else if (!signature || !L.verifyPaymentSignature(orderId, paymentId, signature, KEY_SECRET)) {
+        } else if (subscriptionId) {
+          if (!signature || !L.verifySubscriptionSignature(paymentId, subscriptionId, signature, KEY_SECRET)) {
+            return json(res, 400, { error: 'signature_mismatch' }, req);
+          }
+        } else if (!signature || !L.verifyPaymentSignature(targetId, paymentId, signature, KEY_SECRET)) {
           return json(res, 400, { error: 'signature_mismatch' }, req);
         }
         if (order.paymentId && order.paymentId !== paymentId) {
@@ -454,7 +550,7 @@ const server = http.createServer(async (req, res) => {
         const customerEmail = order.email;
         const canonicalPlan = canonicalPlanId(order.plan);
         const alreadyFulfilled = order.status === 'paid' && order.fulfillmentStatus === 'FULFILLED';
-        let issued = await issueLicense(customerEmail, canonicalPlan, paymentId, orderId);
+        let issued = await issueLicense(customerEmail, canonicalPlan, paymentId, targetId);
         const issuedStatus = L.licenseStatus(issued.lic);
         if (!issuedStatus.active) {
           return json(res, 409, { error: 'license_' + (issuedStatus.reason || 'inactive'),
@@ -481,7 +577,7 @@ const server = http.createServer(async (req, res) => {
             : 'This order already has a license. Use your purchase email or contact support for recovery.',
         }, req);
       } finally {
-        inFlightOrders.delete(orderId);
+        inFlightOrders.delete(targetId);
       }
     }
 
@@ -525,6 +621,26 @@ const server = http.createServer(async (req, res) => {
           }
         } finally {
           inFlightOrders.delete(entity.order_id);
+        }
+      }
+
+      if ((evt.event === 'subscription.charged' || evt.event === 'subscription.activated') && (paymentEntity || (evt.payload && evt.payload.subscription))) {
+        const subEntity = evt.payload && evt.payload.subscription && evt.payload.subscription.entity;
+        const subId = (subEntity && subEntity.id) || (paymentEntity && paymentEntity.subscription_id);
+        if (subId) {
+          let order = supabase.isConfigured() ? await supabase.fetchOrder(subId) : store.orders[subId];
+          if (order && supabase.isConfigured()) store.orders[subId] = order;
+          const custEmail = (paymentEntity && paymentEntity.email) || (order && order.email);
+          const custPlan = (order && order.plan) || 'pro_monthly_recurring';
+          const payId = (paymentEntity && paymentEntity.id) || (subEntity && subEntity.id) || subId;
+          if (custEmail) {
+            let issued = await issueLicense(custEmail, canonicalPlanId(custPlan), payId, subId);
+            if (subEntity && subEntity.current_end) {
+              issued.lic.expiresAt = subEntity.current_end * 1000;
+              store.saveSync();
+              if (supabase.isConfigured()) await supabase.syncLicense(issued.lic);
+            }
+          }
         }
       }
 
@@ -677,6 +793,24 @@ const server = http.createServer(async (req, res) => {
       });
       const brief = await ai.summarize({ apiKey: OPENROUTER_API_KEY, geminiApiKey: GEMINI_API_KEY, analysis, coach: body.coach || null }, providerFetch);
       return json(res, 200, { analysis, brief }, req);
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/ai/chat') {
+      const lic = await requireProPlus(req);
+      if (!lic) return json(res, 403, { error: 'license_required', message: 'AI Coach requires an active Pro+ license.' }, req);
+      const raw = await readBody(req);
+      let payload;
+      try { payload = JSON.parse(raw.toString('utf8')); } catch (e) { return json(res, 400, { error: 'invalid_json' }, req); }
+      const message = String(payload.message || '').trim();
+      if (!message) return json(res, 400, { error: 'message_required' }, req);
+      const reply = await ai.chat({
+        message,
+        analysis: payload.analysis || null,
+        coach: payload.coach || null,
+        geminiApiKey: GEMINI_API_KEY,
+        apiKey: OPENROUTER_API_KEY
+      }, providerFetch);
+      return json(res, 200, { ok: true, text: reply.text, source: reply.source }, req);
     }
 
     if (req.method === 'GET' && (url.pathname === '/api/fyers/login' || url.pathname === '/api/fyers/auth-url')) {

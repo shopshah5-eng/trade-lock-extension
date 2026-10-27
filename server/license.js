@@ -35,6 +35,14 @@ function verifyPaymentSignature(orderId, paymentId, signature, secret) {
   return safeEqual(expected, String(signature).toLowerCase());
 }
 
+/** Razorpay subscription signature: HMAC_SHA256(payment_id + "|" + subscription_id, secret). */
+function verifySubscriptionSignature(paymentId, subscriptionId, signature, secret) {
+  if (!paymentId || !subscriptionId || !signature || !secret) return false;
+  const expected = crypto.createHmac('sha256', secret)
+    .update(paymentId + '|' + subscriptionId).digest('hex');
+  return safeEqual(expected, String(signature).toLowerCase());
+}
+
 /** Razorpay webhook signature: HMAC_SHA256(raw_body, webhook_secret). */
 function verifyWebhookSignature(rawBody, signature, secret) {
   if (!signature || !secret) return false;
@@ -64,5 +72,5 @@ function licenseStatus(lic, now) {
 
 module.exports = {
   generateLicenseKey, normalizeKey, hashKey, keyHint,
-  verifyPaymentSignature, verifyWebhookSignature, expiryFor, licenseStatus,
+  verifyPaymentSignature, verifySubscriptionSignature, verifyWebhookSignature, expiryFor, licenseStatus,
 };

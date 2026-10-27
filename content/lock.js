@@ -390,43 +390,96 @@
     }
   }
 
-  if (IS_TOP) {
-    var mo = new MutationObserver(function (muts) {
-      if (!state.lock.active) return;
-      for (var i = 0; i < muts.length; i++) {
-        var removed = muts[i].removedNodes;
-        for (var j = 0; j < removed.length; j++) {
-          if (removed[j] === overlayEl) { onTamper(); buildOverlay(); return; }
-        }
+  function checkOverlayIntegrity() {
+    if (!state.lock.active) return;
+    if (IS_TOP) {
+      var el = document.getElementById('tl-lock-root');
+      if (!el || !el.isConnected) {
+        onTamper();
+        buildOverlay();
+        return;
       }
-      if (overlayEl && !overlayEl.isConnected) { onTamper(); buildOverlay(); }
-    });
-
-    function watch() {
-      try { mo.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+      try {
+        var s = window.getComputedStyle(el);
+        if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) < 0.8 || s.pointerEvents === 'none') {
+          onTamper();
+          buildOverlay();
+        }
+      } catch (e) {}
+    } else {
+      var sub = document.getElementById('tl-lock-subframe');
+      if (!sub || !sub.isConnected) {
+        buildSubframeBlocker();
+      }
     }
-    if (document.documentElement) watch();
-    else document.addEventListener('DOMContentLoaded', watch);
   }
 
-  // Mode C swallows all input; Modes A/B also block keyboard access while their overlay is present.
+  var mo = new MutationObserver(function (muts) {
+    if (!state.lock.active) return;
+    for (var i = 0; i < muts.length; i++) {
+      var removed = muts[i].removedNodes;
+      for (var j = 0; j < removed.length; j++) {
+        if (removed[j] === overlayEl || (removed[j] && removed[j].id === 'tl-lock-root')) {
+          onTamper();
+          buildOverlay();
+          return;
+        }
+      }
+      if (muts[i].type === 'attributes' && (muts[i].target === overlayEl || (muts[i].target && muts[i].target.id === 'tl-lock-root'))) {
+        checkOverlayIntegrity();
+        return;
+      }
+    }
+    if (overlayEl && !overlayEl.isConnected) { onTamper(); buildOverlay(); }
+  });
+
+  function watch() {
+    try {
+      mo.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['style', 'class', 'hidden']
+      });
+    } catch (e) {}
+  }
+  if (document.documentElement) watch();
+  else document.addEventListener('DOMContentLoaded', watch);
+
+  setInterval(checkOverlayIntegrity, 1000);
+
+  // Mode C swallows all input; Modes A/B also block keyboard access and DevTools while their overlay is present.
   ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'dblclick', 'contextmenu', 'wheel', 'touchstart', 'keydown', 'keypress'].forEach(function (type) {
-    document.addEventListener(type, function (e) {
+    var handler = function (e) {
+      if (!state.lock.active) return;
       var mode = (settings && settings.enforcementMode) || 'warning';
+
+      // Always block DevTools shortcuts & right click context menu when lock is active
+      if (type === 'contextmenu') {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        return;
+      }
+      if (/^key/.test(type)) {
+        var k = e.key || '';
+        var isDevTools = k === 'F12' ||
+          (e.ctrlKey && e.shiftKey && /^[IJCijc]$/.test(k)) ||
+          (e.ctrlKey && /^[Uu]$/.test(k));
+        if (isDevTools) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          return;
+        }
+      }
+
       var keyboardUnderOverlay = /^key/.test(type) && overlayEl && overlayEl.isConnected &&
         (mode === 'warning' || mode === 'order_restrict');
-      if (!state.lock.active || (mode !== 'full_site' && !keyboardUnderOverlay)) return;
+      if (mode !== 'full_site' && !keyboardUnderOverlay) return;
       e.stopImmediatePropagation();
       e.preventDefault();
-    }, true);
-    window.addEventListener(type, function (e) {
-      var mode = (settings && settings.enforcementMode) || 'warning';
-      var keyboardUnderOverlay = /^key/.test(type) && overlayEl && overlayEl.isConnected &&
-        (mode === 'warning' || mode === 'order_restrict');
-      if (!state.lock.active || (mode !== 'full_site' && !keyboardUnderOverlay)) return;
-      e.stopImmediatePropagation();
-      e.preventDefault();
-    }, true);
+    };
+    document.addEventListener(type, handler, true);
+    window.addEventListener(type, handler, true);
   });
 
   // --------------------------------------------------------------- hud ----

@@ -199,41 +199,57 @@ async function buy(planId, btn) {
   const emailInput = document.getElementById('email-' + planId);
   const email = (query.get('email') || (emailInput && emailInput.value) || '').trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('Please enter a valid email — your purchase is linked to it.'); return; }
-  btn.disabled = true; btn.textContent = 'Creating order…';
+  btn.disabled = true; btn.textContent = 'Preparing checkout…';
   try {
     let order;
-    if (query.get('orderId') && query.get('plan') === planId) {
-      // The extension already created this order; never create a second one.
-      order = { orderId: query.get('orderId'), demo: CONFIG.demoMode, amount: btn.dataset.amount, currency: 'INR' };
+    const isSub = planId.includes('recurring') || Boolean(query.get('subscriptionId'));
+    if (query.get('subscriptionId') && query.get('plan') === planId) {
+      order = { subscriptionId: query.get('subscriptionId'), demo: CONFIG.demoMode, isSubscription: true, amount: btn.dataset.amount, currency: 'INR' };
+    } else if (query.get('orderId') && query.get('plan') === planId) {
+      order = { orderId: query.get('orderId'), demo: CONFIG.demoMode, isSubscription: false, amount: btn.dataset.amount, currency: 'INR' };
+    } else if (isSub) {
+      const r = await fetch('/api/create-subscription', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: planId, email }) });
+      order = await r.json();
+      if (!r.ok) throw new Error(order.error || 'subscription_creation_failed');
+      order.isSubscription = true;
     } else {
       const r = await fetch('/api/create-order', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: planId, email }) });
       order = await r.json();
       if (!r.ok) throw new Error(order.error || 'order_failed');
+      order.isSubscription = false;
     }
 
     if (order.demo) {
-      const vd = await verifyWithRetry({ orderId: order.orderId, paymentId: 'demo_' + order.orderId, signature: 'demo', email });
+      const demoId = order.subscriptionId || order.orderId;
+      const vd = await verifyWithRetry({ orderId: demoId, subscriptionId: order.subscriptionId, paymentId: 'demo_' + demoId, signature: 'demo', email, plan: planId });
       showKey(vd.licenseKey, vd.emailSent); btn.textContent = 'Done ✓'; return;
     }
 
-    // Without a publishable key Razorpay either fails to load or opens a modal
-    // that cannot take a payment. Say so plainly instead of throwing "Razorpay
-    // is not defined" at the buyer.
     if (!CONFIG.keyId || typeof Razorpay === 'undefined') {
       showErr('Card payments are not switched on yet. Nothing was charged. ' +
         'The owner needs to set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET on the licence server.');
       btn.disabled = false; btn.textContent = 'Buy'; return;
     }
 
-    const rzp = new Razorpay({
-      key: CONFIG.keyId, order_id: order.orderId, amount: order.amount, currency: order.currency,
-      name: 'Trade Lock', description: planId, prefill: { email }, theme: { color: '#e5484d' },
+    const rzpOpts = {
+      key: CONFIG.keyId,
+      name: 'Trade Lock',
+      description: planId,
+      prefill: { email },
+      theme: { color: '#e5484d' },
       handler: async (resp) => {
         btn.textContent = 'Verifying payment…';
         try {
-          const vd = await verifyWithRetry({ orderId: resp.razorpay_order_id, paymentId: resp.razorpay_payment_id,
-            signature: resp.razorpay_signature, email });
+          const vd = await verifyWithRetry({
+            orderId: resp.razorpay_order_id || resp.razorpay_subscription_id,
+            subscriptionId: resp.razorpay_subscription_id,
+            paymentId: resp.razorpay_payment_id,
+            signature: resp.razorpay_signature,
+            email,
+            plan: planId
+          });
           showKey(vd.licenseKey, vd.emailSent); btn.textContent = 'Done ✓';
         } catch (error) {
           showErr('Payment verification is incomplete (' + error.message + '). Retry checkout with the same order or contact support with payment id ' + resp.razorpay_payment_id);
@@ -241,7 +257,17 @@ async function buy(planId, btn) {
         }
       },
       modal: { ondismiss: () => { btn.disabled = false; btn.textContent = 'Buy'; } }
-    });
+    };
+
+    if (order.isSubscription || order.subscriptionId) {
+      rzpOpts.subscription_id = order.subscriptionId;
+    } else {
+      rzpOpts.order_id = order.orderId;
+      rzpOpts.amount = order.amount;
+      rzpOpts.currency = order.currency;
+    }
+
+    const rzp = new Razorpay(rzpOpts);
     rzp.on('payment.failed', (r) => showErr('Payment failed: ' + (r.error && r.error.description || 'unknown error')));
     rzp.open(); btn.textContent = 'Complete payment in Razorpay…';
   } catch (e) {

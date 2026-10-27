@@ -558,25 +558,32 @@
     applyBillingCycle(selectedBillingCycle, lic);
   }
 
-  var selectedBillingCycle = 'monthly';
+  var selectedBillingCycle = 'recurring';
 
   function applyBillingCycle(cycle, lic) {
-    selectedBillingCycle = cycle;
-    var isYearly = cycle === 'yearly';
-    var toggle = el('billingCycleToggle');
-    var knob = el('billingCycleKnob');
-    var mLabel = el('billingMonthlyLabel');
-    var yLabel = el('billingYearlyLabel');
+    selectedBillingCycle = cycle || 'recurring';
+    var isYearly = selectedBillingCycle === 'yearly';
+    var isRecurring = selectedBillingCycle === 'recurring';
+    var is30Day = selectedBillingCycle === 'monthly';
 
-    if (toggle) toggle.setAttribute('aria-checked', isYearly ? 'true' : 'false');
-    if (knob) knob.style.left = isYearly ? '21px' : '3px';
-    if (mLabel) {
-      mLabel.style.color = isYearly ? 'var(--dim)' : '#fff';
-      mLabel.style.fontWeight = isYearly ? '500' : '700';
+    // Update pill buttons visual state
+    var recBtn = el('billingRecurringBtn');
+    var monBtn = el('billingMonthlyBtn');
+    var yrBtn = el('billingYearlyBtn');
+    if (recBtn) {
+      recBtn.style.background = isRecurring ? '#3b82f6' : 'transparent';
+      recBtn.style.color = isRecurring ? '#fff' : 'var(--dim)';
+      recBtn.style.fontWeight = isRecurring ? '700' : '500';
     }
-    if (yLabel) {
-      yLabel.style.color = isYearly ? '#fff' : 'var(--dim)';
-      yLabel.style.fontWeight = isYearly ? '700' : '500';
+    if (monBtn) {
+      monBtn.style.background = is30Day ? '#3b82f6' : 'transparent';
+      monBtn.style.color = is30Day ? '#fff' : 'var(--dim)';
+      monBtn.style.fontWeight = is30Day ? '700' : '500';
+    }
+    if (yrBtn) {
+      yrBtn.style.background = isYearly ? '#3b82f6' : 'transparent';
+      yrBtn.style.color = isYearly ? '#fff' : 'var(--dim)';
+      yrBtn.style.fontWeight = isYearly ? '700' : '500';
     }
 
     // Update Pro Card
@@ -584,10 +591,22 @@
     var proPrice = el('proCardPrice');
     var proSub = el('proCardSub');
     var proBtn = el('proCardBtn');
-    if (proName) proName.textContent = isYearly ? 'Pro 365-Day' : 'Pro 30-Day';
-    if (proPrice) proPrice.innerHTML = isYearly ? '₹1,499 <span style="font-size:12px;font-weight:400">/ 365 days</span>' : '₹199 <span style="font-size:12px;font-weight:400">/ 30 days</span>';
-    if (proSub) proSub.textContent = isYearly ? '365-day prepaid access · equivalent ₹125/month (Save 37%)' : 'Complete risk rules suite · 30-day prepaid access';
-    if (proBtn) proBtn.setAttribute('data-plan', isYearly ? 'pro_yearly' : 'pro_monthly');
+    if (isRecurring) {
+      if (proName) proName.textContent = 'Pro Monthly Auto-Renewal';
+      if (proPrice) proPrice.innerHTML = '₹199 <span style="font-size:12px;font-weight:400">/ month (recurring)</span>';
+      if (proSub) proSub.textContent = 'Complete risk rules suite · Auto-renews monthly · Cancel anytime';
+      if (proBtn) proBtn.setAttribute('data-plan', 'pro_monthly_recurring');
+    } else if (isYearly) {
+      if (proName) proName.textContent = 'Pro 365-Day Pass';
+      if (proPrice) proPrice.innerHTML = '₹1,499 <span style="font-size:12px;font-weight:400">/ 365 days</span>';
+      if (proSub) proSub.textContent = '365-day prepaid access · equivalent ₹125/month (Save 37%)';
+      if (proBtn) proBtn.setAttribute('data-plan', 'pro_yearly');
+    } else {
+      if (proName) proName.textContent = 'Pro 30-Day Pass';
+      if (proPrice) proPrice.innerHTML = '₹199 <span style="font-size:12px;font-weight:400">/ 30 days</span>';
+      if (proSub) proSub.textContent = 'Complete risk rules suite · 30-day one-time prepaid access';
+      if (proBtn) proBtn.setAttribute('data-plan', 'pro_monthly');
+    }
 
     // Update Pro+ AI Card
     var proAiName = el('proAiCardName');
@@ -595,12 +614,27 @@
     var proAiSub = el('proAiCardSub');
     var proAiBadge = el('proAiBadge');
     var proAiBtn = el('proAiCardBtn');
-    if (proAiName) proAiName.textContent = isYearly ? 'Pro+ AI 365-Day' : 'Pro+ AI 30-Day';
-    if (proAiPrice) proAiPrice.innerHTML = isYearly ? '₹3,999 <span style="font-size:12px;font-weight:400">/ 365 days</span>' : '₹399 <span style="font-size:12px;font-weight:400">/ 30 days</span>';
-    if (proAiSub) proAiSub.textContent = isYearly ? '365-day prepaid access · equivalent ₹333/month (Save 16%)' : 'Discipline + market intelligence · 30-day prepaid access';
-    if (proAiBadge) proAiBadge.style.display = isYearly ? 'inline-block' : 'none';
+    if (isRecurring) {
+      if (proAiName) proAiName.textContent = 'Pro+ AI Monthly Auto-Renewal';
+      if (proAiPrice) proAiPrice.innerHTML = '₹399 <span style="font-size:12px;font-weight:400">/ month (recurring)</span>';
+      if (proAiSub) proAiSub.textContent = 'Discipline + live market intelligence · Auto-renews monthly · Cancel anytime';
+      if (proAiBadge) proAiBadge.style.display = 'none';
+      if (proAiBtn) proAiBtn.setAttribute('data-plan', 'pro_plus_ai_monthly_recurring');
+    } else if (isYearly) {
+      if (proAiName) proAiName.textContent = 'Pro+ AI 365-Day Pass';
+      if (proAiPrice) proAiPrice.innerHTML = '₹3,999 <span style="font-size:12px;font-weight:400">/ 365 days</span>';
+      if (proAiSub) proAiSub.textContent = '365-day prepaid access · equivalent ₹333/month (Save 16%)';
+      if (proAiBadge) proAiBadge.style.display = 'inline-block';
+      if (proAiBtn) proAiBtn.setAttribute('data-plan', 'pro_plus_ai_yearly');
+    } else {
+      if (proAiName) proAiName.textContent = 'Pro+ AI 30-Day Pass';
+      if (proAiPrice) proAiPrice.innerHTML = '₹399 <span style="font-size:12px;font-weight:400">/ 30 days</span>';
+      if (proAiSub) proAiSub.textContent = 'Discipline + market intelligence · 30-day one-time prepaid access';
+      if (proAiBadge) proAiBadge.style.display = 'none';
+      if (proAiBtn) proAiBtn.setAttribute('data-plan', 'pro_plus_ai_monthly');
+    }
+
     if (proAiBtn) {
-      proAiBtn.setAttribute('data-plan', isYearly ? 'pro_plus_ai_yearly' : 'pro_plus_ai_monthly');
       proAiBtn.disabled = false;
       proAiBtn.textContent = 'Get Pro+ AI';
       proAiBtn.style.opacity = '';
@@ -625,15 +659,32 @@
       } else {
         btn.disabled = false;
         btn.style.opacity = '1';
-        if (p === 'pro_monthly') btn.textContent = pro ? 'Switch to Pro 30-Day' : 'Upgrade to Pro';
+        if (p === 'pro_monthly_recurring') btn.textContent = pro ? 'Switch to Pro Monthly' : 'Start Pro Auto-Renewal (₹199/mo)';
+        else if (p === 'pro_plus_ai_monthly_recurring') btn.textContent = 'Start Pro+ AI (₹399/mo)';
+        else if (p === 'pro_monthly') btn.textContent = pro ? 'Switch to Pro 30-Day' : 'Upgrade to Pro 30-Day';
         else if (p === 'pro_yearly') btn.textContent = pro ? 'Switch to Pro 365-Day' : 'Get Pro 365-Day (Save 37%)';
-        else if (p === 'pro_plus_ai_monthly') btn.textContent = 'Get Pro+ AI';
+        else if (p === 'pro_plus_ai_monthly') btn.textContent = 'Get Pro+ AI 30-Day';
         else if (p === 'pro_plus_ai_yearly') btn.textContent = 'Get Pro+ AI 365-Day (Save 16%)';
         else if (p === 'founder_lifetime') btn.textContent = 'Get Founder Access';
       }
     });
   }
 
+  if (el('billingRecurringBtn')) {
+    el('billingRecurringBtn').addEventListener('click', function () {
+      applyBillingCycle('recurring', currentLicense);
+    });
+  }
+  if (el('billingMonthlyBtn')) {
+    el('billingMonthlyBtn').addEventListener('click', function () {
+      applyBillingCycle('monthly', currentLicense);
+    });
+  }
+  if (el('billingYearlyBtn')) {
+    el('billingYearlyBtn').addEventListener('click', function () {
+      applyBillingCycle('yearly', currentLicense);
+    });
+  }
   if (el('billingCycleToggle')) {
     el('billingCycleToggle').addEventListener('click', function () {
       applyBillingCycle(selectedBillingCycle === 'yearly' ? 'monthly' : 'yearly', currentLicense);
@@ -664,7 +715,7 @@
           notice.style.border = '1px solid rgba(245,158,11,0.35)';
           notice.style.color = '#fcd34d';
           notice.innerHTML = '⚠️ <b>This plan is not on sale right now.</b> ' +
-            'Pro (₹199 / 30 days) includes every discipline rule and broker-tab detection.';
+            'Pro (₹199 / month) includes every discipline rule and broker-tab detection.';
         }
         return;
       }
@@ -687,15 +738,18 @@
       chrome.storage.local.set({ tlUserEmail: email });
 
       var api = (el('licApi').value.trim() || R.DEFAULT_SETTINGS.licenseApiBase).replace(/\/+$/, '');
+      var isSub = (plan && plan.indexOf('recurring') !== -1);
       if (notice) {
         notice.style.display = 'block';
         notice.style.background = 'rgba(59,130,246,0.12)';
         notice.style.border = '1px solid rgba(59,130,246,0.3)';
         notice.style.color = '#93c5fd';
-        notice.innerHTML = 'Initiating secure order for <b>' + escapeHtml(plan) + '</b> (' + escapeHtml(email) + ')…';
+        notice.innerHTML = 'Initiating secure ' + (isSub ? 'monthly subscription' : 'order') + ' for <b>' + escapeHtml(plan) + '</b> (' + escapeHtml(email) + ')…';
       }
 
-      fetch(api + '/api/create-order', {
+      var endpoint = isSub ? '/api/create-subscription' : '/api/create-order';
+
+      fetch(api + endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: plan, email: email })
@@ -708,6 +762,18 @@
           notice.style.border = '1px solid rgba(245,158,11,0.3)';
           notice.style.color = '#fcd34d';
           notice.innerHTML = '⚠️ <b>Payment Gateway Offline / Not Configured:</b> The Trade Lock backend server is running in development mode without live Razorpay credentials. No charges were made. In live production, this connects to Razorpay billing. For development, use an explicitly enabled demo checkout or paste a valid test license key above.';
+        } else if (data.subscriptionId) {
+          notice.style.background = 'rgba(16,185,129,0.12)';
+          notice.style.border = '1px solid rgba(16,185,129,0.3)';
+          notice.style.color = '#6ee7b7';
+          notice.innerHTML = '✓ Monthly subscription <b>' + escapeHtml(data.subscriptionId) + '</b> initialized for ' + escapeHtml(email) + '. ' +
+            'Opening secure Razorpay subscription checkout…';
+          var checkoutUrl = api + '/?plan=' + encodeURIComponent(plan) + '&email=' + encodeURIComponent(email) + '&subscriptionId=' + encodeURIComponent(data.subscriptionId);
+          if (chrome.tabs && chrome.tabs.create) {
+            chrome.tabs.create({ url: checkoutUrl });
+          } else {
+            window.open(checkoutUrl, '_blank');
+          }
         } else if (data.orderId) {
           notice.style.background = 'rgba(16,185,129,0.12)';
           notice.style.border = '1px solid rgba(16,185,129,0.3)';
@@ -2654,52 +2720,76 @@
     input.value = '';
     appendChatMessage('user', text);
 
-    // AI response engine: grounded in pure mathematical models, deterministic rules, and audit logs
-    setTimeout(function () {
-      var query = text.toLowerCase();
-      var resp = '';
-      var timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' IST';
+    var apiBase = (currentSettings && currentSettings.licenseApiBase) || 'http://localhost:8787';
+    var box = el('chatMessages');
+    var loadingMsg = document.createElement('div');
+    loadingMsg.className = 'chat-msg assistant';
+    loadingMsg.innerHTML = '<span style="color:var(--dim);font-style:italic">✨ Gemini AI Coach is reviewing your session and market context...</span>';
+    if (box) {
+      box.appendChild(loadingMsg);
+      box.scrollTop = box.scrollHeight;
+    }
 
-      if (query.indexOf('discipline') !== -1 || query.indexOf('session') !== -1 || query.indexOf('rule') !== -1 || query.indexOf('broke') !== -1) {
-        if (!currentState || !currentState.session || !currentState.session.trades) {
-          resp = 'Discipline Audit · ' + timeStr + ':\n' +
-                 'Insufficient trade data for discipline audit (0 trades recorded today).\n' +
-                 'Trade execution signals, tilt scoring, and discipline audit activate once your first trade is logged or auto-detected.';
-        } else if (I && currentState && currentState.session) {
-          var ia = I.analyze(currentState.log, currentState.session, currentSettings);
-          resp = 'Session Discipline Audit (' + ia.score + '/100 - ' + ia.grade + ') · ' + timeStr + ':\n' +
-                 '• Total Trades: ' + currentState.session.trades + '\n' +
-                 '• Realised P&L: ' + R.inr(currentState.session.pnl) + '\n' +
-                 '• Consecutive Losses: ' + currentState.session.consecutiveLosses + '\n' +
-                 (ia.signals.length ? 'Signals:\n' + ia.signals.map(function (s) { return '  - ' + s.text; }).join('\n') : '  - Clean execution with zero tilt detected.') +
-                 '\n\n🛡️ Lock Policy: Authoritative risk-lock decisions are executed exclusively by the rules engine in lib/rules.js and cannot be overridden by AI.';
-        } else {
-          resp = 'Discipline Audit · ' + timeStr + ':\nInsufficient trade data for discipline audit (0 trades recorded today).';
+    chrome.storage.local.get(['tlLicense', 'tlMarket'], function (res) {
+      var lic = res && res.tlLicense;
+      var snap = res && res.tlMarket;
+      var headers = { 'Content-Type': 'application/json' };
+      if (lic && lic.key) headers.Authorization = 'Bearer ' + lic.key;
+
+      var coachInfo = (I && currentState && currentState.session)
+        ? I.analyze(currentState.log || [], currentState.session, currentSettings)
+        : null;
+
+      var fallbackResponse = function () {
+        var timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' IST';
+        var query = text.toLowerCase();
+        if (query.indexOf('discipline') !== -1 || query.indexOf('session') !== -1 || query.indexOf('rule') !== -1 || query.indexOf('broke') !== -1) {
+          if (!currentState || !currentState.session || !currentState.session.trades) {
+            return 'Discipline Audit · ' + timeStr + ':\n' +
+                   'Insufficient trade data for discipline audit (0 trades recorded today).\n' +
+                   'Trade execution signals, tilt scoring, and discipline audit activate once your first trade is logged or auto-detected.\n\n' +
+                   '🛡️ Lock Policy: Authoritative trading locks are executed strictly by the rules engine and cannot be altered by AI.';
+          } else if (coachInfo) {
+            return 'Session Discipline Audit (' + coachInfo.score + '/100 - ' + coachInfo.grade + ') · ' + timeStr + ':\n' +
+                   '• Total Trades: ' + currentState.session.trades + '\n' +
+                   '• Realised P&L: ' + R.inr(currentState.session.pnl) + '\n' +
+                   '• Consecutive Losses: ' + currentState.session.consecutiveLosses + '\n' +
+                   (coachInfo.signals.length ? 'Signals:\n' + coachInfo.signals.map(function (s) { return '  - ' + s.text; }).join('\n') : '  - Clean execution with zero tilt detected.') +
+                   '\n\n🛡️ Lock Policy: Authoritative trading locks are executed strictly by the rules engine and cannot be altered by AI.';
+          }
         }
-      } else if (query.indexOf('option') !== -1 || query.indexOf('pcr') !== -1 || query.indexOf('oi') !== -1) {
-        var optSymbol = (el('optionsSymbol') && el('optionsSymbol').value) || 'NIFTY';
-
-        resp = '⚠️ LIVE MARKET DATA UNAVAILABLE\n\n' +
-               'No verified exchange feed is connected, so there is no option chain to analyse.\n\n' +
-               'Trade Lock will not fabricate PCR, open interest walls, or max pain levels.\n\n' +
-               '• Pro+ users: set UPSTOX_ANALYTICS_TOKEN (or Fyers credentials) on the feed server and restart it.\n' +
-               '• Free/Pro users: the Market, Options and Charts tabs are part of Pro+.\n\n' +
-               '🛡️ Risk Policy: Authoritative trading locks are executed strictly by the rules engine and cannot be altered by AI.';
-      } else if (query.indexOf('support') !== -1 || query.indexOf('resistance') !== -1 || query.indexOf('structure') !== -1 || query.indexOf('pivot') !== -1) {
-        resp = '⚠️ LIVE MARKET DATA UNAVAILABLE\n\n' +
-               'No verified live exchange feed is currently connected.\n\n' +
-               'Trade Lock refuses to invent artificial price support or resistance levels. The server feed supplies the candles these levels are computed from.\n\n' +
-               '🛡️ Discipline Policy: Manual and automated discipline locks remain fully active regardless of live feed connection status.';
-      } else {
-        resp = 'Discipline & Risk Engine Guidance · ' + timeStr + ':\n' +
+        return 'Discipline & Risk Engine Guidance · ' + timeStr + ':\n' +
+               'LIVE MARKET DATA UNAVAILABLE: Connect your live market feed for real-time order flow and option chain analytics. ' +
                'Keep trade count disciplined and adhere strictly to your predefined invalidation levels. ' +
                'Your active rules allow up to ' + (currentSettings.maxTradesPerDay || 'unlimited') + ' trades and max daily loss of ₹' +
                (currentSettings.maxDailyLoss || 'unlimited') + '. Never average down losing positions.\n\n' +
-               '🛡️ Notice: The Trade Lock risk engine operates deterministically. AI chat is strictly informational.';
-      }
+               '🛡️ Notice: Authoritative trading locks are executed strictly by the rules engine and cannot be altered by AI.';
+      };
 
-      appendChatMessage('assistant', resp);
-    }, 350);
+      fetch(apiBase + '/api/ai/chat', {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          message: text,
+          analysis: snap && snap.analysis ? snap.analysis : null,
+          coach: coachInfo
+        })
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (loadingMsg && loadingMsg.parentNode) loadingMsg.parentNode.removeChild(loadingMsg);
+        if (data && data.ok && data.text) {
+          var prefix = (data.source && data.source.indexOf('gemini') !== -1) ? '✨ Gemini AI Coach:\n' : '';
+          appendChatMessage('assistant', prefix + data.text);
+        } else {
+          appendChatMessage('assistant', fallbackResponse());
+        }
+      })
+      .catch(function () {
+        if (loadingMsg && loadingMsg.parentNode) loadingMsg.parentNode.removeChild(loadingMsg);
+        appendChatMessage('assistant', fallbackResponse());
+      });
+    });
   }
 
   if (el('chatSendBtn')) el('chatSendBtn').addEventListener('click', handleAiSend);

@@ -1353,22 +1353,24 @@
       <!-- Checkout Feedback Notification -->
       <div id="checkoutNotice" style="display:none;padding:12px;border-radius:8px;margin-bottom:16px;font-size:12.5px"></div>
 
-      <!-- Plan catalog with 30-day / 365-day prepaid toggle -->
+      <!-- Plan catalog with Recurring / 30-day / 365-day toggle -->
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin:24px 0 10px;">
         <div>
           <h3 style="margin:0;font-size:15px;font-weight:750">Choose Your Plan</h3>
-          <p style="margin:3px 0 0;font-size:12px;color:var(--muted)">Transparent prepaid pricing · Choose 30-day or 365-day access. No auto-renewal.</p>
+          <p style="margin:3px 0 0;font-size:12px;color:var(--muted)">Transparent pricing · Choose recurring auto-renewal or one-time prepaid access.</p>
         </div>
         <!-- Billing Cycle Toggle Switch -->
-        <div style="display:inline-flex;align-items:center;gap:10px;background:rgba(0,0,0,0.35);padding:5px 12px;border-radius:99px;border:1px solid var(--line)">
-          <span id="billingMonthlyLabel" style="font-size:12px;font-weight:700;color:#fff;cursor:pointer">30 days</span>
-          <button id="billingCycleToggle" type="button" role="switch" aria-checked="false" aria-label="Toggle 30-day and 365-day prepaid access" style="position:relative;width:44px;height:24px;background:rgba(255,255,255,0.15);border:1px solid var(--line);border-radius:99px;cursor:pointer;padding:0;transition:all .2s;outline:none">
-            <span id="billingCycleKnob" style="position:absolute;top:2px;left:3px;width:18px;height:18px;background:#3b82f6;border-radius:50%;transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></span>
+        <div style="display:inline-flex;align-items:center;gap:4px;background:rgba(0,0,0,0.35);padding:4px 6px;border-radius:99px;border:1px solid var(--line)">
+          <button id="billingRecurringBtn" type="button" class="billing-cycle-pill active" style="font-size:11.5px;font-weight:700;padding:5px 12px;border-radius:99px;border:none;background:#3b82f6;color:#fff;cursor:pointer;transition:all .2s">Monthly Auto-Renewal</button>
+          <button id="billingMonthlyBtn" type="button" class="billing-cycle-pill" style="font-size:11.5px;font-weight:500;padding:5px 12px;border-radius:99px;border:none;background:transparent;color:var(--dim);cursor:pointer;transition:all .2s">30-Day Pass</button>
+          <button id="billingYearlyBtn" type="button" class="billing-cycle-pill" style="font-size:11.5px;font-weight:500;padding:5px 12px;border-radius:99px;border:none;background:transparent;color:var(--dim);cursor:pointer;transition:all .2s">
+            365-Day Pass <span class="badge pro" style="font-size:9px;padding:1px 5px;background:rgba(16,185,129,0.2);color:#34d399;margin-left:4px">Save up to 37%</span>
           </button>
-          <span id="billingYearlyLabel" style="font-size:12px;font-weight:500;color:var(--dim);cursor:pointer;display:inline-flex;align-items:center;gap:5px">
-            365 days
-            <span class="badge pro" style="font-size:9.5px;padding:1px 6px;background:rgba(16,185,129,0.2);color:#34d399;border:1px solid rgba(16,185,129,0.35);border-radius:99px">Save up to 37%</span>
-          </span>
+          <!-- Hidden legacy toggle for backward compatibility -->
+          <button id="billingCycleToggle" type="button" role="switch" aria-checked="false" aria-label="Toggle billing" style="display:none"></button>
+          <span id="billingCycleKnob" style="display:none"></span>
+          <span id="billingMonthlyLabel" style="display:none"></span>
+          <span id="billingYearlyLabel" style="display:none"></span>
         </div>
       </div>
 

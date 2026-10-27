@@ -26,6 +26,16 @@ const PLANS = {
     durationDays: null, tagline: 'One payment. Lifetime access.',
     badge: 'Founder access', maxDevices: 5, proPlus: true, billingModel: 'lifetime', available: true,
   },
+  pro_monthly_recurring: {
+    id: 'pro_monthly_recurring', name: 'Pro — Monthly Subscription', amount: 19900, currency: 'INR',
+    durationDays: 30, tagline: '₹199/month auto-renewing subscription. Cancel anytime.',
+    badge: 'Recurring', maxDevices: 3, proPlus: false, billingModel: 'recurring', available: true,
+  },
+  pro_plus_ai_monthly_recurring: {
+    id: 'pro_plus_ai_monthly_recurring', name: 'Pro+ AI Markets — Monthly Subscription', amount: 39900, currency: 'INR',
+    durationDays: 30, tagline: '₹399/month auto-renewing Pro+ access with live options & AI Coach.',
+    badge: 'Recurring · Pro+', maxDevices: 5, proPlus: true, billingModel: 'recurring', available: true,
+  },
   free: {
     id: 'free', name: 'Free', amount: 0, currency: 'INR', durationDays: null,
     tagline: 'Manual lock, trade-count rule and journal.', maxDevices: 0,
@@ -37,6 +47,8 @@ const PLANS = {
 const ALIASES = {
   pro_plus_ai: 'pro_plus_ai_monthly',
   lifetime: 'founder_lifetime',
+  pro_sub: 'pro_monthly_recurring',
+  plus_sub: 'pro_plus_ai_monthly_recurring',
 };
 const PRO_PLANS = Object.keys(PLANS).filter(k => k !== 'free').concat(Object.keys(ALIASES));
 function getPlan(id) {
@@ -56,6 +68,11 @@ function isAvailable(id) {
   return Boolean(plan && plan.available !== false);
 }
 function purchasablePlans() {
-  return Object.values(PLANS).filter(p => p.id !== 'free' && p.available !== false);
+  return Object.values(PLANS).filter(p => p.id !== 'free' && p.available !== false && p.billingModel !== 'recurring');
 }
-module.exports = { PLANS, PRO_PLANS, getPlan, canonicalPlanId, isAvailable, purchasablePlans };
+
+function subscriptionPlans() {
+  return Object.values(PLANS).filter(p => p.id !== 'free' && p.available !== false && p.billingModel === 'recurring');
+}
+
+module.exports = { PLANS, PRO_PLANS, getPlan, canonicalPlanId, isAvailable, purchasablePlans, subscriptionPlans };
