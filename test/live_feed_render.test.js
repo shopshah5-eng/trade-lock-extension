@@ -211,3 +211,18 @@ test('with no feed the same elements go blank rather than keep a number', async 
   assert.ok(textOf(page, 'overviewChartSource').includes('disconnected') ||
     textOf(page, 'overviewChartSource').includes('Live feed'), 'the overview source stays honest');
 });
+
+test('with no feed the setup card names the missing configuration and provider', async () => {
+  const page = boot(null);
+  await settle();
+  await open(page, 'market');
+
+  const card = page.document.getElementById('liveMarketSetupCard');
+  assert.ok(card, 'setup card must exist');
+  assert.strictEqual(card.style.display, 'block');
+  const text = card.textContent.replace(/\s+/g, ' ');
+  assert.ok(text.includes('Live feed not connected'), 'card title');
+  assert.ok(text.includes('Provider: Fyers API v3 / Upstox'), 'card provider');
+  assert.ok(text.includes('Feed: https://trade-lock-app.netlify.app'), 'feed base');
+  assert.ok(card.querySelector('#useLocalServerBtn'), 'offers local server switch when remote');
+});

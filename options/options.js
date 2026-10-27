@@ -2145,6 +2145,7 @@
             '</div>' +
             '<div class="live-setup-body">' + escapeHtml(why.detail) + '</div>' +
             '<div class="live-setup-meta">' +
+              '<span><b>Provider:</b> Fyers API v3 / Upstox</span>' +
               '<span><b>Feed:</b> ' + escapeHtml(apiBase) + '</span>' +
               (why.action ? '<span><b>Fix:</b> ' + escapeHtml(why.action) + '</span>' : '') +
               '<span><b>Last Checked:</b> ' + new Date().toLocaleTimeString('en-IN') + ' IST</span>' +
