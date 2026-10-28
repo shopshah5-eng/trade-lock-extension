@@ -34,6 +34,31 @@
     box.style.display = mode === 'full_site' ? 'block' : 'none';
   }
 
+  function normalizeResolution(tf) {
+    var s = String(tf || '15m').trim().toLowerCase();
+    if (s === '1d' || s === 'd' || s === 'day') return '1D';
+    if (s === '1w' || s === 'w' || s === 'week') return '1W';
+    if (s === '1h' || s === '60m') return '60';
+    if (s === '2h') return '120';
+    if (s === '4h') return '240';
+    var digits = s.replace(/[^0-9]/g, '');
+    return digits || '15';
+  }
+
+  function switchActiveSymbol(newSymbol, skipStorage) {
+    if (!newSymbol) return;
+    currentSettings.marketSymbol = newSymbol;
+    if (el('marketSymbol') && el('marketSymbol').value !== newSymbol) el('marketSymbol').value = newSymbol;
+    if (el('chartsSymbolSelect') && el('chartsSymbolSelect').value !== newSymbol) el('chartsSymbolSelect').value = newSymbol;
+    if (el('optionsSymbol') && el('optionsSymbol').value !== newSymbol) el('optionsSymbol').value = newSymbol;
+    if (!skipStorage && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get('tlSettings', function (res) {
+        var s = Object.assign({}, res.tlSettings || {}, { marketSymbol: newSymbol });
+        chrome.storage.local.set({ tlSettings: s });
+      });
+    }
+  }
+
   // ------------------------------------------------------------- tabs ----
 
   function switchTab(name) {
@@ -229,7 +254,10 @@
     if (el('fullSiteAcknowledged')) el('fullSiteAcknowledged').checked = !!s.fullSiteAcknowledged;
     toggleFullSiteAckBox(s.enforcementMode || 'warning');
     if (el('marketOpen')) el('marketOpen').value = minutesToHHMM(s.marketOpenMin);
-    if (el('marketSymbol') && s.marketSymbol) el('marketSymbol').value = s.marketSymbol;
+    if (s.marketSymbol) {
+      if (!currentSettings.marketSymbol) currentSettings.marketSymbol = s.marketSymbol;
+      switchActiveSymbol(currentSettings.marketSymbol, true);
+    }
     // One live path: the server feed. The old broker-tab tap is gone - it could
     // only parse tab titles, so it never connected to a real terminal.
     s.marketSource = 'live';
@@ -1674,7 +1702,7 @@
         if (el('chartsRsiVal')) el('chartsRsiVal').textContent = a.rsi14 != null ? a.rsi14 : '—';
         if (el('chartsVwapVal')) el('chartsVwapVal').textContent = a.vwap != null ? '₹' + a.vwap : '—';
         if (el('chartsAtrVal')) el('chartsAtrVal').textContent = a.atr14 != null ? '₹' + a.atr14 : '—';
-        if (el('chartsTrendVal')) el('chartsTrendVal').textContent = (a.trend || 'Neutral') + ' structure';
+        if (el('chartsTrendVal')) el('chartsTrendVal').textContent = (a.structure || ((a.trend || 'Neutral') + ' structure'));
       }
       var cfg = getInstrumentConfig(symbol);
       if (el('chartsSymbolDisplay')) el('chartsSymbolDisplay').textContent = cfg.name || symbol;
@@ -1702,7 +1730,7 @@
         chrome.runtime.sendMessage({
           type: 'TL_CHECK_MARKET_FEED',
           symbol: symbol,
-          resolution: tf.replace(/[^0-9]/g, '') || '15'
+          resolution: normalizeResolution(tf)
         }, function (resp) {
           if (resp && resp.ok && resp.data) {
             populateFromSnap(resp.data);
@@ -1713,7 +1741,10 @@
   }
 
   // Hook up event listeners for dedicated charts controls
-  if (el('chartsSymbolSelect')) el('chartsSymbolSelect').addEventListener('change', function () { renderDedicatedChartsView(true); });
+  if (el('chartsSymbolSelect')) el('chartsSymbolSelect').addEventListener('change', function () {
+    switchActiveSymbol(el('chartsSymbolSelect').value);
+    renderDedicatedChartsView(true);
+  });
   if (el('chartsRefreshBtn')) el('chartsRefreshBtn').addEventListener('click', function () { renderDedicatedChartsView(true); });
   document.querySelectorAll('#chartsTimeframePills .tf-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -2237,7 +2268,7 @@
     var noteEl = el('marketNote');
 
     if (noteEl) noteEl.textContent = 'Probing live exchange connection...';
-    chrome.runtime.sendMessage({ type: 'TL_CHECK_MARKET_FEED', symbol: symbol, resolution: tf.replace(/[^0-9]/g, '') || '15' }, function (resp) {
+    chrome.runtime.sendMessage({ type: 'TL_CHECK_MARKET_FEED', symbol: symbol, resolution: normalizeResolution(tf) }, function (resp) {
       if (chrome.runtime.lastError || !resp || !resp.connected) {
         var err = (resp && resp.error) || 'offline';
         var hint = (resp && resp.hint) || 'Backend broker credentials (FYERS_APP_ID, FYERS_ACCESS_TOKEN) or Pro+ subscription required.';
@@ -2315,8 +2346,8 @@
           ? 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-size:11px'
           : 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399;font-size:11px';
         badgeEl.innerHTML = isStale
-          ? '⚠️ STALE FEED (>60s) · ' + escapeHtml(snap.provider || 'market feed')
-          : '🟢 LIVE FEED CONNECTED · ' + escapeHtml(snap.provider || 'market feed');
+          ? '⚠️ STALE FEED (>60s)'
+          : '🟢 LIVE FEED CONNECTED';
       }
       if (timeEl) timeEl.textContent = 'Tick Time: ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
       if (noteEl) noteEl.textContent = 'Live feed active';
@@ -2377,7 +2408,10 @@
       renderMarketAndOiDashboard();
     });
   }
-  if (el('marketSymbol')) el('marketSymbol').addEventListener('change', renderMarketAndOiDashboard);
+  if (el('marketSymbol')) el('marketSymbol').addEventListener('change', function () {
+    switchActiveSymbol(el('marketSymbol').value);
+    renderMarketAndOiDashboard();
+  });
   if (el('marketTimeframe')) el('marketTimeframe').addEventListener('change', renderMarketAndOiDashboard);
 
   if (el('saveBlockedHostsBtn')) {
@@ -2697,7 +2731,10 @@
 
 
   if (el('optionsRefreshBtn')) el('optionsRefreshBtn').addEventListener('click', function () { renderOptionsChainView(true); });
-  if (el('optionsSymbol')) el('optionsSymbol').addEventListener('change', function () { renderOptionsChainView(true); });
+  if (el('optionsSymbol')) el('optionsSymbol').addEventListener('change', function () {
+    switchActiveSymbol(el('optionsSymbol').value);
+    renderOptionsChainView(true);
+  });
   if (el('optMoneynessFilter')) el('optMoneynessFilter').addEventListener('change', renderChainTable);
 
   // ---------------------------------------------------- AI assistant ----
@@ -2740,9 +2777,15 @@
         ? I.analyze(currentState.log || [], currentState.session, currentSettings)
         : null;
 
+      var skillsStats = (typeof TLTradingSkills !== 'undefined' && TLTradingSkills.learnFromJournal)
+        ? TLTradingSkills.learnFromJournal(currentJournal, currentSettings)
+        : null;
+
       var fallbackResponse = function () {
         var timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' IST';
         var query = text.toLowerCase();
+
+        // 1. Discipline / Session Audit
         if (query.indexOf('discipline') !== -1 || query.indexOf('session') !== -1 || query.indexOf('rule') !== -1 || query.indexOf('broke') !== -1) {
           if (!currentState || !currentState.session || !currentState.session.trades) {
             return 'Discipline Audit · ' + timeStr + ':\n' +
@@ -2758,11 +2801,42 @@
                    '\n\n🛡️ Lock Policy: Authoritative trading locks are executed strictly by the rules engine and cannot be altered by AI.';
           }
         }
+
+        // 2. Real-time Market Intelligence & Structure Guidance
+        if (snap && snap.analysis) {
+          var an = snap.analysis;
+          var curSym = snap.symbol || currentSettings.marketSymbol || 'NIFTY';
+          var advice = an.trend === 'uptrend'
+            ? 'Bullish structure confirmed. Look for long setups on retests of EMA 9/20 or VWAP. Avoid counter-trend shorts.'
+            : an.trend === 'downtrend'
+            ? 'Bearish structure active below VWAP. Look for short continuations or wait for a confirmed CHoCH reversal before buying.'
+            : 'Market is in consolidation / rangebound structure. Avoid trading in the middle of the range; wait for boundary sweeps or breakout.';
+
+          var perfNote = '';
+          if (skillsStats && skillsStats.recommendations && skillsStats.recommendations.length) {
+            perfNote = '\n\n📊 Adaptive Trade Learning:\n' + skillsStats.recommendations.map(function (r) { return '• ' + r; }).join('\n');
+          }
+
+          return 'Market Structure & Strategy Coach · ' + curSym + ' · ' + timeStr + ':\n' +
+                 '• Structure: ' + (an.structure || (an.trend + ' structure')) + '\n' +
+                 '• Last Price: ₹' + an.price + ' | VWAP: ₹' + an.vwap + '\n' +
+                 '• RSI (14): ' + (an.rsi14 != null ? an.rsi14 : '—') + ' | ATR: ₹' + (an.atr14 != null ? an.atr14 : '—') + '\n' +
+                 '• Key Resistance: ' + (an.nearestResistance && an.nearestResistance[0] ? '₹' + an.nearestResistance[0].price : 'N/A') + '\n' +
+                 '• Key Support: ' + (an.nearestSupport && an.nearestSupport[0] ? '₹' + an.nearestSupport[0].price : 'N/A') + '\n\n' +
+                 '🎯 Execution Rule: ' + advice + perfNote +
+                 '\n\n🛡️ Lock Policy: Trade Lock risk locks cannot be overridden by AI.';
+        }
+
+        // 3. Strategy Guidance from User Journal Performance
+        var recs = (skillsStats && skillsStats.recommendations && skillsStats.recommendations.length)
+          ? skillsStats.recommendations.map(function (r) { return '• ' + r; }).join('\n')
+          : '• Adhere strictly to predefined setups and never average down losing positions.';
+
         return 'Discipline & Risk Engine Guidance · ' + timeStr + ':\n' +
-               'LIVE MARKET DATA UNAVAILABLE: Connect your live market feed for real-time order flow and option chain analytics. ' +
-               'Keep trade count disciplined and adhere strictly to your predefined invalidation levels. ' +
-               'Your active rules allow up to ' + (currentSettings.maxTradesPerDay || 'unlimited') + ' trades and max daily loss of ₹' +
-               (currentSettings.maxDailyLoss || 'unlimited') + '. Never average down losing positions.\n\n' +
+               'LIVE MARKET DATA UNAVAILABLE: Connect your live market feed for real-time order flow and option chain analytics.\n' +
+               '• Active Rules: Max ' + (currentSettings.maxTradesPerDay || 'unlimited') + ' trades | Max daily loss ₹' + (currentSettings.maxDailyLoss || 'unlimited') + '\n' +
+               '• Win Rate from Journal: ' + (skillsStats ? skillsStats.winRate + '% (' + skillsStats.totalTrades + ' trades)' : 'Pending trades') + '\n' +
+               recs + '\n\n' +
                '🛡️ Notice: Authoritative trading locks are executed strictly by the rules engine and cannot be altered by AI.';
       };
 

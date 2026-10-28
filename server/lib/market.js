@@ -325,13 +325,33 @@
     var above = levels.filter(function (l) { return l.price > price; }).sort(function (a, b) { return a.price - b.price; });
     var below = levels.filter(function (l) { return l.price <= price; }).sort(function (a, b) { return b.price - a.price; });
     var lastVwap = vw[vw.length - 1];
-    var trend = price > lastVwap && e9[e9.length - 1] >= e20[e20.length - 1] ? 'uptrend'
-      : price < lastVwap && e9[e9.length - 1] <= e20[e20.length - 1] ? 'downtrend' : 'sideways';
+    var lastE9 = e9[e9.length - 1];
+    var lastE20 = e20[e20.length - 1];
+
+    var skills = (typeof root !== 'undefined' && root.TLTradingSkills) ||
+      (typeof globalThis !== 'undefined' && globalThis.TLTradingSkills) ||
+      (typeof require === 'function' ? (function () { try { return require('./tradingSkills'); } catch (e) { return null; } })() : null);
+
+    var swingAnalysis = skills && skills.evaluateMarketStructure ? skills.evaluateMarketStructure(cs) : null;
+
+    var trend = 'sideways';
+    if ((price > lastVwap && lastE9 >= lastE20) || (lastE9 > lastE20 && price >= lastE20) || (swingAnalysis && swingAnalysis.bias === 'bullish')) {
+      trend = 'uptrend';
+    } else if ((price < lastVwap && lastE9 <= lastE20) || (lastE9 < lastE20 && price <= lastE20) || (swingAnalysis && swingAnalysis.bias === 'bearish')) {
+      trend = 'downtrend';
+    }
+
+    var structure = swingAnalysis && swingAnalysis.structure
+      ? swingAnalysis.structure
+      : (trend === 'uptrend' ? 'Bullish Structure (HH / HL)' : trend === 'downtrend' ? 'Bearish Structure (LH / LL)' : 'Rangebound Consolidation');
 
     return {
       ok: true, symbol: opts.symbol || '', timeframe: opts.timeframe || '',
       price: round2(price), candles: cs.length,
       trend: trend,
+      structure: structure,
+      bos: swingAnalysis ? swingAnalysis.bos : null,
+      choch: swingAnalysis ? swingAnalysis.choch : null,
       vwap: lastVwap, ema9: e9[e9.length - 1], ema20: e20[e20.length - 1],
       rsi14: rsi(cs, 14), atr14: at[at.length - 1],
       pivots: pivots,

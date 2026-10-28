@@ -751,7 +751,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
           var targetUrl = endpointBase + '/api/market/live?symbol=' + encodeURIComponent(symbol) + '&resolution=' + encodeURIComponent(resolution);
           var probeHeaders = Object.assign({}, headers);
           var controller = new AbortController();
-          var timer = setTimeout(function () { controller.abort(); }, 8000);
+          var timer = setTimeout(function () { controller.abort(); }, 20000);
           return fetch(targetUrl, { headers: probeHeaders, signal: controller.signal })
             .then(function (res) {
               clearTimeout(timer);
