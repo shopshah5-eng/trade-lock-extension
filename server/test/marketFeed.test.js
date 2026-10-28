@@ -26,6 +26,15 @@ const CANDLE_PAYLOAD = {
   },
 };
 
+const CHAIN_PAYLOAD = {
+  status: 'success',
+  data: [{
+    strike_price: 24600,
+    call_options: { market_data: { oi: 5000, ltp: 120 }, option_greeks: { iv: 14.2 } },
+    put_options: { market_data: { oi: 7000, ltp: 88 }, option_greeks: { iv: 13.8 } },
+  }],
+};
+
 // ------------------------------------------------------------- symbols ----
 
 test('Upstox: app symbols map to the documented instrument keys', () => {
@@ -233,7 +242,7 @@ test('Market feed: repeated requests are served from cache, not upstream', async
   let upstream = 0;
   const fakeFetch = async (url) => {
     upstream += 1;
-    if (url.includes('/option/chain')) return jsonResponse({ data: [] });
+    if (url.includes('/option/chain')) return jsonResponse(CHAIN_PAYLOAD);
     return jsonResponse(CANDLE_PAYLOAD);
   };
   try {
@@ -271,4 +280,240 @@ test('Market feed: an empty provider response is an error, never a blank chart',
     if (prev === undefined) delete process.env.UPSTOX_ANALYTICS_TOKEN;
     else process.env.UPSTOX_ANALYTICS_TOKEN = prev;
   }
+});
+
+// ------------------------------------------------------ resilience ----
+
+test('Market feed: an OI outage is explicit and the next request can recover', async () => {
+  const prev = process.env.UPSTOX_ANALYTICS_TOKEN;
+  process.env.UPSTOX_ANALYTICS_TOKEN = 'oi_recovery_token';
+  feed.clearCache();
+  let chainCalls = 0;
+  const fakeFetch = async (url) => {
+    if (url.includes('/option/chain')) {
+      chainCalls += 1;
+      if (chainCalls <= 3) return jsonResponse({ errors: [{ message: 'temporarily unavailable' }] }, 503);
+      return jsonResponse(CHAIN_PAYLOAD);
+    }
+    if (url.includes('/market-quote/quotes')) return jsonResponse({ data: { v: { last_price: 14.2, close_price: 14 } } });
+    return jsonResponse(CANDLE_PAYLOAD);
+  };
+  try {
+    const first = await feed.fetchMarket({ symbol: 'NIFTY', resolution: '15', fetchImpl: fakeFetch });
+    assert.strictEqual(first.ok, true);
+    assert.strictEqual(first.optionChain, null);
+    assert.strictEqual(first.optionChainStatus, 'unavailable');
+    assert.strictEqual(first.degraded, true);
+    assert.ok(first.warnings.some((w) => w.component === 'optionChain'));
+
+    const second = await feed.fetchMarket({ symbol: 'NIFTY', resolution: '15', fetchImpl: fakeFetch });
+    assert.strictEqual(second.ok, true);
+    assert.strictEqual(second.optionChainStatus, 'live');
+    assert.strictEqual(second.optionChain.length, 1);
+    assert.notStrictEqual(second.cached, true, 'a missing chain must not be served from a success cache');
+    assert.ok(chainCalls >= 4, 'the recovery request must call the provider again');
+  } finally {
+    feed.clearCache();
+    if (prev === undefined) delete process.env.UPSTOX_ANALYTICS_TOKEN;
+    else process.env.UPSTOX_ANALYTICS_TOKEN = prev;
+  }
+});
+
+test('Market feed: an empty OI chain is unavailable, not a healthy cache entry', async () => {
+  const prev = process.env.UPSTOX_ANALYTICS_TOKEN;
+  process.env.UPSTOX_ANALYTICS_TOKEN = 'empty_oi_recovery_token';
+  feed.clearCache();
+  let chainCalls = 0;
+  const fakeFetch = async (url) => {
+    if (url.includes('/option/chain')) {
+      chainCalls += 1;
+      return jsonResponse(chainCalls <= 3 ? { data: [] } : CHAIN_PAYLOAD);
+    }
+    if (url.includes('/market-quote/quotes')) return jsonResponse({ data: { v: { last_price: 14.2 } } });
+    return jsonResponse(CANDLE_PAYLOAD);
+  };
+  try {
+    const first = await feed.fetchMarket({ symbol: 'NIFTY', fetchImpl: fakeFetch });
+    assert.strictEqual(first.optionChainStatus, 'unavailable');
+    assert.strictEqual(first.optionChain, null);
+    assert.ok(first.warnings.some((w) => w.code === 'empty_option_chain'));
+    const second = await feed.fetchMarket({ symbol: 'NIFTY', fetchImpl: fakeFetch });
+    assert.strictEqual(second.optionChainStatus, 'live');
+    assert.strictEqual(second.optionChain.length, 1);
+  } finally {
+    feed.clearCache();
+    if (prev === undefined) delete process.env.UPSTOX_ANALYTICS_TOKEN;
+    else process.env.UPSTOX_ANALYTICS_TOKEN = prev;
+  }
+});
+
+test('Market feed: transient candles retry and canonical expiry is part of cache identity', async () => {
+  const prev = process.env.UPSTOX_ANALYTICS_TOKEN;
+  process.env.UPSTOX_ANALYTICS_TOKEN = 'retry_expiry_token';
+  feed.clearCache();
+  let historyCalls = 0;
+  let chainCalls = 0;
+  const chainUrls = [];
+  const fakeFetch = async (url) => {
+    if (url.includes('/option/chain')) {
+      chainCalls += 1;
+      chainUrls.push(url);
+      return jsonResponse(CHAIN_PAYLOAD);
+    }
+    if (url.includes('/market-quote/quotes')) return jsonResponse({ data: { v: { last_price: 14.2 } } });
+    if (url.includes('/v3/historical-candle/') && !url.includes('/intraday/')) {
+      historyCalls += 1;
+      if (historyCalls === 1) return jsonResponse({ errors: [{ message: 'bad gateway' }] }, 502);
+    }
+    return jsonResponse(CANDLE_PAYLOAD);
+  };
+  try {
+    const first = await feed.fetchMarket({ symbol: 'NIFTY', resolution: '15', expiry: 'current', fetchImpl: fakeFetch });
+    assert.strictEqual(first.ok, true);
+    assert.ok(historyCalls >= 2, 'a 502 history request should be retried');
+    const afterCurrent = chainCalls;
+    const alias = await feed.fetchMarket({ symbol: 'NIFTY', resolution: '15', expiry: 'current_week', fetchImpl: fakeFetch });
+    assert.strictEqual(alias.cached, true, 'current_week is the same cache entry as current');
+    assert.strictEqual(chainCalls, afterCurrent);
+    const next = await feed.fetchMarket({ symbol: 'NIFTY', resolution: '15', expiry: 'next', fetchImpl: fakeFetch });
+    assert.strictEqual(next.ok, true);
+    assert.strictEqual(next.expiry, 'next');
+    assert.ok(chainCalls > afterCurrent, 'next expiry must not reuse current expiry chain');
+    assert.ok(chainUrls.some((url) => url.includes('current_week')));
+    assert.ok(chainUrls.some((url) => url.includes('next_week')));
+  } finally {
+    feed.clearCache();
+    if (prev === undefined) delete process.env.UPSTOX_ANALYTICS_TOKEN;
+    else process.env.UPSTOX_ANALYTICS_TOKEN = prev;
+  }
+});
+
+test('Market feed: impossible or unknown expiries fail before any provider request', async () => {
+  const prev = process.env.UPSTOX_ANALYTICS_TOKEN;
+  process.env.UPSTOX_ANALYTICS_TOKEN = 'invalid_expiry_token';
+  feed.clearCache();
+  let calls = 0;
+  const fakeFetch = async () => { calls += 1; return jsonResponse(CANDLE_PAYLOAD); };
+  try {
+    for (const expiry of ['nonsense', '2026-02-31', '../../current']) {
+      const result = await feed.fetchMarket({ symbol: 'NIFTY', expiry, fetchImpl: fakeFetch });
+      assert.strictEqual(result.ok, false);
+      assert.strictEqual(result.error, 'invalid_expiry');
+      assert.strictEqual(result.status, 400);
+    }
+    assert.strictEqual(calls, 0);
+  } finally {
+    feed.clearCache();
+    if (prev === undefined) delete process.env.UPSTOX_ANALYTICS_TOKEN;
+    else process.env.UPSTOX_ANALYTICS_TOKEN = prev;
+  }
+});
+
+test('Market feed: concurrent identical misses share one upstream request', async () => {
+  const prev = process.env.UPSTOX_ANALYTICS_TOKEN;
+  process.env.UPSTOX_ANALYTICS_TOKEN = 'coalescing_token';
+  feed.clearCache();
+  let historyCalls = 0;
+  let releaseHistory;
+  const gate = new Promise((resolve) => { releaseHistory = resolve; });
+  const fakeFetch = async (url) => {
+    if (url.includes('/option/chain')) return jsonResponse(CHAIN_PAYLOAD);
+    if (url.includes('/market-quote/quotes')) return jsonResponse({ data: { v: { last_price: 14.2 } } });
+    if (url.includes('/v3/historical-candle/') && !url.includes('/intraday/')) {
+      historyCalls += 1;
+      await gate;
+    }
+    return jsonResponse(CANDLE_PAYLOAD);
+  };
+  try {
+    const one = feed.fetchMarket({ symbol: 'NIFTY', fetchImpl: fakeFetch });
+    const two = feed.fetchMarket({ symbol: 'NIFTY', fetchImpl: fakeFetch });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.strictEqual(historyCalls, 1);
+    releaseHistory();
+    const [first, second] = await Promise.all([one, two]);
+    assert.strictEqual(first.ok, true);
+    assert.strictEqual(second.ok, true);
+    assert.strictEqual(second.coalesced, true);
+    assert.strictEqual(historyCalls, 1);
+  } finally {
+    releaseHistory();
+    feed.clearCache();
+    if (prev === undefined) delete process.env.UPSTOX_ANALYTICS_TOKEN;
+    else process.env.UPSTOX_ANALYTICS_TOKEN = prev;
+  }
+});
+
+test('Market feed: clearCache prevents an old in-flight request from repopulating cache', async () => {
+  const prev = process.env.UPSTOX_ANALYTICS_TOKEN;
+  process.env.UPSTOX_ANALYTICS_TOKEN = 'cache_generation_token';
+  feed.clearCache();
+  let releaseHistory;
+  let historyCalls = 0;
+  const gate = new Promise((resolve) => { releaseHistory = resolve; });
+  const fakeFetch = async (url) => {
+    if (url.includes('/option/chain')) return jsonResponse(CHAIN_PAYLOAD);
+    if (url.includes('/market-quote/quotes')) return jsonResponse({ data: { v: { last_price: 14.2 } } });
+    if (url.includes('/v3/historical-candle/') && !url.includes('/intraday/')) {
+      historyCalls += 1;
+      if (historyCalls === 1) await gate;
+    }
+    return jsonResponse(CANDLE_PAYLOAD);
+  };
+  try {
+    const firstPromise = feed.fetchMarket({ symbol: 'NIFTY', fetchImpl: fakeFetch });
+    await new Promise((resolve) => setImmediate(resolve));
+    feed.clearCache();
+    releaseHistory();
+    const first = await firstPromise;
+    assert.strictEqual(first.ok, true);
+    const second = await feed.fetchMarket({ symbol: 'NIFTY', fetchImpl: fakeFetch });
+    assert.strictEqual(second.ok, true);
+    assert.notStrictEqual(second.cached, true, 'cleared generation must refetch');
+    assert.strictEqual(historyCalls, 2);
+  } finally {
+    releaseHistory();
+    feed.clearCache();
+    if (prev === undefined) delete process.env.UPSTOX_ANALYTICS_TOKEN;
+    else process.env.UPSTOX_ANALYTICS_TOKEN = prev;
+  }
+});
+
+test('Upstox: rejected expiry keywords resolve a real contract expiry before retrying', async () => {
+  const calls = [];
+  const client = upstox.createClient({ accessToken: 'tok' }, async (url) => {
+    calls.push(url);
+    if (url.includes('/option/contract')) {
+      return jsonResponse({ data: [{ expiry: '2099-11-03' }, { expiry: '2099-11-10' }, { expiry_date: '2099-11-17' }] });
+    }
+    if (url.includes('/option/chain')) {
+      if (calls.filter((u) => u.includes('/option/chain')).length === 1) {
+        return jsonResponse({ errors: [{ message: 'invalid expiry' }] }, 400);
+      }
+      return jsonResponse({ data: [] });
+    }
+    return jsonResponse({});
+  }, 'https://api.upstox.test');
+  const rows = await client.optionChain({ instrumentKey: 'NIFTY', expiry: 'current' });
+  assert.deepStrictEqual(rows, []);
+  assert.strictEqual(calls.filter((u) => u.includes('/option/chain')).length, 2);
+  assert.ok(calls.some((u) => u.includes('/option/contract')));
+  assert.ok(calls[calls.length - 1].includes('expiry_date=2099-11-03'));
+});
+
+test('Upstox: an empty expiry-keyword chain falls back to a dated contract chain', async () => {
+  const calls = [];
+  const client = upstox.createClient({ accessToken: 'tok' }, async (url) => {
+    calls.push(url);
+    if (url.includes('/option/contract')) return jsonResponse({ data: [{ expiry: '2099-11-03' }] });
+    if (url.includes('/option/chain')) {
+      return jsonResponse(url.includes('expiry_date=current_week') ? { data: [] } : CHAIN_PAYLOAD);
+    }
+    return jsonResponse({});
+  }, 'https://api.upstox.test');
+  const rows = await client.optionChain({ instrumentKey: 'NIFTY', expiry: 'current' });
+  assert.strictEqual(rows.length, 1);
+  assert.strictEqual(rows[0].strike, 24600);
+  assert.strictEqual(calls.filter((url) => url.includes('/option/chain')).length, 2);
+  assert.ok(calls[calls.length - 1].includes('expiry_date=2099-11-03'));
 });

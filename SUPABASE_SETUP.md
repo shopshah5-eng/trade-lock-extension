@@ -27,9 +27,9 @@ You need three accounts/keys:
 2. Paste the entire contents of [`server/schema.sql`](../server/schema.sql).
 3. Click **Run**.
 
-That creates `licenses`, `orders`, `processed_webhooks`, the RPC functions
-(`fulfill_order`, `register_device`, `reissue_license`) and row-level security
-policies. The script is idempotent — safe to re-run after an update.
+That creates `licenses`, `orders`, `processed_webhooks`, `payment_history`, the RPC functions
+(`fulfill_order`, `register_device`, `reissue_license`, `record_payment`, `mark_payment_refunded`) and row-level security
+policies. The script is idempotent — safe to re-run after an update. It also backfills legacy billing fields without converting old prepaid monthly/yearly keys into subscriptions. Back up and de-duplicate legacy rows before migration.
 
 Expected result: **"Success. No rows returned."**
 
@@ -58,6 +58,10 @@ SUPABASE_SERVICE_KEY=eyJhbGciOi...        # service_role, NOT anon
 RAZORPAY_KEY_ID=rzp_live_xxxxxxxx
 RAZORPAY_KEY_SECRET=xxxxxxxxxxxxxxxx
 RAZORPAY_WEBHOOK_SECRET=xxxxxxxxxxxxxxxx
+RAZORPAY_PLAN_PRO_MONTHLY=plan_xxxxxxxxxxxxxx
+RAZORPAY_PLAN_PRO_YEARLY=plan_xxxxxxxxxxxxxx
+RAZORPAY_PLAN_PRO_PLUS_AI_MONTHLY=plan_xxxxxxxxxxxxxx
+RAZORPAY_PLAN_PRO_PLUS_AI_YEARLY=plan_xxxxxxxxxxxxxx
 
 # --- Mandatory: market data (Pro+) ---
 UPSTOX_ANALYTICS_TOKEN=xxxxxxxx-xxxx-xxxx    # 1 year, read-only, free
@@ -67,7 +71,7 @@ FYERS_ADMIN_TOKEN=<output of: openssl rand -hex 32>
 
 # --- Recommended ---
 PUBLIC_BASE_URL=https://your-site.netlify.app
-RESEND_API_KEY=re_xxxxxxxx                   # emails licence keys; logs to console without it
+RESEND_API_KEY=re_xxxxxxxx                   # required for unattended webhook email delivery
 RESEND_FROM=Trade Lock <licenses@your-domain.com>
 ```
 
@@ -91,7 +95,7 @@ no licence.
 1. Razorpay Dashboard → **Account & Settings → Webhooks → Add New Webhook**.
 2. **Webhook URL**: `https://your-site.netlify.app/api/webhook`
 3. **Secret**: the exact value you put in `RAZORPAY_WEBHOOK_SECRET`.
-4. **Active events**: `payment.captured` *(and `order.paid` if offered)*.
+4. **Active events**: `payment.captured`, `payment.failed`, `payment.refunded`, `refund.processed`, `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.cancelled`, `subscription.completed`, `subscription.halted`, `subscription.paused`, and `subscription.resumed`.
 5. Save, then use Razorpay's **Test** button — you should see a `2xx` response.
 
 ## 6. Verify before you tell anyone
@@ -129,9 +133,10 @@ You want:
   "paymentPersistenceReady": true,
   "checks": {
     "razorpay":       { "ok": true },
+    "razorpayPlans":  { "ok": true },
     "webhookSecret":  { "ok": true },
     "supabase":       { "ok": true },
-    "schema":         { "ok": true, "detail": "Tables and fulfill_order() reachable" }
+    "schema":         { "ok": true, "detail": "Required tables, billing columns and payment RPC signatures are reachable" }
   }
 }
 ```
@@ -143,7 +148,7 @@ If it returns **503**, the failing check tells you exactly what is wrong:
 | `Set SUPABASE_URL and SUPABASE_SERVICE_KEY` | Env vars missing, or you redeployed before saving them |
 | `Key rejected (401)` | You used the `anon` key — switch to `service_role` |
 | `Missing tables: orders` | Step 2 not applied to *this* project |
-| `fulfill_order() function is missing` | Re-run `server/schema.sql` |
+| `required fulfill_order() function/signature is missing` (or another RPC) | Re-run `server/schema.sql` and verify the service-role grants |
 | `Supabase unreachable` | Wrong URL, or the project is paused (free tier pauses after a week idle) |
 
 Also confirm the app agrees:
@@ -153,16 +158,16 @@ curl -s https://your-site.netlify.app/health | jq
 # → "paymentPersistenceReady": true
 ```
 
-## 7. Do a real ₹1 purchase
+## 7. Do an authorized real test purchase
 
-A green self-test does not prove the money path. Do one live transaction:
+A green self-test does not prove the money path. Use Razorpay test mode first, then make one authorized live purchase at the actual listed catalog price:
 
 1. Buy the cheapest plan with a real card/UPI.
 2. Confirm you receive the licence key (email or on-screen).
 3. Paste it into the extension → License → Activate. It should show **Pro**.
 4. Check the Supabase **Table Editor**: one row in `orders` (`status = paid`),
    one row in `licenses`.
-5. Refund the ₹1 in the Razorpay dashboard.
+5. Refund that test purchase in the Razorpay dashboard and confirm the license is revoked and `payment_history.refunded` is set.
 
 ## 8. After it works
 

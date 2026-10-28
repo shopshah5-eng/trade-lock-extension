@@ -60,8 +60,8 @@ test('No demo: a feed-less market view never prints a price', () => {
     'offline state must not leave a theta number on screen');
   // The reverse of the disconnected state has to exist too: a badge that can
   // only ever say "No Feed" sat above a fully populated screen.
-  assert.ok(/el\('marketModelBadge'\)\.textContent = 'Live'/.test(options),
-    'the market badge must be able to say Live');
+  assert.ok(options.includes("partial ? 'Partial' : 'Live'"),
+    'the market badge must distinguish healthy live data from partial/stale data');
 });
 
 // ------------------------------------------------------------ popup / hud ----
@@ -199,10 +199,10 @@ test('Live: the chart receives real candles, not just a count', () => {
 
   // The route used to send candles: <number>, so the client had no OHLC at all
   // and the Pro+ canvas always rendered "no market candle data".
-  assert.ok(server.includes('candles: feed.candles.slice(-400)'),
-    'the live route must ship the candle series');
-  assert.ok(server.includes('candleCount: feed.candles.length'),
-    'the count belongs in its own field');
+  assert.ok(server.includes('const candles = feed.candles.slice(-400);'),
+    'the live route must bound and ship the candle series');
+  assert.ok(/candles,\s*candleCount: candles\.length/.test(server),
+    'the count must describe the bounded series actually returned');
   assert.strictEqual(/candles:\s*feed\.candles\.length\s*,/.test(server), false,
     'candles must never be a bare number again');
 

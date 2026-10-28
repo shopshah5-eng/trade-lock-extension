@@ -11,7 +11,7 @@ function runAdmin(args, fakeSupabase, failingSave = false) {
     const originalLoad = Module._load;
     const old = { hash: 'old-hash', hint: 'TL-OLD', email: 'trader@example.com', plan: 'pro_monthly',
       createdAt: 100, expiresAt: null, paymentId: 'pay_original', devices: [], revoked: false };
-    const store = { licenses: { 'old-hash': old }, saveSync() { ${failingSave ? "throw new Error('read-only cache')" : 'return true;'} } };
+    const store = { licenses: { 'old-hash': old }, paymentHistory: {}, saveSync() { ${failingSave ? "throw new Error('read-only cache')" : 'return true;'} } };
     const fake = ${fakeSupabase};
     Module._load = function(request, parent, isMain) {
       const fn = (parent && parent.filename) || '';
@@ -30,7 +30,7 @@ function runAdmin(args, fakeSupabase, failingSave = false) {
 test('admin reissue reveals the one-time key after remote commit despite local cache failure', () => {
   const remote = `{
     isConfigured() { return true; },
-    fetchLicensesByEmail() { return Promise.resolve([]); },
+    fetchLicensesByEmail() { return Promise.resolve([old]); },
     fetchLicensesByPayment() { return Promise.resolve([]); },
     reissueLicense() { return Promise.resolve({ ok: true }); },
     syncLicense() { return Promise.resolve({ ok: true }); }

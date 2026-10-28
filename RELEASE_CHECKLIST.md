@@ -95,7 +95,7 @@ Host permission does not prove adapter compatibility. Use safe/test accounts whe
 ### Supabase
 
 - [ ] Apply all of `server/schema.sql`; inspect tables, unique indexes, RLS and `service_role`-only RPC grants.
-- [ ] Test `fulfill_order`, `register_device`, and `reissue_license` against the real project, including concurrent calls, conflicting payment IDs for one order, and revocation/expiry racing device registration.
+- [ ] Test `fulfill_order`, `record_payment`, `mark_payment_refunded`, `register_device`, and `reissue_license` against the real project, including concurrent calls, conflicting payment IDs for one order, payment/hash conflicts, refund idempotency, history transfer on reissue, and revocation/expiry racing device registration.
 - [ ] Verify cold function instances recover orders, licenses, fulfillment and processed webhook IDs remotely.
 - [ ] Test backup/restore and legacy-row migration/deduplication.
 
@@ -103,7 +103,7 @@ Host permission does not prove adapter compatibility. Use safe/test accounts whe
 
 - [ ] Validate test mode first, then a small authorized live transaction after KYC/website approval.
 - [ ] Check exact plan amount/currency, checkout order reuse, signature rejection, email/plan mismatch rejection and free-plan rejection.
-- [ ] Deliver `payment.captured` duplicates and out-of-order retries; verify one license per payment/order.
+- [ ] Deliver `payment.captured` duplicates and out-of-order `subscription.*` retries; verify one license per payment/order, no period shortening, complete payment history, and no premature receipt.
 - [ ] Inject database/email failures and verify non-2xx retry behavior, later recovery and no premature processed receipt.
 - [ ] Confirm a cold already-fulfilled verification does not invent or re-show a plain key; test support recovery.
 - [ ] Confirm real inbox delivery, sender/domain authentication, expiry text and Pro versus Pro+ device wording.
@@ -136,7 +136,7 @@ Host permission does not prove adapter compatibility. Use safe/test accounts whe
 
 These cannot be completed by code changes alone:
 
-- [ ] Approve final prepaid pricing, plan names, refund policy, support SLA and ownership-verification procedure.
+- [ ] Approve final recurring/lifetime pricing, plan names, renewal/cancellation copy, refund policy, support SLA and ownership-verification procedure.
 - [ ] Provide and review privacy policy, terms, financial-risk disclaimer, data retention/deletion policy and support contact.
 - [ ] Confirm tax/KYC/Razorpay account and website requirements with the owner/providers.
 - [ ] Review offline cached-license behavior: revocation cannot reach an offline installation until revalidation.

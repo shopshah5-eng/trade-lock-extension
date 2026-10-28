@@ -4,9 +4,9 @@ const assert = require('node:assert');
 const emailService = require('../email');
 
 test('formatPlanName formats known and fallback plans', () => {
-  assert.strictEqual(emailService.formatPlanName('pro_monthly'), 'Pro — 30-day prepaid (₹199)');
-  assert.strictEqual(emailService.formatPlanName('pro_yearly'), 'Pro — 365-day prepaid (₹1,499)');
-  assert.strictEqual(emailService.formatPlanName('pro_plus_ai'), 'Pro+ AI Markets — 30-day prepaid (₹399)');
+  assert.strictEqual(emailService.formatPlanName('pro_monthly'), 'Pro — Monthly Subscription (₹199/month)');
+  assert.strictEqual(emailService.formatPlanName('pro_yearly'), 'Pro — Yearly Subscription (₹1,499/year)');
+  assert.strictEqual(emailService.formatPlanName('pro_plus_ai'), 'Pro+ AI Markets — Monthly Subscription (₹399/month)');
   assert.strictEqual(emailService.formatPlanName('lifetime'), 'Founder Lifetime (₹2,999 one-time)');
   assert.strictEqual(emailService.formatPlanName('custom_test'), 'custom_test');
   assert.strictEqual(emailService.formatPlanName(null), 'Pro');
@@ -36,7 +36,9 @@ test('buildPlainText contains key and step-by-step instructions', () => {
 
   assert.ok(text.includes('TL-MONTH-11111-22222-33333'));
   assert.ok(text.includes('HOW TO ACTIVATE IN CHROME'));
-  assert.ok(text.includes('Pro — 30-day prepaid'));
+  assert.ok(text.includes('Pro — Monthly Subscription'));
+  assert.ok(text.includes('Current paid period ends'));
+  assert.ok(text.includes('auto-renews unless cancelled'));
 });
 
 test('sendLicenseEmail skips safely when apiKey is empty', async () => {
@@ -126,7 +128,8 @@ test('email templates use plan-specific device limits', () => {
   const plus = emailService.buildHtmlTemplate({ licenseKey: 'TL-TEST', plan: 'pro_plus_ai_monthly', email: 'plus@example.com', expiresAt: null });
   assert.ok(pro.includes('up to 3 devices'));
   assert.ok(plus.includes('up to 5 devices'));
-  assert.ok(plus.includes('30-day prepaid'));
+  assert.ok(plus.includes('Monthly Subscription'));
+  assert.ok(!plus.includes('Perpetual Lifetime Access'));
 });
 
 

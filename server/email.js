@@ -18,11 +18,11 @@ function escapeHtml(value) {
 
 function formatPlanName(planId) {
   const names = {
-    pro_monthly: 'Pro — 30-day prepaid (₹199)',
-    pro_yearly: 'Pro — 365-day prepaid (₹1,499)',
-    pro_plus_ai: 'Pro+ AI Markets — 30-day prepaid (₹399)',
-    pro_plus_ai_monthly: 'Pro+ AI Markets — 30-day prepaid (₹399)',
-    pro_plus_ai_yearly: 'Pro+ AI Markets — 365-day prepaid (₹3,999)',
+    pro_monthly: 'Pro — Monthly Subscription (₹199/month)',
+    pro_yearly: 'Pro — Yearly Subscription (₹1,499/year)',
+    pro_plus_ai: 'Pro+ AI Markets — Monthly Subscription (₹399/month)',
+    pro_plus_ai_monthly: 'Pro+ AI Markets — Monthly Subscription (₹399/month)',
+    pro_plus_ai_yearly: 'Pro+ AI Markets — Yearly Subscription (₹3,999/year)',
     lifetime: 'Founder Lifetime (₹2,999 one-time)',
     founder_lifetime: 'Founder Lifetime (₹2,999 one-time)',
     free: 'Free'
@@ -30,12 +30,22 @@ function formatPlanName(planId) {
   return names[planId] || planId || 'Pro';
 }
 
+function accessValidity(planId, expiresAt) {
+  const plan = getPlan(planId);
+  if (plan && plan.billingModel === 'recurring') {
+    if (!expiresAt) return 'Recurring subscription; current paid-period end unavailable';
+    const recurringDate = new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    return 'Current paid period ends ' + recurringDate + '; auto-renews unless cancelled';
+  }
+  if (!expiresAt) return 'Perpetual Lifetime Access (Never Expires)';
+  const date = new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  return 'Valid until ' + date;
+}
+
 function buildHtmlTemplate({ licenseKey, plan, email, expiresAt }) {
   const planLabel = formatPlanName(plan);
   const maxDevices = maxDevicesForPlan(plan);
-  const expiryText = expiresAt
-    ? 'Valid until ' + new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-    : 'Perpetual Lifetime Access (Never Expires)';
+  const expiryText = accessValidity(plan, expiresAt);
 
   return `
 <!DOCTYPE html>
@@ -79,7 +89,7 @@ function buildHtmlTemplate({ licenseKey, plan, email, expiresAt }) {
                 Welcome to Trade Lock ${planLabel.indexOf('Pro+') === 0 ? 'Pro+' : 'Pro'}! 🎉
               </h1>
               <p style="margin:0 0 24px;font-size:14px;color:#94a3b8;line-height:1.6;">
-                Thank you for your purchase. Your payment was verified successfully. Here is your official license key to activate your prepaid access on up to ${maxDevices} devices:
+                Thank you for your purchase. Your payment was verified successfully. Here is your official license key to activate your paid access on up to ${maxDevices} devices:
               </p>
 
               <!-- License Key Display Box -->
@@ -155,9 +165,7 @@ function buildHtmlTemplate({ licenseKey, plan, email, expiresAt }) {
 function buildPlainText({ licenseKey, plan, expiresAt }) {
   const planLabel = formatPlanName(plan);
   const maxDevices = maxDevicesForPlan(plan);
-  const expiryText = expiresAt
-    ? 'Valid until ' + new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-    : 'Perpetual Lifetime Access (Never Expires)';
+  const expiryText = accessValidity(plan, expiresAt);
 
   return [
     'TRADE LOCK — YOUR LICENSE KEY',

@@ -1434,24 +1434,44 @@
             <button class="primary plan-select-btn" data-plan="pro_plus_ai_monthly" id="proAiCardBtn" style="width:100%;font-size:12px">Get Pro+ AI</button>
           </div>
         </div>
+
+        <!-- 4. Founder Lifetime: canonical one-time purchase -->
+        <div class="plan-card" id="cardFounder">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="p-name">Founder Lifetime</div>
+            <span class="badge" style="font-size:10px;padding:2px 6px;background:rgba(245,158,11,.18);color:#fbbf24">One-time</span>
+          </div>
+          <div class="p-price">₹2,999 <span style="font-size:12px;font-weight:400">once</span></div>
+          <div class="p-sub">All Pro+ entitlements · One payment · Lifetime access</div>
+          <ul>
+            <li>All Pro and Pro+ features</li>
+            <li>Live market and options workspace</li>
+            <li>Rule-based discipline coach</li>
+            <li>Pay once and retain the lifetime entitlement</li>
+            <li>Up to 5 devices</li>
+          </ul>
+          <div style="margin-top:auto;padding-top:14px">
+            <button class="primary plan-select-btn" data-plan="founder_lifetime" id="founderCardBtn" style="width:100%;font-size:12px;background:#b45309">Get Founder Lifetime</button>
+          </div>
+        </div>
       </div>
 
-      <!-- Legacy Founder Lifetime Support Notice (Hidden from public sales cards) -->
+      <!-- Existing license recovery -->
       <div style="margin-top:16px;padding:12px 16px;background:rgba(255,255,255,0.03);border:1px dashed var(--line);border-radius:10px;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--dim)">
-        <span>Already hold an existing <b>Founder Lifetime</b> or early-backer license? All lifetime entitlements remain permanently honored. Enter your license key above to restore.</span>
-        <span class="badge" style="font-size:10px;background:rgba(255,255,255,0.08);color:var(--muted)">Perpetual Backer</span>
+        <span>Already hold a <b>Founder Lifetime</b>, recurring, or legacy prepaid license? Enter your existing key above to validate it. Legacy entitlements remain honored for their original term.</span>
+        <span class="badge" style="font-size:10px;background:rgba(255,255,255,0.08);color:var(--muted)">License Recovery</span>
       </div>
 
       <!-- Feature Comparison Matrix -->
-      <h3 style="margin:28px 0 12px;font-size:14.5px;font-weight:750">Plan Comparison Matrix</h3>
+      <h3 style="margin:28px 0 12px;font-size:14.5px;font-weight:750">Free &amp; Recurring Plan Comparison Matrix</h3>
       <div style="overflow-x:auto">
         <table class="comparison-table">
           <thead>
             <tr>
               <th style="width:30%">Capability</th>
               <th style="width:20%">Free (₹0)</th>
-              <th style="width:25%">Pro (₹199 / 30 days · ₹1,499 / 365 days)</th>
-              <th style="width:25%">Pro+ AI (₹399 / 30 days · ₹3,999 / 365 days)</th>
+              <th style="width:25%">Pro (₹199 / month · ₹1,499 / year)</th>
+              <th style="width:25%">Pro+ AI (₹399 / month · ₹3,999 / year)</th>
             </tr>
           </thead>
           <tbody>
@@ -1476,8 +1496,8 @@
             <tr>
               <td>Automatic broker fill detection</td>
               <td><span class="feat-no">— Pro only</span></td>
-              <td><span class="feat-yes">✓ Tested adapters</span></td>
-              <td><span class="feat-yes">✓ Tested adapters</span></td>
+              <td><span class="feat-yes">✓ Generic table detection</span></td>
+              <td><span class="feat-yes">✓ Generic table detection</span></td>
             </tr>
             <tr>
               <td>Monthly trading journal &amp; daily breakdown</td>
@@ -1516,7 +1536,7 @@
               <td>Up to 5 devices</td>
             </tr>
             <tr>
-              <td>Data Retention</td>
+              <td>Trading Data Retention</td>
               <td>Local until browser data is cleared</td>
               <td>Local until browser data is cleared</td>
               <td>Local until browser data is cleared</td>

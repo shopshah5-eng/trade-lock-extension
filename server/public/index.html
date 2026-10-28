@@ -60,26 +60,27 @@
   </div>
 
   <div id="privacyView" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:32px;margin-top:20px;text-align:left;">
-    <div style="display:inline-block;padding:4px 12px;background:rgba(34, 197, 94, 0.15);color:#4ade80;border-radius:9999px;font-size:12px;font-weight:600;margin-bottom:16px;">Privacy First &amp; Local Storage Only</div>
+    <div style="display:inline-block;padding:4px 12px;background:rgba(34, 197, 94, 0.15);color:#4ade80;border-radius:9999px;font-size:12px;font-weight:600;margin-bottom:16px;">Local Trading Data · Transparent Billing Data</div>
     <h2 style="font-size:24px;margin:0 0 12px;color:#fff;">Privacy Policy for Trade Lock</h2>
-    <p style="color:var(--muted);font-size:13px;margin-bottom:20px;">Last updated: October 26, 2026</p>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:20px;">Last updated: October 28, 2026</p>
 
     <h3 style="color:#60a5fa;font-size:17px;margin:20px 0 8px;">1. Overview</h3>
-    <p style="color:var(--muted);font-size:14px;line-height:1.6;">Trade Lock is a browser extension and discipline utility designed to prevent overtrading by enforcing trading rules, profit/loss targets, and lockout schedules. We prioritize user privacy and follow a strict zero-data-collection philosophy.</p>
+    <p style="color:var(--muted);font-size:14px;line-height:1.6;">Trade Lock is a browser extension and discipline utility designed to prevent overtrading by enforcing trading rules, profit/loss targets, and lockout schedules. Trading history and rule configuration remain on your device. Optional purchases, license validation, live market data, and support use limited server-side processing described below.</p>
 
     <h3 style="color:#60a5fa;font-size:17px;margin:20px 0 8px;">2. Data Collection &amp; Storage</h3>
-    <p style="color:var(--muted);font-size:14px;line-height:1.6;"><strong>Trade Lock does not collect, transmit, sell, or monitor personal user data.</strong></p>
+    <p style="color:var(--muted);font-size:14px;line-height:1.6;"><strong>We do not sell personal data or upload your trading journal, positions, orders, or browsing history to the license server.</strong></p>
     <ul style="padding-left:20px;color:var(--muted);font-size:14px;line-height:1.6;">
-      <li><strong>Local Storage:</strong> All user preferences, trading rules, discipline triggers, and daily trade journal logs are stored exclusively on your device using <code>chrome.storage.local</code>.</li>
-      <li><strong>No Personal Identification:</strong> We do not collect your name, email address, IP address, or browsing history.</li>
-      <li><strong>No Financial / Broker Credentials:</strong> Trade Lock does not have access to or store your broker passwords, PINs, bank accounts, or financial credentials.</li>
+      <li><strong>Local Trading Data:</strong> Preferences, trading rules, discipline triggers, and trade journal logs are stored on your device using <code>chrome.storage.local</code>.</li>
+      <li><strong>Billing &amp; License Data:</strong> A purchase requires your email address. The licensing service stores a cryptographic license-key hash (not the plaintext key), plan, expiry/billing status, payment/order/subscription IDs, registered device IDs, and support reissue/refund lineage.</li>
+      <li><strong>Payment &amp; Technical Processing:</strong> Razorpay collects and processes payment details directly; Trade Lock does not receive your card number or PIN. Hosting, database, email, and market-data providers may process the request metadata and IP information needed to provide their services under their own policies.</li>
+      <li><strong>No Broker Passwords:</strong> Trade Lock does not ask for or store your broker password, PIN, bank password, or card credentials.</li>
     </ul>
 
     <h3 style="color:#60a5fa;font-size:17px;margin:20px 0 8px;">3. Remote Code &amp; Scripts</h3>
     <p style="color:var(--muted);font-size:14px;line-height:1.6;">Trade Lock complies strictly with Google Chrome Web Store Manifest V3 policies. The extension does not load, execute, or evaluate external remote code, eval statements, or third-party tracking scripts.</p>
 
     <h3 style="color:#60a5fa;font-size:17px;margin:20px 0 8px;">4. Third-Party Services</h3>
-    <p style="color:var(--muted);font-size:14px;line-height:1.6;">The optional cloud licensing feature validates active subscription licenses via secure HTTPS requests without transmitting your trading history, browser activity, or personal documents.</p>
+    <p style="color:var(--muted);font-size:14px;line-height:1.6;">Razorpay processes checkout and recurring billing; Supabase or the configured license store persists billing/license records; Resend delivers license email when configured; and the selected market-data provider serves Pro+ market requests. These integrations receive only the data needed for their function. They do not receive your local trading journal or browser history from Trade Lock.</p>
 
     <h3 style="color:#60a5fa;font-size:17px;margin:20px 0 8px;">5. Contact Us</h3>
     <p style="color:var(--muted);font-size:14px;line-height:1.6;">If you have any questions about this Privacy Policy or your data, please contact the developer via the official Chrome Web Store item listing support page.</p>
@@ -134,13 +135,51 @@ let CONFIG = { keyId: '', demoMode: false };
 const inr = (p) => '₹' + (p / 100).toLocaleString('en-IN');
 const per = { pro_monthly: '/month (auto-renewal)', pro_yearly: '/year (auto-renewal)', pro_plus_ai_monthly: '/month (auto-renewal)', pro_plus_ai_yearly: '/year (auto-renewal)', founder_lifetime: 'one-time' };
 const query = new URLSearchParams(location.search);
+const PLAN_ALIASES = {
+  pro_plus_ai: 'pro_plus_ai_monthly', lifetime: 'founder_lifetime',
+  pro_sub: 'pro_monthly', plus_sub: 'pro_plus_ai_monthly',
+  pro_monthly_recurring: 'pro_monthly', pro_plus_ai_monthly_recurring: 'pro_plus_ai_monthly',
+};
+const canonicalPlan = (id) => PLAN_ALIASES[id] || id;
+const sameEmail = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+const orderTarget = (order) => order && (order.subscriptionId || order.orderId) || '';
+
+function rememberCheckoutTarget(planId, email, order) {
+  // A dismissed modal, script failure or reload must reuse the provider target,
+  // not create another order/subscription.
+  query.set('plan', canonicalPlan(order.plan || planId));
+  query.set('email', email);
+  query.delete('orderId'); query.delete('subscriptionId');
+  query.set(order.isSubscription ? 'subscriptionId' : 'orderId', orderTarget(order));
+  try {
+    history.replaceState(null, '', location.pathname + '?' + query.toString() + location.hash);
+  } catch (e) { /* the in-memory target still protects this click */ }
+}
+
+function pendingStorageKey(target) { return 'tlCheckoutPayment:' + target; }
+function savePendingPayment(payload) {
+  try { sessionStorage.setItem(pendingStorageKey(payload.orderId), JSON.stringify(payload)); } catch (e) {}
+}
+function readPendingPayment(planId, email, order) {
+  const target = orderTarget(order);
+  try {
+    const value = JSON.parse(sessionStorage.getItem(pendingStorageKey(target)) || 'null');
+    if (!value || value.orderId !== target || canonicalPlan(value.plan) !== canonicalPlan(planId) || !sameEmail(value.email, email)) return null;
+    if (!value.paymentId || !value.signature) return null;
+    return value;
+  } catch (e) { return null; }
+}
+function clearPendingPayment(payload) {
+  try { sessionStorage.removeItem(pendingStorageKey(payload.orderId)); } catch (e) {}
+}
+const verificationDelay = (attempt) => Math.min(500 * Math.pow(2, attempt), 5000);
 
 function showErr(msg) { const e = document.getElementById('err'); e.textContent = msg; e.style.display = 'block'; }
 function showKey(key, emailSent) {
   if (!key) {
     document.getElementById('result').style.display = 'none';
     showErr('This order was already fulfilled. Use your purchase email or contact support for license recovery.');
-    return;
+    return false;
   }
   document.getElementById('key').textContent = key;
   if (emailSent === false) {
@@ -150,6 +189,7 @@ function showKey(key, emailSent) {
   }
   document.getElementById('result').style.display = 'block';
   document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
+  return true;
 }
 
 function copyKey() {
@@ -183,88 +223,140 @@ function fallbackCopy(text, cb) {
 }
 
 async function verifyWithRetry(payload, attempt = 0) {
-  const response = await fetch('/api/verify-payment', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-  });
-  const data = await response.json();
-  if (response.status === 409 && attempt < 8) {
-    await new Promise(resolve => setTimeout(resolve, Number(data.retryAfterMs) || 1000));
+  let response;
+  try {
+    response = await fetch('/api/verify-payment', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+  } catch (error) {
+    if (attempt < 8) {
+      await new Promise(resolve => setTimeout(resolve, verificationDelay(attempt)));
+      return verifyWithRetry(payload, attempt + 1);
+    }
+    throw error;
+  }
+  const data = await response.json().catch(() => ({ error: 'invalid_server_response' }));
+  const retryable = (response.status === 409 && data.retryAfterMs) || [429, 500, 502, 503, 504].includes(response.status);
+  if (retryable && attempt < 8) {
+    await new Promise(resolve => setTimeout(resolve, Number(data.retryAfterMs) || verificationDelay(attempt)));
     return verifyWithRetry(payload, attempt + 1);
   }
-  if (!response.ok) throw new Error(data.error || 'verify_failed');
+  if (!response.ok) {
+    const error = new Error(data.error || 'verify_failed');
+    error.status = response.status;
+    error.detail = data.detail;
+    throw error;
+  }
   return data;
 }
 
 async function buy(planId, btn) {
+  const canonical = canonicalPlan(planId);
   const emailInput = document.getElementById('email-' + planId);
-  const email = (query.get('email') || (emailInput && emailInput.value) || '').trim();
+  const email = ((emailInput && emailInput.value) || query.get('email') || '').trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('Please enter a valid email — your purchase is linked to it.'); return; }
   btn.disabled = true; btn.textContent = 'Preparing checkout…';
   try {
     let order;
-    if (query.get('subscriptionId') && query.get('plan') === planId) {
-      order = { subscriptionId: query.get('subscriptionId'), demo: CONFIG.demoMode, isSubscription: true, amount: btn.dataset.amount, currency: 'INR' };
-    } else if (query.get('orderId') && query.get('plan') === planId) {
-      order = { orderId: query.get('orderId'), demo: CONFIG.demoMode, isSubscription: false, amount: btn.dataset.amount, currency: 'INR' };
+    const sameHandoff = canonicalPlan(query.get('plan')) === canonical && sameEmail(query.get('email'), email);
+    const handedSub = sameHandoff && /^sub_[A-Za-z0-9_-]+$/.test(query.get('subscriptionId') || '') && query.get('subscriptionId');
+    const handedOrder = sameHandoff && /^order_[A-Za-z0-9_-]+$/.test(query.get('orderId') || '') && query.get('orderId');
+    if (handedSub || handedOrder) {
+      const target = handedSub || handedOrder;
+      const isSubscription = Boolean(handedSub);
+      order = {
+        subscriptionId: isSubscription ? target : undefined,
+        orderId: isSubscription ? undefined : target,
+        demo: CONFIG.demoMode && /^(sub|order)_DEMO_/.test(target),
+        isSubscription, plan: canonical, amount: btn.dataset.amount, currency: 'INR',
+      };
     } else {
       const r = await fetch('/api/create-order', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: planId, email }) });
-      order = await r.json();
+        body: JSON.stringify({ plan: canonical, email }) });
+      order = await r.json().catch(() => ({ error: 'invalid_server_response' }));
       if (!r.ok) throw new Error(order.error || 'order_failed');
       order.isSubscription = Boolean(order.recurring || order.subscriptionId);
+      if (!orderTarget(order)) throw new Error('missing_checkout_target');
+      rememberCheckoutTarget(canonical, email, order);
     }
 
+    const target = orderTarget(order);
     if (order.demo) {
-      const demoId = order.subscriptionId || order.orderId;
-      const vd = await verifyWithRetry({ orderId: demoId, subscriptionId: order.subscriptionId, paymentId: 'demo_' + demoId, signature: 'demo', email, plan: planId });
+      const vd = await verifyWithRetry({ orderId: target, subscriptionId: order.subscriptionId,
+        paymentId: 'demo_' + target, signature: 'demo', email, plan: canonical });
       showKey(vd.licenseKey, vd.emailSent); btn.textContent = 'Done ✓'; return;
+    }
+
+    // After a successful provider callback, retry verification directly. Do
+    // not open another Razorpay checkout for an already-paid target.
+    const pending = readPendingPayment(canonical, email, order);
+    if (pending) {
+      btn.textContent = 'Retrying payment verification…';
+      const vd = await verifyWithRetry(pending);
+      clearPendingPayment(pending);
+      const shown = showKey(vd.licenseKey, vd.emailSent);
+      btn.textContent = shown ? 'Done ✓' : 'Recovery required';
+      return;
     }
 
     if (!CONFIG.keyId || typeof Razorpay === 'undefined') {
       showErr('Card payments are not switched on yet. Nothing was charged. ' +
-        'The owner needs to set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET on the licence server.');
-      btn.disabled = false; btn.textContent = 'Buy'; return;
+        'The owner needs to set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET on the licence server. Your unfinished checkout target has been preserved for retry.');
+      btn.disabled = false; btn.textContent = 'Retry checkout'; return;
     }
 
     const rzpOpts = {
       key: CONFIG.keyId,
       name: 'Trade Lock',
-      description: planId,
+      description: canonical,
       prefill: { email },
       theme: { color: '#e5484d' },
       handler: async (resp) => {
         btn.textContent = 'Verifying payment…';
+        const responseTarget = resp.razorpay_subscription_id || resp.razorpay_order_id;
+        if (responseTarget !== target) {
+          showErr('Razorpay returned a different checkout target. Do not pay again; contact support with payment id ' + resp.razorpay_payment_id);
+          btn.disabled = false; btn.textContent = 'Verification needs support'; return;
+        }
+        const payload = {
+          orderId: target,
+          subscriptionId: order.isSubscription ? target : undefined,
+          paymentId: resp.razorpay_payment_id,
+          signature: resp.razorpay_signature,
+          email,
+          plan: canonical,
+        };
+        savePendingPayment(payload);
         try {
-          const vd = await verifyWithRetry({
-            orderId: resp.razorpay_order_id || resp.razorpay_subscription_id,
-            subscriptionId: resp.razorpay_subscription_id,
-            paymentId: resp.razorpay_payment_id,
-            signature: resp.razorpay_signature,
-            email,
-            plan: planId
-          });
-          showKey(vd.licenseKey, vd.emailSent); btn.textContent = 'Done ✓';
+          const vd = await verifyWithRetry(payload);
+          clearPendingPayment(payload);
+          const shown = showKey(vd.licenseKey, vd.emailSent);
+          btn.textContent = shown ? 'Done ✓' : 'Recovery required';
         } catch (error) {
-          showErr('Payment verification is incomplete (' + error.message + '). Retry checkout with the same order or contact support with payment id ' + resp.razorpay_payment_id);
+          showErr('Payment verification is incomplete (' + error.message + '). Click Retry verification to reuse the same payment, or contact support with payment id ' + resp.razorpay_payment_id);
           btn.disabled = false; btn.textContent = 'Retry verification';
         }
       },
-      modal: { ondismiss: () => { btn.disabled = false; btn.textContent = 'Buy'; } }
+      modal: { ondismiss: () => { btn.disabled = false; btn.textContent = 'Retry checkout'; } }
     };
 
-    if (order.isSubscription || order.subscriptionId) {
-      rzpOpts.subscription_id = order.subscriptionId;
+    if (order.isSubscription) {
+      rzpOpts.subscription_id = target;
     } else {
-      rzpOpts.order_id = order.orderId;
+      rzpOpts.order_id = target;
       rzpOpts.amount = order.amount;
       rzpOpts.currency = order.currency;
     }
 
     const rzp = new Razorpay(rzpOpts);
-    rzp.on('payment.failed', (r) => showErr('Payment failed: ' + (r.error && r.error.description || 'unknown error')));
+    rzp.on('payment.failed', (r) => {
+      showErr('Payment failed: ' + (r.error && r.error.description || 'unknown error') + '. You can retry the same checkout target.');
+      btn.disabled = false; btn.textContent = 'Retry payment';
+    });
     rzp.open(); btn.textContent = 'Complete payment in Razorpay…';
   } catch (e) {
-    showErr('Could not start checkout: ' + e.message); btn.disabled = false; btn.textContent = 'Buy';
+    showErr('Checkout is incomplete: ' + e.message + '. Your existing checkout/payment target will be reused when available.');
+    btn.disabled = false; btn.textContent = 'Retry checkout';
   }
 }
 
@@ -289,6 +381,9 @@ async function init() {
       <input type="email" id="email-${p.id}" placeholder="Your email" autocomplete="email">
       <button data-amount="${p.amount}" onclick="buy('${p.id}', this)">Buy ${p.name.split('—')[1] ? p.name.split('—')[1].trim() : ''}</button>
     </div>`).join('');
+  if (query.get('email')) {
+    document.querySelectorAll('input[type="email"]').forEach((input) => { input.value = query.get('email'); });
+  }
 }
 init().catch(e => showErr('Could not load checkout configuration: ' + e.message));
 </script>

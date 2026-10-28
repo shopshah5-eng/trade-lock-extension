@@ -38,6 +38,7 @@ ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS cancel_at_period_end boolea
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS cancel_reason text;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS last_payment_at timestamptz;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS billing_event_at timestamptz;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS failure_reason text;
 
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS amount bigint;
@@ -47,6 +48,38 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS paid_at timestamptz;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS fulfilled_at timestamptz;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS subscription_id text;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS billing_model text;
+
+-- Legacy prepaid monthly/yearly keys must stay prepaid. Only an actual Razorpay
+-- subscription ID (or an already-populated subscription linkage) implies
+-- recurring billing; the current plan name alone does not.
+UPDATE public.licenses
+   SET subscription_id = order_id
+ WHERE subscription_id IS NULL AND order_id LIKE 'sub\_%' ESCAPE '\';
+UPDATE public.licenses
+   SET billing_model = CASE
+         WHEN subscription_id IS NOT NULL OR order_id LIKE 'sub\_%' ESCAPE '\' THEN 'recurring'
+         WHEN plan IN ('founder_lifetime', 'lifetime') THEN 'lifetime'
+         ELSE 'prepaid'
+       END
+ WHERE billing_model IS NULL;
+UPDATE public.licenses
+   SET billing_status = CASE WHEN revoked THEN 'revoked' ELSE 'active' END
+ WHERE billing_status IS NULL;
+UPDATE public.licenses
+   SET current_period_start = COALESCE(current_period_start, created_at),
+       current_period_end = COALESCE(current_period_end, expires_at)
+ WHERE current_period_start IS NULL OR current_period_end IS NULL;
+
+UPDATE public.orders
+   SET subscription_id = order_id
+ WHERE subscription_id IS NULL AND order_id LIKE 'sub\_%' ESCAPE '\';
+UPDATE public.orders
+   SET billing_model = CASE
+         WHEN subscription_id IS NOT NULL OR order_id LIKE 'sub\_%' ESCAPE '\' THEN 'recurring'
+         WHEN plan IN ('founder_lifetime', 'lifetime') THEN 'lifetime'
+         ELSE 'prepaid'
+       END
+ WHERE billing_model IS NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS licenses_payment_unique
   ON public.licenses(payment_id) WHERE payment_id IS NOT NULL;
@@ -79,6 +112,24 @@ CREATE TABLE IF NOT EXISTS public.payment_history (
 
 CREATE INDEX IF NOT EXISTS payment_history_license_hash_idx ON public.payment_history(license_hash);
 CREATE INDEX IF NOT EXISTS payment_history_subscription_id_idx ON public.payment_history(subscription_id) WHERE subscription_id IS NOT NULL;
+
+-- Backfill one historical row per known payment. Active replacements are
+-- preferred over revoked reissue lineage when both reference the same payment.
+INSERT INTO public.payment_history (
+  payment_id, license_hash, subscription_id, order_id, email, plan,
+  amount, currency, captured_at, refunded, refunded_at
+)
+SELECT COALESCE(l.payment_id, l.original_payment_id), l.hash,
+       l.subscription_id, COALESCE(l.order_id, l.original_order_id),
+       l.email, l.plan, o.amount, COALESCE(o.currency, 'INR'),
+       COALESCE(l.created_at, now()),
+       (l.revoked_reason = 'payment_refunded'),
+       CASE WHEN l.revoked_reason = 'payment_refunded' THEN l.revoked_at ELSE NULL END
+  FROM public.licenses l
+  LEFT JOIN public.orders o ON o.order_id = COALESCE(l.order_id, l.original_order_id)
+ WHERE COALESCE(l.payment_id, l.original_payment_id) IS NOT NULL
+ ORDER BY l.revoked ASC, l.created_at DESC
+ON CONFLICT (payment_id) DO NOTHING;
 
 ALTER TABLE public.licenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
@@ -191,9 +242,11 @@ BEGIN
   -- Record initial payment in history (idempotent)
   INSERT INTO public.payment_history (
     payment_id, license_hash, subscription_id, order_id, email, plan,
-    captured_at
+    amount, currency, captured_at
   ) VALUES (
     p_payment_id, result_hash, p_subscription_id, p_order_id, p_email, p_plan,
+    (SELECT amount FROM public.orders WHERE order_id = p_order_id),
+    COALESCE((SELECT currency FROM public.orders WHERE order_id = p_order_id), 'INR'),
     now()
   ) ON CONFLICT (payment_id) DO NOTHING;
 
@@ -275,6 +328,7 @@ BEGIN
   -- Preserve lineage fields on the old row before nulling unique columns.
   UPDATE public.licenses
      SET revoked = true, revoked_reason = 'support_reissue', revoked_at = now(),
+         billing_status = 'revoked',
          -- Null out the unique-indexed columns so the replacement can own them.
          order_id = NULL,
          payment_id = NULL,
@@ -290,17 +344,20 @@ BEGIN
     payment_id, order_id, subscription_id, provider_plan_id,
     billing_model, billing_status,
     current_period_start, current_period_end, cancel_at_period_end,
+    last_payment_at, billing_event_at, failure_reason,
+    cancelled_at, cancel_reason,
     original_payment_id, original_order_id,
     reissued_from, devices, revoked
   )
   SELECT p_new_hash, p_new_hint, old_row.email, old_row.plan, now(), old_row.expires_at,
-         NULL, NULL,
-         -- Transfer the active subscription linkage
+         old_row.payment_id, old_row.order_id,
          old_row.subscription_id,
          old_row.provider_plan_id,
          old_row.billing_model, old_row.billing_status,
          old_row.current_period_start, old_row.current_period_end,
          old_row.cancel_at_period_end,
+         old_row.last_payment_at, old_row.billing_event_at, old_row.failure_reason,
+         old_row.cancelled_at, old_row.cancel_reason,
          COALESCE(old_row.original_payment_id, old_row.payment_id),
          COALESCE(old_row.original_order_id, old_row.order_id),
          old_row.hint, '{}', false;
@@ -333,12 +390,31 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
+DECLARE
+  existing_hash text;
 BEGIN
+  IF p_payment_id IS NULL OR p_license_hash IS NULL THEN
+    RAISE EXCEPTION 'payment and license hash are required';
+  END IF;
   INSERT INTO public.payment_history (
     payment_id, license_hash, subscription_id, order_id, email, plan, amount, currency, captured_at
   ) VALUES (
     p_payment_id, p_license_hash, p_subscription_id, p_order_id, p_email, p_plan, p_amount, p_currency, now()
   ) ON CONFLICT (payment_id) DO NOTHING;
+
+  SELECT license_hash INTO existing_hash FROM public.payment_history
+   WHERE payment_id = p_payment_id FOR UPDATE;
+  IF existing_hash IS DISTINCT FROM p_license_hash THEN
+    RAISE EXCEPTION 'payment % is already linked to another license', p_payment_id;
+  END IF;
+
+  UPDATE public.payment_history
+     SET subscription_id = COALESCE(subscription_id, p_subscription_id),
+         order_id = COALESCE(order_id, p_order_id),
+         email = COALESCE(email, p_email), plan = COALESCE(plan, p_plan),
+         amount = COALESCE(amount, p_amount),
+         currency = COALESCE(currency, p_currency, 'INR')
+   WHERE payment_id = p_payment_id;
 END;
 $$;
 
@@ -357,9 +433,10 @@ AS $$
 DECLARE
   v_hash text;
 BEGIN
+  IF p_payment_id IS NULL THEN RAISE EXCEPTION 'payment is required'; END IF;
   UPDATE public.payment_history
-     SET refunded = true, refunded_at = now()
-   WHERE payment_id = p_payment_id AND NOT refunded
+     SET refunded = true, refunded_at = COALESCE(refunded_at, now())
+   WHERE payment_id = p_payment_id
   RETURNING license_hash INTO v_hash;
   RETURN v_hash;
 END;

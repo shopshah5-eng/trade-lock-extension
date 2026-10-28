@@ -280,3 +280,61 @@ test('a live response with no candles records zero rather than an empty count', 
   assert.strictEqual(snap.candleCount, 0);
   assert.strictEqual(snap.spot, null, 'a missing spot must not become 0');
 });
+
+test('newest market selection wins shared storage even when an older response arrives last', async () => {
+  const pending = new Map();
+  const urls = [];
+  const fetchImpl = (url) => {
+    const parsed = new URL(url);
+    const symbol = parsed.searchParams.get('symbol');
+    urls.push(parsed);
+    return new Promise(resolve => {
+      pending.set(symbol, () => resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          ok: true,
+          symbol,
+          provider: 'upstox',
+          fetchedAt: symbol === 'NIFTY' ? 1700000000000 : 1700000100000,
+          expiry: parsed.searchParams.get('expiry'),
+          optionChainStatus: 'live',
+          candles: [],
+          candleCount: 0,
+          optionChain: [{ strike: symbol === 'NIFTY' ? 24600 : 51000, callOi: 1, putOi: 2 }],
+          analysis: { ok: true },
+        }),
+      }));
+    });
+  };
+  const bg = createBackground({
+    settings: { marketEnabled: false, licenseApiBase: 'https://feed.test' },
+    license: { key: 'TL-TEST-PRO', plan: 'pro_plus_ai_monthly', active: true, expiresAt: Date.now() + 86400000 },
+  }, fetchImpl);
+
+  const older = bg.send({ type: 'TL_CHECK_MARKET_FEED', symbol: 'NIFTY', resolution: '15', expiry: 'current' });
+  await bg.flush();
+  assert.ok(pending.has('NIFTY'), 'older request must be waiting upstream');
+  const newer = bg.send({ type: 'TL_CHECK_MARKET_FEED', symbol: 'BANKNIFTY', resolution: '5', expiry: 'next' });
+  await bg.flush();
+  assert.ok(pending.has('BANKNIFTY'), 'newer request must be waiting upstream');
+
+  pending.get('BANKNIFTY')();
+  const newerResult = await newer;
+  assert.strictEqual(newerResult.ok, true);
+  assert.strictEqual(newerResult.data.symbol, 'BANKNIFTY');
+  assert.strictEqual(newerResult.data.expiry, 'next');
+  assert.strictEqual(bg.data.tlMarket.symbol, 'BANKNIFTY');
+  assert.strictEqual(bg.data.tlMarket.fetchedAt, 1700000100000, 'server freshness must be preserved');
+
+  pending.get('NIFTY')();
+  const olderResult = await older;
+  assert.strictEqual(olderResult.ok, true, 'old caller still receives its own valid response');
+  assert.strictEqual(olderResult.data.symbol, 'NIFTY');
+  assert.strictEqual(bg.data.tlMarket.symbol, 'BANKNIFTY', 'late old response cannot overwrite the new selection');
+  assert.strictEqual(bg.data.tlMarket.expiry, 'next');
+
+  const bankRequest = urls.find(url => url.searchParams.get('symbol') === 'BANKNIFTY');
+  assert.strictEqual(bankRequest.searchParams.get('resolution'), '5');
+  assert.strictEqual(bankRequest.searchParams.get('expiry'), 'next');
+});

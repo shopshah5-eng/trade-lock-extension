@@ -99,3 +99,15 @@ test('coach uses net P&L after charges for loss and revenge classification', () 
   assert.strictEqual(a.patterns.revengeTrades, 1);
   assert.ok(!a.suggestions.some(s => /math cannot work/i.test(s)));
 });
+
+test('coach treats a null netPnl like a legacy row and derives pnl minus charges', () => {
+  const rows = [
+    { at: T0, pnl: 100, charges: 150, netPnl: null, risk: 500 },
+    { at: T0 + 2 * MIN, pnl: 200, charges: 0, risk: 500 },
+  ];
+  const a = I.analyze(rows, sess({ trades: 2, consecutiveLosses: 0 }), settings);
+  assert.strictEqual(a.patterns.tradesAfterLoss, 1);
+  assert.strictEqual(a.patterns.revengeTrades, 1);
+  const ServerInsights = require('../server/lib/insights.js');
+  assert.deepStrictEqual(ServerInsights.analyze(rows, sess({ trades: 2, consecutiveLosses: 0 }), settings), a);
+});

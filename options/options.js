@@ -543,18 +543,28 @@
 
     var subManageCard = el('subManageCard');
     if (subManageCard) {
-      if (plan.pro && lic && lic.expiresAt) {
+      var recurring = Boolean(lic && lic.key && lic.billingModel === 'recurring' && lic.subscriptionId);
+      if (recurring) {
         subManageCard.style.display = 'block';
-        setText('subRenewalDate', R.istLabel(lic.expiresAt));
+        setText('subRenewalDate', lic.expiresAt ? R.istLabel(lic.expiresAt) : 'Not available');
         var cancelBtn = el('cancelSubBtn');
         if (lic.cancelAtPeriodEnd) {
-          setText('subRenewalInfo', 'Subscription renewal is cancelled. Full access remains active until: ' + R.istLabel(lic.expiresAt));
+          setText('subRenewalInfo', lic.expiresAt
+            ? 'Subscription renewal is cancelled. Full access remains active until: ' + R.istLabel(lic.expiresAt)
+            : 'Subscription renewal is cancelled. No further renewal is scheduled.');
           if (cancelBtn) cancelBtn.style.display = 'none';
+        } else if (lic.billingStatus === 'past_due') {
+          setText('subRenewalInfo', 'Renewal payment failed. Review the status above or cancel future renewal attempts.');
+          if (cancelBtn) cancelBtn.style.display = 'inline-block';
         } else {
-          setText('subRenewalInfo', 'Next billing renewal: ' + R.istLabel(lic.expiresAt));
+          setText('subRenewalInfo', lic.expiresAt
+            ? 'Next billing renewal: ' + R.istLabel(lic.expiresAt)
+            : 'Recurring renewal is active; the next provider billing date is not available.');
           if (cancelBtn) cancelBtn.style.display = 'inline-block';
         }
       } else {
+        // Expiry alone is not a subscription. Lifetime and legacy prepaid keys
+        // have no Razorpay renewal to manage or cancel.
         subManageCard.style.display = 'none';
       }
     }
@@ -566,11 +576,18 @@
     if (lic && lic.key && el('licKey')) el('licKey').value = lic.key;
 
     if (pro) {
-      var planNames = {
-        pro_monthly: 'Pro Monthly Recurring (₹199/mo)',
-        pro_yearly: 'Pro Annual Recurring (₹1,499/yr)',
-        pro_plus_ai_monthly: 'Pro+ AI Monthly Recurring (₹399/mo)',
-        pro_plus_ai_yearly: 'Pro+ AI Annual Recurring (₹3,999/yr)',
+      var isRecurringLicense = lic.billingModel === 'recurring';
+      var planNames = isRecurringLicense ? {
+        pro_monthly: 'Pro Monthly Subscription (₹199/mo)',
+        pro_yearly: 'Pro Annual Subscription (₹1,499/yr)',
+        pro_plus_ai_monthly: 'Pro+ AI Monthly Subscription (₹399/mo)',
+        pro_plus_ai_yearly: 'Pro+ AI Annual Subscription (₹3,999/yr)',
+        founder_lifetime: 'Founder Lifetime (₹2,999 one-time)'
+      } : {
+        pro_monthly: 'Pro Monthly — legacy prepaid',
+        pro_yearly: 'Pro Annual — legacy prepaid',
+        pro_plus_ai_monthly: 'Pro+ AI Monthly — legacy prepaid',
+        pro_plus_ai_yearly: 'Pro+ AI Annual — legacy prepaid',
         founder_lifetime: 'Founder Lifetime (₹2,999 one-time)'
       };
       var pName = planNames[planId] || ((lic && lic.plan) || 'Pro Active');
@@ -678,7 +695,7 @@
         btn.style.opacity = '0.65';
         return;
       }
-      if (p === planId) {
+      if (pro && p === planId) {
         btn.disabled = true;
         btn.textContent = 'Current Plan';
         btn.style.opacity = '0.65';
@@ -762,13 +779,14 @@
       chrome.storage.local.set({ tlUserEmail: email });
 
       var api = (el('licApi').value.trim() || R.DEFAULT_SETTINGS.licenseApiBase).replace(/\/+$/, '');
-      var isSub = (plan && plan.indexOf('recurring') !== -1);
+      var canonicalCheckoutPlan = R.canonicalPlanId ? R.canonicalPlanId(plan) : plan;
+      var isSub = ['pro_monthly', 'pro_yearly', 'pro_plus_ai_monthly', 'pro_plus_ai_yearly'].indexOf(canonicalCheckoutPlan) !== -1;
       if (notice) {
         notice.style.display = 'block';
         notice.style.background = 'rgba(59,130,246,0.12)';
         notice.style.border = '1px solid rgba(59,130,246,0.3)';
         notice.style.color = '#93c5fd';
-        notice.innerHTML = 'Initiating secure ' + (isSub ? 'monthly subscription' : 'order') + ' for <b>' + escapeHtml(plan) + '</b> (' + escapeHtml(email) + ')…';
+        notice.innerHTML = 'Initiating secure ' + (isSub ? 'recurring subscription' : 'one-time order') + ' for <b>' + escapeHtml(canonicalCheckoutPlan) + '</b> (' + escapeHtml(email) + ')…';
       }
 
       var endpoint = isSub ? '/api/create-subscription' : '/api/create-order';
@@ -790,9 +808,9 @@
           notice.style.background = 'rgba(16,185,129,0.12)';
           notice.style.border = '1px solid rgba(16,185,129,0.3)';
           notice.style.color = '#6ee7b7';
-          notice.innerHTML = '✓ Monthly subscription <b>' + escapeHtml(data.subscriptionId) + '</b> initialized for ' + escapeHtml(email) + '. ' +
+          notice.innerHTML = '✓ Recurring subscription <b>' + escapeHtml(data.subscriptionId) + '</b> initialized for ' + escapeHtml(email) + '. ' +
             'Opening secure Razorpay subscription checkout…';
-          var checkoutUrl = api + '/?plan=' + encodeURIComponent(plan) + '&email=' + encodeURIComponent(email) + '&subscriptionId=' + encodeURIComponent(data.subscriptionId);
+          var checkoutUrl = api + '/?plan=' + encodeURIComponent(data.plan || canonicalCheckoutPlan) + '&email=' + encodeURIComponent(email) + '&subscriptionId=' + encodeURIComponent(data.subscriptionId);
           if (chrome.tabs && chrome.tabs.create) {
             chrome.tabs.create({ url: checkoutUrl });
           } else {
@@ -804,7 +822,7 @@
           notice.style.color = '#6ee7b7';
           notice.innerHTML = '✓ Order <b>' + escapeHtml(data.orderId) + '</b> initialized for ' + escapeHtml(email) + '. ' +
             'Redirecting to payment gateway for signature authorization…';
-          var checkoutUrl = api + '/?plan=' + encodeURIComponent(plan) + '&email=' + encodeURIComponent(email) + '&orderId=' + encodeURIComponent(data.orderId);
+          var checkoutUrl = api + '/?plan=' + encodeURIComponent(data.plan || canonicalCheckoutPlan) + '&email=' + encodeURIComponent(email) + '&orderId=' + encodeURIComponent(data.orderId);
           if (chrome.tabs && chrome.tabs.create) {
             chrome.tabs.create({ url: checkoutUrl });
           } else {
@@ -972,8 +990,8 @@
 
   if (el('cancelSubBtn')) {
     el('cancelSubBtn').addEventListener('click', function () {
-      if (!currentLicense || !currentLicense.key) {
-        alert('No active subscription license found to cancel.');
+      if (!currentLicense || !currentLicense.key || currentLicense.billingModel !== 'recurring' || !currentLicense.subscriptionId) {
+        alert('A recurring subscription with a linked subscription ID was not found for this license.');
         return;
       }
       if (!confirm('Are you sure you want to cancel automatic subscription renewals?\n\nYour access will remain fully active until the end of the paid billing period, but you will not be charged again.')) {
@@ -994,7 +1012,10 @@
       .then(function (data) {
         if (data.ok) {
           currentLicense.cancelAtPeriodEnd = true;
-          currentLicense.cancelledAt = Date.now();
+          currentLicense.cancelledAt = currentLicense.cancelledAt || Date.now();
+          currentLicense.billingStatus = 'cancelled';
+          currentLicense.expiresAt = data.accessUntil || data.expiresAt || currentLicense.expiresAt;
+          currentLicense.currentPeriodEnd = currentLicense.expiresAt;
           chrome.storage.local.set({ tlLicense: currentLicense }, function () {
             if (statusBox) {
               statusBox.style.display = 'block';
@@ -1008,7 +1029,7 @@
         } else {
           if (statusBox) {
             statusBox.style.display = 'block';
-            statusBox.textContent = 'Cancellation notice: ' + (data.error || 'Server error. Please contact support.');
+            statusBox.textContent = 'Cancellation notice: ' + (data.detail || data.error || 'Server error. Please contact support.');
           }
         }
       })
@@ -1248,7 +1269,9 @@
     var html = '<table class="limits" style="margin:0">';
     html += '<thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Qty</th><th>P&amp;L</th><th>Source</th></tr></thead><tbody>';
     recent.forEach(function (t) {
-      var pnlVal = (t.netPnl !== undefined && t.netPnl !== null) ? t.netPnl : t.pnl;
+      var pnlVal = (t.netPnl !== undefined && t.netPnl !== null)
+        ? Number(t.netPnl)
+        : (Number(t.pnl) || 0) - (Number(t.charges) || 0);
       var pnlClass = pnlVal > 0 ? 'color:#10b981;font-weight:700' : (pnlVal < 0 ? 'color:#ef4444;font-weight:700' : 'color:var(--dim)');
       var pnlSign = pnlVal > 0 ? '+' : '';
       var timeStr = t.at ? new Date(t.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—';
@@ -2255,16 +2278,28 @@
     }
   }
 
+  var marketDashboardRequestSerial = 0;
   function renderMarketAndOiDashboard() {
+    var requestSerial = ++marketDashboardRequestSerial;
     var symbol = el('marketSymbol') ? el('marketSymbol').value : 'NIFTY';
     var tf = el('marketTimeframe') ? el('marketTimeframe').value : '15m';
+    var resolution = normalizeResolution(tf);
+    var expiry = (currentSettings && currentSettings.marketExpiry) || 'current';
+    var isCurrentRequest = function () {
+      var currentTf = el('marketTimeframe') ? el('marketTimeframe').value : '15m';
+      return requestSerial === marketDashboardRequestSerial &&
+        String(el('marketSymbol') ? el('marketSymbol').value : 'NIFTY') === String(symbol) &&
+        normalizeResolution(currentTf) === resolution &&
+        String((currentSettings && currentSettings.marketExpiry) || 'current') === String(expiry);
+    };
     var setupCard = el('liveMarketSetupCard');
     var badgeEl = el('marketTimestampBadge');
     var timeEl = el('marketUpdatedTimestamp');
     var noteEl = el('marketNote');
 
     if (noteEl) noteEl.textContent = 'Probing live exchange connection...';
-    chrome.runtime.sendMessage({ type: 'TL_CHECK_MARKET_FEED', symbol: symbol, resolution: normalizeResolution(tf) }, function (resp) {
+    chrome.runtime.sendMessage({ type: 'TL_CHECK_MARKET_FEED', symbol: symbol, resolution: resolution, expiry: expiry }, function (resp) {
+      if (!isCurrentRequest()) return;
       if (chrome.runtime.lastError || !resp || !resp.connected) {
         var err = (resp && resp.error) || 'offline';
         var hint = (resp && resp.hint) || 'Backend broker credentials (FYERS_APP_ID, FYERS_ACCESS_TOKEN) or Pro+ subscription required.';
@@ -2335,23 +2370,37 @@
       // Live feed connected!
       if (setupCard) setupCard.style.display = 'none';
       var snap = resp.data;
-      var isStale = (Date.now() - snap.fetchedAt) > 60000;
+      if (!snap || String(snap.symbol || '').toUpperCase() !== String(symbol).toUpperCase()) {
+        renderDisconnectedMarketState(symbol, 'symbol_mismatch', 'The feed returned a different instrument than requested.');
+        return;
+      }
+      var chainStatus = snap.optionChainStatus ||
+        (Array.isArray(snap.optionChain) && snap.optionChain.length ? 'live' : 'unavailable');
+      var isStale = Boolean(snap.stale) || (Date.now() - Number(snap.fetchedAt || 0)) > 60000;
+      var partial = Boolean(snap.degraded) || chainStatus !== 'live' || snap.vixStatus === 'unavailable';
       if (badgeEl) {
-        badgeEl.className = isStale ? 'badge warn' : 'badge pro';
-        badgeEl.style.cssText = isStale
+        badgeEl.className = (isStale || partial) ? 'badge warn' : 'badge pro';
+        badgeEl.style.cssText = (isStale || partial)
           ? 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-size:11px'
           : 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399;font-size:11px';
-        badgeEl.innerHTML = isStale
-          ? '⚠️ STALE FEED (>60s)'
-          : '🟢 LIVE FEED CONNECTED';
+        badgeEl.textContent = isStale
+          ? '⚠️ STALE FEED · ' + (snap.provider || 'market feed')
+          : (partial ? '⚠️ LIVE FEED DEGRADED' : '🟢 LIVE FEED CONNECTED · ' + (snap.provider || 'market feed'));
       }
-      if (timeEl) timeEl.textContent = 'Tick Time: ' + new Date(snap.fetchedAt).toLocaleTimeString('en-IN') + ' IST';
-      if (noteEl) noteEl.textContent = 'Live feed active';
-      // The title badge is the at-a-glance state of the card; it said "No Feed"
-      // above a fully populated screen until this line existed.
+      if (timeEl) timeEl.textContent = 'Feed Time: ' + new Date(Number(snap.fetchedAt) || Date.now()).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
+      if (noteEl) {
+        noteEl.textContent = chainStatus === 'unavailable'
+          ? 'Candles are available; option-chain OI is unavailable and will retry on the next refresh.'
+          : (chainStatus === 'stale'
+            ? 'Candles refreshed; showing the last known-good OI chain (stale).'
+            : (isStale
+              ? 'Showing the last known-good feed while the provider recovers.'
+              : (snap.vixStatus === 'unavailable' ? 'Candles and OI are available; India VIX is unavailable.' : 'Live feed active')));
+      }
+      // The title badge must not claim an unqualified live state for partial data.
       if (el('marketModelBadge')) {
-        el('marketModelBadge').textContent = 'Live';
-        el('marketModelBadge').className = 'badge pro';
+        el('marketModelBadge').textContent = isStale ? 'Stale' : (partial ? 'Partial' : 'Live');
+        el('marketModelBadge').className = (isStale || partial) ? 'badge warn' : 'badge pro';
         el('marketModelBadge').style.cssText = '';
       }
 
@@ -2359,6 +2408,9 @@
       // had no source and always rendered as "disconnected".
       // The chart renders from chartState.candles; nothing ever wrote it, so
       // the Pro+ canvas always fell back to "no market candle data".
+      chartState.symbol = symbol;
+      chartState.timeframe = tf;
+      chartState.expiry = snap.expiry || expiry;
       chartState.candles = Array.isArray(snap.candles) ? snap.candles : [];
       chartState.panOffset = 0;
       chartState.chainSpot = (typeof snap.spot === 'number' && snap.spot > 0) ? snap.spot : null;
@@ -2485,8 +2537,17 @@
       '<td class="' + putCls + '">' + intCell(r.putOi) + '</td>';
   }
 
+  var optionsChainRequestSerial = 0;
   function renderOptionsChainView(forceProbe) {
+    var requestSerial = ++optionsChainRequestSerial;
     var symbol = el('optionsSymbol') ? el('optionsSymbol').value : 'NIFTY';
+    var expiry = (currentSettings && currentSettings.marketExpiry) || 'current';
+    var resolution = normalizeResolution(el('marketTimeframe') ? el('marketTimeframe').value : '15m');
+    var isCurrentView = function () {
+      return requestSerial === optionsChainRequestSerial &&
+        String(el('optionsSymbol') ? el('optionsSymbol').value : 'NIFTY') === String(symbol) &&
+        String((currentSettings && currentSettings.marketExpiry) || 'current') === String(expiry);
+    };
     var filter = el('optMoneynessFilter') ? el('optMoneynessFilter').value : 'near';
     var setupCard = el('liveOptionsSetupCard');
     var simCallout = el('optionsSimulatedCallout');
@@ -2505,16 +2566,20 @@
       // stored snapshot is not necessarily the one this tab is showing.
       var sameSymbol = Boolean(snap) &&
         String(snap.symbol || '').toUpperCase() === String(symbol).toUpperCase();
-      var hasLiveChain = Boolean(snap && snap.source === 'live' && sameSymbol &&
-        (chainRows.length || (snap.analysis && snap.analysis.oi)));
-      if (!hasLiveChain) {
+      var sameExpiry = Boolean(snap) && String(snap.expiry || 'current') === String(expiry || 'current');
+      var chainStatus = snap && snap.optionChainStatus
+        ? snap.optionChainStatus
+        : (chainRows.length ? 'live' : 'unavailable');
+      var hasDisplayableChain = Boolean(snap && snap.source === 'live' && sameSymbol && sameExpiry &&
+        chainRows.length > 0 && chainStatus !== 'unavailable');
+      if (!hasDisplayableChain) {
         if (setupCard) {
           setupCard.style.display = 'block';
           setupCard.className = 'live-setup-card warn';
           setupCard.innerHTML =
             '<div class="live-setup-head">' +
               '<span class="live-setup-title">⚠️ Live Options Chain Unavailable</span>' +
-              '<span class="badge danger" style="font-size:10px">Exchange Feed Offline</span>' +
+              '<span class="badge danger" style="font-size:10px">OI Chain Unavailable</span>' +
             '</div>' +
             '<div class="live-setup-body">' +
               'A live index quote alone does not supply a complete live options chain with individual strikes, IV, and Greeks. ' +
@@ -2525,7 +2590,7 @@
         }
         if (simCallout) simCallout.style.display = 'none';
         if (modeBadge) {
-          modeBadge.textContent = 'Live Feed Offline';
+          modeBadge.textContent = 'OI Chain Unavailable';
           modeBadge.style.cssText = 'background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5';
         }
         if (emptyNotice) {
@@ -2533,7 +2598,10 @@
           var chainWhy = (snap && snap.source === 'live' && !sameSymbol)
             ? 'The stored chain is for ' + escapeHtml(String(snap.symbol || 'a different index')) +
               ', so it is not shown against ' + escapeHtml(symbol) + '.'
-            : 'No live strike-by-strike options feed received.';
+            : (snap && snap.source === 'live' && !sameExpiry)
+              ? 'The stored chain is for expiry ' + escapeHtml(String(snap.expiry || 'current')) +
+                ', not ' + escapeHtml(String(expiry || 'current')) + '. Refresh to request the selected expiry.'
+              : 'No live strike-by-strike options feed received. Candles may still be available; OI will retry on refresh.';
           emptyNotice.innerHTML =
             '<div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#fca5a5">Live Options Feed Unavailable</div>' +
             '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">' + chainWhy +
@@ -2557,8 +2625,11 @@
       if (emptyNotice) emptyNotice.style.display = 'none';
       if (tableWrap) tableWrap.style.display = 'block';
       if (modeBadge) {
-        modeBadge.textContent = 'Live Exchange Chain';
-        modeBadge.style.cssText = 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399';
+        var staleChain = chainStatus === 'stale' || Boolean(snap.stale);
+        modeBadge.textContent = staleChain ? '⚠️ Stale OI Chain' : 'Live Exchange Chain';
+        modeBadge.style.cssText = staleChain
+          ? 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);color:#fbbf24'
+          : 'background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#34d399';
       }
 
       // Hand the feed's chain to the table, then paint it.
@@ -2572,6 +2643,7 @@
     };
 
     chrome.storage.local.get('tlMarket', function (res) {
+      if (!isCurrentView()) return;
       var snap = res && res.tlMarket;
       var hasChain = paintFromSnapshot(snap);
       if (!hasChain || forceProbe === true) {
@@ -2582,11 +2654,27 @@
         chrome.runtime.sendMessage({
           type: 'TL_CHECK_MARKET_FEED',
           symbol: symbol,
-          resolution: '15'
+          resolution: resolution,
+          expiry: expiry
         }, function (resp) {
+          void chrome.runtime.lastError;
+          if (!isCurrentView()) return;
           if (resp && resp.ok && resp.data) {
             paintFromSnapshot(resp.data);
+            return;
           }
+          // Do not leave the badge on "Probing" forever. Retain a previous
+          // chain only as explicitly stale; otherwise render the honest empty state.
+          var fallback = snap ? Object.assign({}, snap) : null;
+          if (fallback && Array.isArray(fallback.optionChain) && fallback.optionChain.length) {
+            fallback.optionChainStatus = 'stale';
+            fallback.stale = true;
+            fallback.degraded = true;
+          } else if (fallback) {
+            fallback.optionChain = null;
+            fallback.optionChainStatus = 'unavailable';
+          }
+          paintFromSnapshot(fallback);
         });
       }
     });
@@ -2940,7 +3028,7 @@
     }
     if (el('jBestDay')) {
       el('jBestDay').textContent = mSummary.bestDay
-        ? mSummary.bestDay.date + ' (+' + R.inr(mSummary.bestDay.netPnl) + ')'
+        ? mSummary.bestDay.date + ' (' + (mSummary.bestDay.netPnl > 0 ? '+' : '') + R.inr(mSummary.bestDay.netPnl) + ')'
         : '—';
     }
     if (el('jWorstDay')) {
@@ -2969,7 +3057,9 @@
 
       // Filter trades
       var filteredTrades = rawTrades.filter(function (t) {
-        var net = (t.netPnl !== undefined && t.netPnl !== null) ? t.netPnl : t.pnl;
+        var net = (t.netPnl !== undefined && t.netPnl !== null)
+          ? Number(t.netPnl)
+          : (Number(t.pnl) || 0) - (Number(t.charges) || 0);
         if (outcomeFilter === 'WIN' && net <= 0) return false;
         if (outcomeFilter === 'LOSS' && net >= 0) return false;
         if (outcomeFilter === 'BE' && net !== 0) return false;
@@ -3033,7 +3123,9 @@
 
         filteredTrades.forEach(function (t) {
           var tTime = t.at ? new Date(t.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '—';
-          var net = (t.netPnl !== undefined && t.netPnl !== null) ? t.netPnl : t.pnl;
+          var net = (t.netPnl !== undefined && t.netPnl !== null)
+            ? Number(t.netPnl)
+            : (Number(t.pnl) || 0) - (Number(t.charges) || 0);
           var tPnlCls = net > 0 ? 'pos' : (net < 0 ? 'neg' : '');
           var isBroker = (t.provenance || '').indexOf('broker') !== -1;
           var provBadge = isBroker

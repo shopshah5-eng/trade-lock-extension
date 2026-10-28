@@ -16,7 +16,7 @@ function getFilePath() {
   return path.join(__dirname, 'data.json');
 }
 
-function emptyStore() { return { licenses: {}, orders: {}, processedWebhooks: {} }; }
+function emptyStore() { return { licenses: {}, orders: {}, processedWebhooks: {}, paymentHistory: {} }; }
 
 function load() {
   const file = getFilePath();
@@ -27,6 +27,7 @@ function load() {
     const d = JSON.parse(raw);
     if (!d.licenses || !d.orders) throw new Error('bad shape');
     if (!d.processedWebhooks) d.processedWebhooks = {};
+    if (!d.paymentHistory) d.paymentHistory = {};
     return d;
   } catch (e) {
     if (process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY || process.env.VERCEL) {
@@ -63,6 +64,10 @@ module.exports = {
   get processedWebhooks() {
     if (!data.processedWebhooks) data.processedWebhooks = {};
     return data.processedWebhooks;
+  },
+  get paymentHistory() {
+    if (!data.paymentHistory) data.paymentHistory = {};
+    return data.paymentHistory;
   },
   save,
   saveSync,

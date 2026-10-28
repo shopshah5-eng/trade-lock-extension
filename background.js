@@ -193,10 +193,12 @@ function syncBlockRules(state, settings) {
 function marketUrl(settings) {
   var base = String(settings.licenseApiBase || 'https://trade-lock-app.netlify.app').replace(/\/+$/, '');
   var symbol = settings.marketSymbol || 'NIFTY';
-  // One feed: the licence server's /api/market/live. Send the app's own symbol
-  // name - converting to a provider dialect here was what let
-  // 'NSE:BANKNIFTY-INDEX' fall through to Nifty 50 server-side.
-  return base + '/api/market/live?symbol=' + encodeURIComponent(symbol);
+  // Keep symbol, timeframe and expiry in the request identity. The server cache
+  // uses the same tuple, so one index/expiry cannot be reused for another.
+  var resolution = String(settings.marketTimeframe || '15');
+  var expiry = String(settings.marketExpiry || 'current');
+  return base + '/api/market/live?symbol=' + encodeURIComponent(symbol) +
+    '&resolution=' + encodeURIComponent(resolution) + '&expiry=' + encodeURIComponent(expiry);
 }
 
 /**
@@ -205,7 +207,8 @@ function marketUrl(settings) {
  */
 function buildLiveSnapshot(body, fallbackSymbol) {
   return {
-    fetchedAt: Date.now(),
+    fetchedAt: Number(body.fetchedAt) || Date.now(),
+    receivedAt: Date.now(),
     source: 'live',
     symbol: body.symbol || fallbackSymbol || 'NIFTY',
     provider: body.provider || 'market feed',
@@ -215,14 +218,33 @@ function buildLiveSnapshot(body, fallbackSymbol) {
     candleCount: Number(body.candleCount) || (Array.isArray(body.candles) ? body.candles.length : 0),
     spot: typeof body.spot === 'number' ? body.spot : null,
     vix: body.vix || null,
-    optionChain: Array.isArray(body.optionChain) ? body.optionChain : null
+    optionChain: Array.isArray(body.optionChain) ? body.optionChain : null,
+    expiry: body.expiry || 'current',
+    optionChainStatus: body.optionChainStatus || (Array.isArray(body.optionChain) && body.optionChain.length ? 'live' : 'unavailable'),
+    vixStatus: body.vixStatus || (body.vix ? 'live' : 'unavailable'),
+    degraded: Boolean(body.degraded || body.stale),
+    stale: Boolean(body.stale),
+    warnings: Array.isArray(body.warnings) ? body.warnings : [],
+    serverFetchedAt: Number(body.fetchedAt) || null
   };
+}
+
+// All consumers share tlMarket. Only the newest initiated request may write it;
+// an older response still resolves its own caller but cannot overwrite a newer
+// symbol/timeframe/expiry selection.
+var marketRequestSerial = 0;
+var latestMarketWriteSerial = 0;
+function saveMarketSnapshot(snap, serial) {
+  if (serial !== latestMarketWriteSerial) return Promise.resolve(snap);
+  return chrome.storage.local.set({ tlMarket: snap }).then(function () { return snap; });
 }
 
 /** Fetch a market snapshot and cache it for the HUD/popup (tlMarket). */
 function fetchMarket() {
+  var requestSerial = ++marketRequestSerial;
   return getSettings().then(function (settings) {
     if (settings.marketEnabled === false) return null;
+    latestMarketWriteSerial = Math.max(latestMarketWriteSerial, requestSerial);
 
     // Live market data via the licence server (Pro+ only).
     return chrome.storage.local.get('tlLicense').then(function (licRes) {
@@ -233,17 +255,19 @@ function fetchMarket() {
       }
       var url = marketUrl(settings);
       if (!url) return null;
-      return fetch(url, { headers: headers })
-        .then(function (r) { return r.json(); })
+      var controller = new AbortController();
+      var timer = setTimeout(function () { controller.abort(); }, 20000);
+      return fetch(url, { headers: headers, signal: controller.signal })
+        .then(function (r) { clearTimeout(timer); return r.json(); })
         .then(function (data) {
-          if (!data || !data.analysis) return null;
+          if (!data || !data.ok || !data.analysis) return null;
           // Same shape as the on-demand path below. These two used to differ,
           // so the ticker, VIX panel and option chain appeared or vanished
           // depending on which code path happened to refresh last.
           var snap = buildLiveSnapshot(data, settings.marketSymbol || 'NIFTY');
-          return chrome.storage.local.set({ tlMarket: snap }).then(function () { return snap; });
+          return saveMarketSnapshot(snap, requestSerial);
         })
-        .catch(function () { return null; }); // server offline: HUD just shows no market line
+        .catch(function () { clearTimeout(timer); return null; }); // server offline: HUD just shows no market line
     });
   });
 }
@@ -285,6 +309,7 @@ function enforceLockOnBrokerTabs() {
 }
 
 function refresh() {
+  var marketSerialAtStart = marketRequestSerial;
   return Promise.all([getState(), getSettings()]).then(function (r) {
     var state = r[0], settings = r[1];
     if (settings && settings.blockedHosts && settings.blockedHosts.length) {
@@ -292,7 +317,9 @@ function refresh() {
     }
     var active = !!(state && state.lock && state.lock.active && state.lock.until > Date.now());
     setBadge(active);
-    fetchMarket();
+    // A user probe that arrived while refresh was reading storage is newer
+    // than this scheduled task; do not let startup work supersede it.
+    if (marketRequestSerial === marketSerialAtStart) fetchMarket();
     if (active) enforceLockOnBrokerTabs();
     return Promise.all([armAlarms(state), syncBlockRules(state, settings)]).then(function () {
       return { active: active, state: state, settings: settings };
@@ -729,6 +756,8 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     return true;
   }
   if (msg.type === 'TL_CHECK_MARKET_FEED') {
+    var requestSerial = ++marketRequestSerial;
+    latestMarketWriteSerial = Math.max(latestMarketWriteSerial, requestSerial);
     getSettings().then(function (settings) {
       var symbol = msg.symbol || settings.marketSymbol || 'NIFTY';
 
@@ -737,8 +766,10 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       // dialect ('NSE:BANKNIFTY-INDEX'), which the server mapped back to Nifty -
       // so the on-demand path could quietly serve the wrong index even after the
       // scheduled path was fixed.
-      var resolution = msg.resolution || '15';
-      var targetUrl = base + '/api/market/live?symbol=' + encodeURIComponent(symbol) + '&resolution=' + encodeURIComponent(resolution);
+      var resolution = msg.resolution || settings.marketTimeframe || '15';
+      var expiry = msg.expiry || settings.marketExpiry || 'current';
+      var targetUrl = base + '/api/market/live?symbol=' + encodeURIComponent(symbol) +
+        '&resolution=' + encodeURIComponent(resolution) + '&expiry=' + encodeURIComponent(expiry);
 
       return chrome.storage.local.get('tlLicense').then(function (licRes) {
         var lic = licRes.tlLicense;
@@ -748,7 +779,8 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         }
 
         var probeEndpoint = function (endpointBase) {
-          var targetUrl = endpointBase + '/api/market/live?symbol=' + encodeURIComponent(symbol) + '&resolution=' + encodeURIComponent(resolution);
+          var targetUrl = endpointBase + '/api/market/live?symbol=' + encodeURIComponent(symbol) +
+            '&resolution=' + encodeURIComponent(resolution) + '&expiry=' + encodeURIComponent(expiry);
           var probeHeaders = Object.assign({}, headers);
           var controller = new AbortController();
           var timer = setTimeout(function () { controller.abort(); }, 20000);
@@ -776,9 +808,9 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
           return primaryRes;
         });
       }).then(function (result) {
-        if (result.ok && result.body && result.body.analysis) {
+        if (result.ok && result.body && result.body.ok && result.body.analysis) {
           var snap = buildLiveSnapshot(result.body, symbol);
-          return chrome.storage.local.set({ tlMarket: snap }).then(function () {
+          return saveMarketSnapshot(snap, requestSerial).then(function () {
             sendResponse({
               ok: true,
               connected: true,

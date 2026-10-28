@@ -22,8 +22,10 @@
   function round1(n) { return Math.round(n * 10) / 10; }
   function netPnl(row) {
     if (!row) return 0;
-    var value = row.netPnl !== undefined ? row.netPnl : Number(row.pnl || 0) - Number(row.charges || 0);
-    return Number(value) || 0;
+    var value = row.netPnl !== undefined && row.netPnl !== null
+      ? Number(row.netPnl)
+      : Number(row.pnl || 0) - Number(row.charges || 0);
+    return Number.isFinite(value) ? value : 0;
   }
 
   /**

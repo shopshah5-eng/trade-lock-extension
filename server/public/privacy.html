@@ -49,26 +49,27 @@
 </head>
 <body>
   <div class="container">
-    <div class="badge">Privacy First & Local Storage Only</div>
+    <div class="badge">Local Trading Data · Transparent Billing Data</div>
     <h1>Privacy Policy for Trade Lock</h1>
-    <p>Last updated: October 25, 2026</p>
+    <p>Last updated: October 28, 2026</p>
 
     <h2>1. Overview</h2>
-    <p>Trade Lock is a browser extension and discipline utility designed to prevent overtrading by enforcing trading rules, profit/loss targets, and lockout schedules. We prioritize user privacy and follow a strict zero-data-collection philosophy.</p>
+    <p>Trade Lock is a browser extension and discipline utility designed to prevent overtrading by enforcing trading rules, profit/loss targets, and lockout schedules. Trading history and rule configuration remain on your device. Optional purchases, license validation, live market data, and support use limited server-side processing described below.</p>
 
     <h2>2. Data Collection & Storage</h2>
-    <p><strong>Trade Lock does not collect, transmit, sell, or monitor personal user data.</strong></p>
+    <p><strong>We do not sell personal data or upload your trading journal, positions, orders, or browsing history to the license server.</strong></p>
     <ul>
-      <li><strong>Local Storage:</strong> All user preferences, trading rules, discipline triggers, and daily trade journal logs are stored exclusively on your device using <code>chrome.storage.local</code>.</li>
-      <li><strong>No Personal Identification:</strong> We do not collect your name, email address, IP address, or browsing history.</li>
-      <li><strong>No Financial / Broker Credentials:</strong> Trade Lock does not have access to or store your broker passwords, PINs, bank accounts, or financial credentials.</li>
+      <li><strong>Local Trading Data:</strong> Preferences, trading rules, discipline triggers, and trade journal logs are stored on your device using <code>chrome.storage.local</code>.</li>
+      <li><strong>Billing &amp; License Data:</strong> A purchase requires your email address. The licensing service stores a cryptographic license-key hash (not the plaintext key), plan, expiry/billing status, payment/order/subscription IDs, registered device IDs, and support reissue/refund lineage.</li>
+      <li><strong>Payment &amp; Technical Processing:</strong> Razorpay collects and processes payment details directly; Trade Lock does not receive your card number or PIN. Hosting, database, email, and market-data providers may process the request metadata and IP information needed to provide their services under their own policies.</li>
+      <li><strong>No Broker Passwords:</strong> Trade Lock does not ask for or store your broker password, PIN, bank password, or card credentials.</li>
     </ul>
 
     <h2>3. Remote Code & Scripts</h2>
     <p>Trade Lock complies strictly with Google Chrome Web Store Manifest V3 policies. The extension does not load, execute, or evaluate external remote code, eval statements, or third-party tracking scripts.</p>
 
     <h2>4. Third-Party Services</h2>
-    <p>The optional cloud licensing feature validates active subscription licenses via secure HTTPS requests without transmitting your trading history, browser activity, or personal documents.</p>
+    <p>Razorpay processes checkout and recurring billing; Supabase or the configured license store persists billing/license records; Resend delivers license email when configured; and the selected market-data provider serves Pro+ market requests. These integrations receive only the data needed for their function. They do not receive your local trading journal or browser history from Trade Lock.</p>
 
     <h2>5. Contact Us</h2>
     <p>If you have any questions about this Privacy Policy or your data, please contact the developer via the official Chrome Web Store item listing support page.</p>

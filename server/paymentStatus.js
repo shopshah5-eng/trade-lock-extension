@@ -11,6 +11,7 @@
 
 const supabase = require('./supabase');
 const marketFeed = require('./marketFeed');
+const { subscriptionPlans } = require('./plans');
 
 const PROVIDER_TIMEOUT_MS = Number(process.env.PROVIDER_TIMEOUT_MS) || 8000;
 
@@ -49,51 +50,84 @@ async function probe(url, key, pathname, options) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
   try {
-    return await fetch(url + pathname, Object.assign({
+    const opts = Object.assign({}, options || {}, {
       headers: Object.assign({ apikey: key, Authorization: 'Bearer ' + key }, (options && options.headers) || {}),
       signal: controller.signal,
-    }, options || {}));
+    });
+    return await fetch(url + pathname, opts);
   } finally {
     clearTimeout(timer);
   }
 }
 
+const RPC_PROBES = {
+  // Include every argument, including the newer subscription fields. PostgREST
+  // resolves RPCs by signature: calling with {} can report even a correct
+  // function as missing, while an old eight-argument overload must not pass.
+  fulfill_order: {
+    p_order_id: null, p_payment_id: null, p_email: null, p_plan: null,
+    p_hash: null, p_hint: null, p_created_at: null, p_expires_at: null,
+    p_subscription_id: null, p_provider_plan_id: null, p_billing_model: null,
+    p_billing_status: 'active', p_current_period_start: null,
+    p_current_period_end: null, p_cancel_at_period_end: false,
+  },
+  record_payment: {
+    p_payment_id: null, p_license_hash: null, p_subscription_id: null,
+    p_order_id: null, p_email: null, p_plan: null, p_amount: null, p_currency: 'INR',
+  },
+  mark_payment_refunded: { p_payment_id: null },
+  reissue_license: { p_old_hash: null, p_new_hash: null, p_new_hint: null },
+};
+
 /**
- * Probe the Supabase schema: the three tables plus the fulfill_order RPC.
- * Safe to call for real users — fulfill_order raises on null arguments, so an
- * empty body never mutates anything.
+ * Probe every table/column and RPC signature used by checkout and webhooks.
+ * All RPC payloads fail validation before mutating data. A validation response
+ * proves reachability; a PostgREST function-resolution error does not.
  */
 async function checkSchema(url, key) {
   if (!url || !key) return { ok: false, detail: 'Skipped: Supabase not configured' };
 
   try {
+    const tables = {
+      licenses: 'hash,subscription_id,billing_model,billing_status,billing_event_at',
+      orders: 'order_id,subscription_id,billing_model,fulfillment_status',
+      processed_webhooks: 'event_id',
+      payment_history: 'payment_id,license_hash,refunded,refunded_at',
+    };
     const missing = [];
-    for (const table of ['licenses', 'orders', 'processed_webhooks']) {
-      const r = await probe(url, key, '/rest/v1/' + table + '?select=*&limit=1');
+    for (const [table, columns] of Object.entries(tables)) {
+      const r = await probe(url, key, '/rest/v1/' + table + '?select=' + columns + '&limit=1');
       if (r.status === 404) {
         missing.push(table);
       } else if (r.status === 401 || r.status === 403) {
         return { ok: false, detail: 'Key rejected (HTTP ' + r.status + '). Use the service_role key, not the anon key.' };
       } else if (!r.ok) {
-        return { ok: false, detail: 'Querying ' + table + ' failed: HTTP ' + r.status };
+        const body = await r.text().catch(() => '');
+        return { ok: false, detail: 'Querying ' + table + ' failed: HTTP ' + r.status +
+          (/column|PGRST/i.test(body) ? ' (a required column is missing)' : '') + '. Re-run server/schema.sql.' };
       }
     }
     if (missing.length) {
       return { ok: false, detail: 'Missing tables: ' + missing.join(', ') + '. Run server/schema.sql in the SQL editor.' };
     }
 
-    const rpc = await probe(url, key, '/rest/v1/rpc/fulfill_order', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    if (rpc.status === 404) {
-      return { ok: false, detail: 'Tables exist but the fulfill_order() function is missing. Re-run server/schema.sql.' };
+    for (const [name, payload] of Object.entries(RPC_PROBES)) {
+      const rpc = await probe(url, key, '/rest/v1/rpc/' + name, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      const body = await rpc.text().catch(() => '');
+      const unresolved = rpc.status === 404 || /PGRST202|Could not find the function/i.test(body);
+      if (unresolved) {
+        return { ok: false, detail: 'The required ' + name + '() function/signature is missing. Re-run server/schema.sql.' };
+      }
+      if (rpc.status === 401 || rpc.status === 403) {
+        return { ok: false, detail: name + '() rejected the key. Check the service_role key, function grants and RLS policies.' };
+      }
+      if (!rpc.ok && rpc.status >= 500) {
+        return { ok: false, detail: name + '() probe failed: HTTP ' + rpc.status + '. Check the function and database logs.' };
+      }
     }
-    if (rpc.status === 401 || rpc.status === 403) {
-      return { ok: false, detail: 'fulfill_order() rejected the key. Check the service_role key and the RLS policies.' };
-    }
-    return { ok: true, detail: 'Tables and fulfill_order() reachable' };
+    return { ok: true, detail: 'Required tables, billing columns and payment RPC signatures are reachable' };
   } catch (error) {
     return { ok: false, detail: 'Supabase unreachable: ' + (error.message || 'network error') };
   }
@@ -113,6 +147,17 @@ async function collect() {
         ? 'RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET present'
         : 'Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET (Razorpay -> Account & Settings -> API Keys)',
     },
+    razorpayPlans: (() => {
+      const missing = subscriptionPlans()
+        .map((plan) => 'RAZORPAY_PLAN_' + plan.id.toUpperCase())
+        .filter((name) => !process.env[name]);
+      return {
+        ok: missing.length === 0,
+        detail: missing.length
+          ? 'Set pre-created recurring plan IDs: ' + missing.join(', ')
+          : 'All recurring checkout plans have pre-created Razorpay plan IDs',
+      };
+    })(),
     webhookSecret: {
       ok: Boolean(process.env.RAZORPAY_WEBHOOK_SECRET),
       detail: process.env.RAZORPAY_WEBHOOK_SECRET
@@ -180,7 +225,7 @@ async function collect() {
 
   // Mirrors server/index.js: on a long-lived host the JSON store satisfies
   // payment persistence, so the Supabase pair must not block checkout there.
-  const blocking = ['razorpay', 'webhookSecret', 'adminToken']
+  const blocking = ['razorpay', 'razorpayPlans', 'webhookSecret', 'adminToken']
     .concat(serverless ? ['supabase', 'schema'] : []);
   const ready = blocking.every((k) => checks[k].ok);
 
@@ -191,7 +236,7 @@ async function collect() {
     checks,
     blocking,
     next: ready
-      ? 'Checkout is live. Do a ₹1 test purchase, then refund it in the Razorpay dashboard.'
+      ? 'Checkout is configured. Make an authorized test purchase at the listed price, verify renewal/recovery, then refund it in Razorpay.'
       : 'Fix the failing checks above, redeploy, then re-run this.',
   };
 }

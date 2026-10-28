@@ -1,6 +1,6 @@
 # Trade Lock — daily trading discipline for Chrome
 
-Trade Lock is a Manifest V3 browser extension that records a trading session and locks supported web terminals when a configured discipline limit is reached. It includes manual journaling, generic order-table detection, session rollover, prepaid license validation, and optional market analytics.
+Trade Lock is a Manifest V3 browser extension that records a trading session and locks supported web terminals when a configured discipline limit is reached. It includes manual journaling, generic order-table detection, session rollover, recurring/lifetime license validation with legacy prepaid compatibility, and optional market analytics.
 
 **Safety boundary:** Trade Lock is a browser discipline aid, not a broker-side risk control or a guarantee that an order cannot be placed. It cannot stop orders from another browser, device, API, or mobile app. DOM detection and order-button interception depend on each broker's current UI. Always keep an independent way to manage or exit open positions.
 
@@ -58,16 +58,16 @@ Automatic imports are labelled **Broker table**, not “broker-verified.” Manu
 
 ## Plans and entitlements
 
-All paid durations are **prepaid access periods**, not auto-renewing subscriptions. Legacy plan IDs containing `monthly` mean 30 days; `yearly` means 365 days.
+Current Pro and Pro+ monthly/yearly plans are **auto-renewing Razorpay subscriptions**. Cancellation stops future renewals at the provider cycle end and preserves access through the paid period. Founder Lifetime is a one-time purchase. Already-issued legacy prepaid licenses remain honored for their original 30/365-day periods and are not reclassified as recurring.
 
 | Plan | Price | Devices | Entitlements |
 |---|---:|---:|---|
 | Free | ₹0 | No server key required | Manual journal, trade-count rule, Mode A lock, journal/CSV export |
-| Pro 30-day | ₹199 | 3 | Free + automatic table detection, loss/profit/streak/risk rules, journal analytics, paid enforcement modes |
-| Pro 365-day | ₹1,499 | 3 | Same Pro entitlements for 365 days |
-| Pro+ 30-day | ₹399 | 5 | Pro + live market/options workspace, authorized live-market routes and discipline coach |
-| Pro+ 365-day | ₹3,999 | 5 | Same Pro+ entitlements for 365 days |
-| Founder Lifetime | ₹2,999 | 5 | Pro+ entitlements without a time expiry |
+| Pro Monthly Subscription | ₹199/month | 3 | Free + automatic table detection, loss/profit/streak/risk rules, journal analytics, paid enforcement modes |
+| Pro Yearly Subscription | ₹1,499/year | 3 | Same Pro entitlements with yearly renewal |
+| Pro+ Monthly Subscription | ₹399/month | 5 | Pro + live market/options workspace, authorized live-market routes and discipline coach |
+| Pro+ Yearly Subscription | ₹3,999/year | 5 | Same Pro+ entitlements with yearly renewal |
+| Founder Lifetime | ₹2,999 once | 5 | Pro+ entitlements without a time expiry |
 
 `server/plans.js` is the payment server's canonical plan catalogue. `lib/rules.js` applies extension entitlements. Pro does **not** inherit Pro+ market authorization.
 
@@ -87,7 +87,7 @@ The package builder uses an allowlist and emits only extension runtime files. Se
 
 The Node server in `server/` provides the pricing page, Razorpay order/signature verification, idempotent fulfillment, webhook recovery, Resend email handoff, hash-only server-side license storage, device registration, support reissue, and Fyers/AI market routes.
 
-- **Shortest path to real money:** run the server as one long-lived Node process with only `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET` set. Orders persist to the local JSON store; no database is required. The extension, the checkout page and `npm run doctor` all agree on this.
+- **Shortest path to real money:** run one long-lived Node process with `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, and all four `RAZORPAY_PLAN_*` IDs for the recurring catalog. Orders, licenses, payment history, and webhook receipts persist to the local JSON store; no database is required. Set `FYERS_ADMIN_TOKEN` as well for the protected diagnostics and a fully green `npm run doctor`.
 - **Serverless production payments require Supabase.** Netlify/Vercel payments fail closed if durable storage is not configured — `npm run doctor` only blocks on `supabase`/`schema` when it detects a serverless host.
 - A single-process, long-running Node deployment can use its local JSON store. Do not run multiple writers on that file; use Supabase for backups, serverless, and multiple instances.
 - Plain license keys are not stored by the server. The extension must retain the activated key locally for revalidation.

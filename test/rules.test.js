@@ -457,6 +457,54 @@ test('summarizeLog computes Pro journal analytics', () => {
   assert.deepStrictEqual(R.summarizeLog(null).trades, 0);
 });
 
+test('session, daily and monthly analytics classify and average net P&L after charges', () => {
+  const rows = [
+    { id: 'gross-win-net-loss', pnl: 10, charges: 15, netPnl: null, source: 'manual' },
+    { id: 'net-win', pnl: 100, charges: 20, netPnl: 80, source: 'auto' },
+    { id: 'net-loss', pnl: -50, charges: 5, source: 'manual' },
+    { id: 'flat', pnl: 0, charges: 0, source: 'manual' },
+  ];
+  for (const summarize of [R.summarizeLog, R.calculateDaySummary]) {
+    const summary = summarize(rows);
+    assert.strictEqual(summary.netPnl, 20);
+    assert.strictEqual(summary.charges, 40);
+    assert.strictEqual(summary.grossProfit, 110);
+    assert.strictEqual(summary.grossLoss, -50);
+    assert.strictEqual(summary.netProfit, 80);
+    assert.strictEqual(summary.netLoss, -60);
+    assert.strictEqual(summary.wins, 1, 'gross +10 with ₹15 charges is a net loss, not a win');
+    assert.strictEqual(summary.losses, 2);
+    assert.strictEqual(summary.breakeven, 1);
+    assert.strictEqual(summary.winRate, 33.3);
+    assert.strictEqual(summary.avgWin, 80);
+    assert.strictEqual(summary.avgLoss, -30);
+    assert.strictEqual(summary.largestWin, 80);
+    assert.strictEqual(summary.largestLoss, -55);
+  }
+
+  const days = {};
+  rows.forEach((row, index) => {
+    days['2026-10-0' + (index + 1)] = {
+      trades: [row],
+      // Must be ignored while authoritative trade rows are available.
+      summary: { trades: 1, wins: 99, avgWin: 99999, netProfit: 99999 },
+    };
+  });
+  const month = R.calculateMonthSummary(days);
+  assert.strictEqual(month.wins, 1);
+  assert.strictEqual(month.losses, 2);
+  assert.strictEqual(month.netPnl, 20);
+  assert.strictEqual(month.avgWin, 80);
+  assert.strictEqual(month.avgLoss, -30);
+  assert.strictEqual(month.netProfit, 80);
+  assert.strictEqual(month.netLoss, -60);
+
+  const ServerRules = require('../server/lib/rules.js');
+  assert.deepStrictEqual(ServerRules.summarizeLog(rows), R.summarizeLog(rows));
+  assert.deepStrictEqual(ServerRules.calculateDaySummary(rows), R.calculateDaySummary(rows));
+  assert.deepStrictEqual(ServerRules.calculateMonthSummary(days), month);
+});
+
 test('isPro recognises valid, expired and bogus licenses', () => {
   const now = Date.now();
   assert.strictEqual(R.isPro({ key: 'TL-X', plan: 'pro_yearly', expiresAt: now + 1000 }, now), true);
@@ -745,4 +793,30 @@ test('journal archiving preserves ID-less legacy rows and deduplicates explicit 
   const archived = journal.months['2026-10'].days['2026-10-24'].trades;
   assert.strictEqual(archived.length, 3);
   assert.deepStrictEqual(archived.map(t => t.symbol), ['LEGACY-A', 'LEGACY-B', 'EXPLICIT']);
+});
+
+test('logTrade and session rebuild derive null netPnl from gross P&L minus charges', () => {
+  const t0 = ist(2026, 10, 13, 10, 0);
+  const st = R.syncSession(R.defaultState(t0), S, t0);
+  R.logTrade(st, S, {
+    id: 'null-net-ingestion', pnl: 100, charges: 150, netPnl: null,
+    risk: 50, source: 'manual',
+  }, t0);
+  assert.strictEqual(st.log[0].netPnl, -50);
+  assert.strictEqual(st.session.pnl, -50);
+  assert.strictEqual(st.session.consecutiveLosses, 1);
+  st.session.pnl = 99999;
+  st.session.consecutiveLosses = 0;
+  R.rebuildSessionFromLog(st);
+  assert.strictEqual(st.session.pnl, -50);
+  assert.strictEqual(st.session.consecutiveLosses, 1);
+  const ServerRules = require('../server/lib/rules.js');
+  const serverState = ServerRules.syncSession(ServerRules.defaultState(t0), S, t0);
+  ServerRules.logTrade(serverState, S, {
+    id: 'null-net-ingestion', pnl: 100, charges: 150, netPnl: null,
+    risk: 50, source: 'manual',
+  }, t0);
+  ServerRules.rebuildSessionFromLog(serverState);
+  assert.deepStrictEqual(serverState.session, st.session);
+  assert.deepStrictEqual(serverState.log, st.log);
 });

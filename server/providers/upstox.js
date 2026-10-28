@@ -242,31 +242,72 @@ function createClient({ accessToken }, fetchImpl, base) {
       }
     },
 
-    /** Put/call chain for one expiry. Resolves the nearest available weekly expiry date from contracts. */
+    /**
+     * Put/call chain for one expiry. Upstox deployments differ in whether they
+     * accept convenience keywords, so a rejected keyword is retried with the
+     * actual exchange expiry from option contracts. An explicit YYYY-MM-DD is
+     * used as-is. No provider error is ever converted into another index/date.
+     */
     async optionChain({ instrumentKey, expiry }) {
       const key = requireInstrumentKey(instrumentKey);
-      let expiryDate = (typeof expiry === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(expiry)) ? expiry : null;
-      if (!expiryDate) {
-        try {
-          const contractData = await get('/v2/option/contract', { instrument_key: key });
-          const rows = (contractData && contractData.data) || [];
-          if (Array.isArray(rows) && rows.length > 0) {
-            const expiries = [...new Set(rows.map((r) => r && r.expiry).filter(Boolean))].sort();
-            const today = istDate(new Date());
-            expiryDate = expiries.find((e) => e >= today) || expiries[0] || null;
-          }
-        } catch (e) {
-          // If contract lookup is unavailable (e.g. offline test stub), proceed to fallback
+      const requested = String(expiry || 'current').trim().toLowerCase();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(requested)) {
+        return normalizeOptionChain(await get('/v2/option/chain', {
+          instrument_key: key, expiry_date: requested,
+        }));
+      }
+      const keyword = {
+        current: 'current_week', current_week: 'current_week',
+        next: 'next_week', next_week: 'next_week', monthly: 'monthly',
+      }[requested] || requested;
+      let firstError = null;
+      let keywordRows = [];
+      try {
+        keywordRows = normalizeOptionChain(await get('/v2/option/chain', {
+          instrument_key: key, expiry_date: keyword,
+        }));
+        if (keywordRows.length) return keywordRows;
+        // A 200 with no strikes can be another deployment's way of rejecting a
+        // convenience keyword. Try the real exchange expiry before giving up.
+      } catch (error) {
+        if (![400, 404, 422].includes(Number(error.status))) throw error;
+        firstError = error;
+      }
+      try {
+        const contracts = await get('/v2/option/contract', { instrument_key: key });
+        const rows = Array.isArray(contracts && contracts.data) ? contracts.data : [];
+        const dates = [...new Set(rows.map((row) => row &&
+          (row.expiry || row.expiry_date || row.expiryDate)
+        ).filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))))].sort();
+        const today = istDate(new Date());
+        const upcoming = dates.filter((date) => date >= today);
+        let selected = upcoming[0];
+        if (requested === 'next' || requested === 'next_week') selected = upcoming[1] || null;
+        if (requested === 'monthly') {
+          // Exchange calendars change; the final listed expiry in the nearest
+          // month is safer than guessing a Tuesday/Thursday weekday.
+          const nearestMonth = upcoming[0] && upcoming[0].slice(0, 7);
+          const inMonth = upcoming.filter((date) => date.slice(0, 7) === nearestMonth);
+          selected = inMonth[inMonth.length - 1] || null;
         }
+        if (!selected || selected === keyword) {
+          if (firstError) throw firstError;
+          return keywordRows;
+        }
+        return normalizeOptionChain(await get('/v2/option/chain', {
+          instrument_key: key, expiry_date: selected,
+        }));
+      } catch (fallbackError) {
+        if (!firstError && [400, 404, 422].includes(Number(fallbackError.status))) {
+          return keywordRows; // retain the honest empty result for the feed to label
+        }
+        const fallbackStatus = Number(fallbackError.status || 0);
+        if (!firstError || [401, 403, 429].includes(fallbackStatus) ||
+            fallbackStatus === 0 || fallbackStatus >= 500) {
+          throw fallbackError;
+        }
+        throw firstError;
       }
-      if (!expiryDate) {
-        expiryDate = (typeof expiry === 'string' && expiry && expiry !== 'current_week') ? expiry : istDate(new Date());
-      }
-      const data = await get('/v2/option/chain', {
-        instrument_key: key,
-        expiry_date: expiryDate,
-      });
-      return normalizeOptionChain(data);
     },
 
     /** Last price + previous close for one instrument (used for India VIX). */

@@ -28,14 +28,9 @@
         body: JSON.stringify({ key: key, deviceId: dev })
       }).then(function (r) { return r.json(); })
         .then(function (data) {
-          if (data && !data.active && data.reason === 'device_registry_unavailable') {
-            // Fallback: validate license key integrity directly
-            return fetch(base + '/api/validate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ key: key })
-            }).then(function (r2) { return r2.json(); });
-          }
+          // Device registration is part of the entitlement decision. Retrying
+          // without a device ID would bypass maxDevices whenever the registry
+          // is unavailable, so the server's fail-closed response is final.
           return data;
         })
         .catch(function () { return { active: false, reason: 'network' }; });

@@ -222,6 +222,8 @@ test('With a live feed the options page renders the chain, PCR, ticker and VIX',
   // only ever fill the one index the feed returns and printed NO FEED on the
   // other three cards.
   assert.strictEqual(page.text('marketSpotVal'), '₹24,653.00');
+  assert.strictEqual(page.text('marketModelBadge'), 'Live');
+  assert.match(page.text('marketTimestampBadge'), /LIVE FEED CONNECTED/);
   assert.strictEqual(page.text('vixVal'), '14.32');
   assert.ok(page.text('vixRegimeBadge').includes('Calm'));
 
@@ -388,4 +390,40 @@ test('A refused feed says why, and offers the local server when the default is r
   // The stored query in the card names the origin it tried.
   assert.ok(card.textContent.includes('localhost:8787') || card.textContent.includes('netlify.app'),
     'the card must show which origin it probed');
+});
+
+test('Renewal management follows recurring billing, not expiry or the current plan label', async () => {
+  const prepaidStore = baseStore(null);
+  prepaidStore.tlLicense = {
+    key: 'TL-PREPAID', plan: 'pro_monthly', expiresAt: Date.now() + 86400000,
+    active: true, billingModel: 'prepaid', subscriptionId: null,
+  };
+  const prepaid = await bootPage(prepaidStore);
+  assert.strictEqual(prepaid.document.getElementById('subManageCard').style.display, 'none');
+  assert.strictEqual(prepaid.document.getElementById('proCardBtn').disabled, true, 'active current plan stays protected');
+  assert.match(prepaid.document.getElementById('licStatus').textContent, /legacy prepaid/i);
+
+  const founderStore = baseStore(null);
+  founderStore.tlLicense = {
+    key: 'TL-FOUNDER', plan: 'founder_lifetime', expiresAt: null,
+    active: true, billingModel: 'lifetime', subscriptionId: null,
+  };
+  const founder = await bootPage(founderStore);
+  assert.strictEqual(founder.document.getElementById('subManageCard').style.display, 'none');
+  assert.ok(founder.document.querySelector('[data-plan="founder_lifetime"]'), 'Founder checkout must be available');
+
+  const recurringStore = baseStore(null);
+  recurringStore.tlLicense = {
+    key: 'TL-RECURRING', plan: 'pro_monthly', expiresAt: Date.now() - 86400000,
+    active: false, billingModel: 'recurring', billingStatus: 'past_due', subscriptionId: 'sub_ui_past_due',
+  };
+  const recurring = await bootPage(recurringStore);
+  assert.strictEqual(recurring.document.getElementById('subManageCard').style.display, 'block',
+    'expired recurring billing can still require cancellation');
+  assert.strictEqual(recurring.document.getElementById('cancelSubBtn').style.display, 'inline-block');
+  assert.match(recurring.text('subRenewalInfo'), /payment failed/i);
+  assert.strictEqual(recurring.document.getElementById('proCardBtn').disabled, false,
+    'an expired plan must be purchasable again');
+  assert.match(recurring.document.getElementById('proCardBtn').textContent, /Start Pro Monthly/);
+  assert.deepStrictEqual(recurring.errors, []);
 });

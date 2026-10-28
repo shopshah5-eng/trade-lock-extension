@@ -56,6 +56,7 @@ async function syncLicense(lic) {
         cancelled_at: lic.cancelledAt ? new Date(lic.cancelledAt).toISOString() : null,
         cancel_reason: lic.cancelReason || null,
         last_payment_at: lic.lastPaymentAt ? new Date(lic.lastPaymentAt).toISOString() : null,
+        billing_event_at: lic.billingEventAt ? new Date(lic.billingEventAt).toISOString() : null,
         failure_reason: lic.failureReason || null,
         original_payment_id: lic.originalPaymentId || null,
         original_order_id: lic.originalOrderId || null,
@@ -109,6 +110,7 @@ function normalizeLicense(r) {
     cancelledAt: r.cancelled_at ? new Date(r.cancelled_at).getTime() : null,
     cancelReason: r.cancel_reason || null,
     lastPaymentAt: r.last_payment_at ? new Date(r.last_payment_at).getTime() : null,
+    billingEventAt: r.billing_event_at ? new Date(r.billing_event_at).getTime() : null,
     failureReason: r.failure_reason || null,
     originalPaymentId: r.original_payment_id, originalOrderId: r.original_order_id,
     reissuedFrom: r.reissued_from,
@@ -135,13 +137,13 @@ async function fetchLicensesByPayment(paymentId) {
   // First query payment_history for all license hashes linked to this payment ID,
   // including historical renewals that may have been overwritten in licenses table.
   let hashes = [];
-  try {
-    const histRes = await request(`/rest/v1/payment_history?payment_id=eq.${encodeURIComponent(paymentId)}&select=license_hash&limit=100`);
-    if (histRes.ok) {
-      const rows = await histRes.json();
-      if (Array.isArray(rows)) hashes = rows.map(r => r.license_hash).filter(Boolean);
-    }
-  } catch (e) { /* fall through to legacy query */ }
+  // Payment history is part of refund correctness, not an optional optimization.
+  // If it is unavailable the webhook must retry rather than revoke an incomplete
+  // set of licenses and then acknowledge the event.
+  const histRes = await request(`/rest/v1/payment_history?payment_id=eq.${encodeURIComponent(paymentId)}&select=license_hash&limit=100`);
+  if (!histRes.ok) throw new Error(`Supabase payment-history lookup failed: ${histRes.status}`);
+  const historyRows = await histRes.json();
+  if (Array.isArray(historyRows)) hashes = historyRows.map(r => r.license_hash).filter(Boolean);
 
   // Also query the licenses table directly for backward compat.
   const value = encodeURIComponent(paymentId);

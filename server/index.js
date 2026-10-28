@@ -158,12 +158,102 @@ async function readJson(req) {
 // In-memory ONLY: paymentId -> plain key, so a retried verify in this process
 // can re-show the key. The plain key is NEVER written to disk — only its hash.
 const issuedThisProcess = new Map();
+const ISSUED_KEY_CACHE_MAX = 1000;
+
+function rememberIssuedKey(paymentId, key, lic) {
+  if (!paymentId || !key || !lic) return;
+  if (issuedThisProcess.size >= ISSUED_KEY_CACHE_MAX) {
+    const oldest = issuedThisProcess.keys().next();
+    if (!oldest.done) issuedThisProcess.delete(oldest.value);
+  }
+  issuedThisProcess.set(paymentId, { key, hash: lic.hash });
+}
+
+function cachedIssuedKey(paymentId, lic) {
+  const entry = issuedThisProcess.get(paymentId);
+  // Never pair a replacement license with the revoked key issued earlier for
+  // the same order/payment in a warm process.
+  return entry && lic && entry.hash === lic.hash ? entry.key : null;
+}
+
+function billingModelForLicense(lic) {
+  if (!lic) return null;
+  if (lic.billingModel) return lic.billingModel;
+  // Legacy keys did not store a billing model. Their current plan name is not
+  // evidence of recurring billing: old monthly/yearly keys were prepaid.
+  if (lic.subscriptionId || String(lic.orderId || '').startsWith('sub_')) return 'recurring';
+  const plan = getPlan(lic.plan);
+  return plan && plan.billingModel === 'lifetime' ? 'lifetime' : 'prepaid';
+}
+
+function subscriptionIdForLicense(lic) {
+  if (!lic || billingModelForLicense(lic) !== 'recurring') return null;
+  if (lic.subscriptionId) return lic.subscriptionId;
+  const orderId = String(lic.orderId || '');
+  return orderId.startsWith('sub_') ? orderId : null;
+}
+
+function normalizeLicenseBilling(lic) {
+  if (!lic) return null;
+  if (!lic.billingModel) lic.billingModel = billingModelForLicense(lic);
+  if (lic.billingModel === 'recurring' && !lic.subscriptionId) {
+    lic.subscriptionId = subscriptionIdForLicense(lic);
+  }
+  return lic;
+}
 
 function cacheLicense(lic) {
   if (!lic) return null;
   lic.devices = Array.isArray(lic.devices) ? lic.devices : [];
+  normalizeLicenseBilling(lic);
   store.licenses[lic.hash] = lic;
   return lic;
+}
+
+function recordLocalPayment(paymentId, lic, details) {
+  if (!paymentId || !lic) return;
+  const opts = details || {};
+  const existing = store.paymentHistory[paymentId];
+  if (existing && existing.licenseHash !== lic.hash) {
+    throw new Error('payment_history_license_mismatch');
+  }
+  store.paymentHistory[paymentId] = Object.assign({
+    capturedAt: Date.now(), currency: 'INR', refunded: false,
+  }, existing || {}, {
+    paymentId,
+    licenseHash: lic.hash,
+    subscriptionId: subscriptionIdForLicense(lic),
+    orderId: lic.orderId || null,
+    email: lic.email || null,
+    plan: lic.plan,
+    amount: opts.amount != null ? Number(opts.amount) : (existing && existing.amount != null ? existing.amount : null),
+    currency: opts.currency || (existing && existing.currency) || 'INR',
+  });
+}
+
+async function recordDurablePayment(paymentId, lic, details) {
+  if (!paymentId || !lic) return;
+  if (!supabase.isConfigured()) return recordLocalPayment(paymentId, lic, details);
+  const opts = details || {};
+  const result = await supabase.recordPayment(paymentId, lic.hash, {
+    subscriptionId: subscriptionIdForLicense(lic), orderId: lic.orderId,
+    email: lic.email, plan: lic.plan, amount: opts.amount, currency: opts.currency,
+  });
+  if (!result.ok) throw new Error('durable_payment_history_failed: ' + (result.error || 'unknown error'));
+}
+
+async function persistLifecycleLicense(lic, payment) {
+  normalizeLicenseBilling(lic);
+  if (supabase.isConfigured()) {
+    const synced = await supabase.syncLicense(lic);
+    if (!synced.ok) throw new Error('durable_license_sync_failed: ' + (synced.error || 'unknown error'));
+    if (payment) await recordDurablePayment(payment.id, lic, payment);
+  } else if (payment) {
+    recordLocalPayment(payment.id, lic, payment);
+  }
+  // For the file store this is one atomic write containing both the license
+  // mutation and its payment history. For Supabase it is only a local cache.
+  store.saveSync();
 }
 
 async function findExistingLicense(paymentId, orderId) {
@@ -175,9 +265,10 @@ async function findExistingLicense(paymentId, orderId) {
     if (!remote && paymentId) remote = await supabase.fetchLicenseBy('payment_id', paymentId);
     return cacheLicense(remote);
   }
-  return Object.values(store.licenses).find(l =>
+  const local = Object.values(store.licenses).find(l =>
     (orderId && (l.orderId === orderId || l.subscriptionId === orderId)) ||
     (paymentId && l.paymentId === paymentId)) || null;
+  return normalizeLicenseBilling(local);
 }
 
 async function persistOrder(orderId, order) {
@@ -202,7 +293,14 @@ async function issueLicense(email, planId, paymentId, orderId) {
         fulfillmentStatus: 'FULFILLED', fulfilledAt: Date.now() });
       await persistOrder(orderId, existingOrder);
     }
-    return { lic: existing, key: issuedThisProcess.get(paymentId) || null, existing: true };
+    if (existing.paymentId) {
+      await recordDurablePayment(existing.paymentId, existing, {
+        amount: existingOrder && existingOrder.amount,
+        currency: (existingOrder && existingOrder.currency) || 'INR',
+      });
+      if (!supabase.isConfigured()) store.saveSync();
+    }
+    return { lic: existing, key: cachedIssuedKey(paymentId, existing), existing: true };
   }
   const p = getPlan(planId);
   if (!p || !p.amount) throw new Error('invalid_paid_plan');
@@ -217,6 +315,7 @@ async function issueLicense(email, planId, paymentId, orderId) {
     plan: p.id, createdAt: Date.now(), expiresAt: expiresAt,
     paymentId: paymentId || null, orderId: orderId || null,
     subscriptionId: subId,
+    providerPlanId: isRecurring ? (process.env['RAZORPAY_PLAN_' + p.id.toUpperCase()] || null) : null,
     billingModel: p.billingModel,
     billingStatus: 'active',
     currentPeriodStart: Date.now(),
@@ -236,17 +335,20 @@ async function issueLicense(email, planId, paymentId, orderId) {
         paymentId: concurrentlyIssued.paymentId || order.paymentId || paymentId,
         fulfillmentStatus: 'FULFILLED', fulfilledAt: Date.now() });
       store.saveSync();
-      return { lic: concurrentlyIssued, key: issuedThisProcess.get(paymentId) || null, existing: true };
+      return { lic: concurrentlyIssued, key: cachedIssuedKey(paymentId, concurrentlyIssued), existing: true };
     }
   }
 
   cacheLicense(lic);
+  if (!supabase.isConfigured()) {
+    recordLocalPayment(paymentId, lic, { amount: order.amount, currency: order.currency });
+  }
   Object.assign(order, {
     status: 'paid', paymentId, paidAt: order.paidAt || Date.now(),
     fulfillmentStatus: 'FULFILLED', fulfilledAt: Date.now(),
   });
   store.saveSync();
-  issuedThisProcess.set(paymentId, key);
+  rememberIssuedKey(paymentId, key, lic);
   return { lic, key, existing: false };
 }
 
@@ -281,8 +383,11 @@ async function requireProPlus(req) {
   const hash = L.hashKey(key);
   let lic = store.licenses[hash];
   if (supabase.isConfigured()) {
-    const remote = await supabase.fetchLicense(hash);
-    if (remote) lic = cacheLicense(remote);
+    // A configured remote store is authoritative, including a definitive
+    // not-found response. Never resurrect access from the ephemeral cache.
+    lic = cacheLicense(await supabase.fetchLicense(hash));
+  } else {
+    lic = normalizeLicenseBilling(lic);
   }
   if (!lic || !L.licenseStatus(lic).active) return null;
   const plan = getPlan(lic.plan);
@@ -360,6 +465,21 @@ async function razorpayCreateSubscription(plan, email) {
   return data;
 }
 
+async function razorpayCancelSubscription(subId) {
+  if (!razorpayConfigured()) throw new Error('payments_not_configured');
+  const auth = Buffer.from(KEY_ID + ':' + KEY_SECRET).toString('base64');
+  const response = await providerFetch(`https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(subId)}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Basic ' + auth },
+    body: JSON.stringify({ cancel_at_cycle_end: 1 }),
+  });
+  const data = await response.json().catch(() => null);
+  const description = String(data && data.error && data.error.description || '');
+  const alreadyCancelled = response.status === 400 && /already.*cancel|cancelled/i.test(description);
+  if (!response.ok && !alreadyCancelled) throw new Error(description || ('Razorpay HTTP ' + response.status));
+  return data || { id: subId, status: alreadyCancelled ? 'cancelled' : 'unknown' };
+}
+
 const inFlightOrders = new Set();
 
 // -------------------------------------------------------------- routes ----
@@ -375,6 +495,11 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(html);
+    }
+    if (req.method === 'GET' && url.pathname === '/privacy.html') {
+      const html = fs.readFileSync(path.join(__dirname, 'public', 'privacy.html'));
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       return res.end(html);
     }
@@ -614,8 +739,8 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, {
           ok: true, licenseKey: issued.key, hint: issued.lic.hint,
           plan: issued.lic.plan, expiresAt: issued.lic.expiresAt,
-          subscriptionId: issued.lic.subscriptionId || null,
-          billingModel: issued.lic.billingModel || null,
+          subscriptionId: subscriptionIdForLicense(issued.lic),
+          billingModel: billingModelForLicense(issued.lic),
           billingStatus: issued.lic.billingStatus || 'active',
           currentPeriodEnd: issued.lic.currentPeriodEnd || issued.lic.expiresAt || null,
           emailSent: Boolean(emailResult.ok),
@@ -646,8 +771,10 @@ const server = http.createServer(async (req, res) => {
       // Prefer the canonical Razorpay event ID. When absent, use a deterministic
       // SHA-256 of the signed raw body so identical retries deduplicate correctly
       // while distinct lifecycle events (different raw body) do NOT collapse.
-      const eventId = evt.id ||
-        crypto.createHash('sha256').update(raw).digest('hex');
+      const eventId = String(evt.id || req.headers['x-razorpay-event-id'] ||
+        ('sha256:' + crypto.createHash('sha256').update(raw).digest('hex'))).slice(0, 200);
+      const billingEventAt = Number(evt.created_at) > 0 ? Number(evt.created_at) * 1000 : Date.now();
+      const staleBillingEvent = (lic) => Boolean(lic && lic.billingEventAt && billingEventAt < lic.billingEventAt);
       if (supabase.isConfigured()) {
         if (await supabase.hasWebhook(eventId)) {
           store.processedWebhooks[eventId] = { receivedAt: Date.now(), event: evt.event || null };
@@ -658,15 +785,18 @@ const server = http.createServer(async (req, res) => {
       }
 
       const entity = paymentEntity || refundEntity;
-      if (evt.event === 'payment.captured' && entity) {
+      if (evt.event === 'payment.captured' && entity && !entity.subscription_id) {
         let order = supabase.isConfigured() ? await supabase.fetchOrder(entity.order_id) : store.orders[entity.order_id];
         if (order && supabase.isConfigured()) store.orders[entity.order_id] = order;
         if (!order) return json(res, 404, { error: 'unknown_order', retryable: true });
+        if (order.paymentId && order.paymentId !== entity.id) {
+          return json(res, 409, { error: 'order_payment_mismatch', retryable: true });
+        }
         if (inFlightOrders.has(entity.order_id)) return json(res, 409, { error: 'fulfillment_in_progress', retryable: true });
         inFlightOrders.add(entity.order_id);
         try {
           let issued = await issueLicense(order.email, canonicalPlanId(order.plan), entity.id, entity.order_id);
-          if (!issued.lic.revoked && !issued.lic.emailSentAt) {
+          if (!issued.lic.revoked && !issued.lic.emailSentAt && !issued.lic.reissuedFrom) {
             if (!RESEND_API_KEY) throw new Error('license_email_not_configured');
             if (!issued.key) throw new Error('license_email_recovery_required');
             const emailResult = await sendIssuedLicenseEmail(issued, order.email, canonicalPlanId(order.plan));
@@ -680,46 +810,52 @@ const server = http.createServer(async (req, res) => {
       if (evt.event === 'subscription.charged') {
         const subId = (subEntity && subEntity.id) || (paymentEntity && paymentEntity.subscription_id);
         if (subId) {
+          if (!paymentEntity || !paymentEntity.id) {
+            return json(res, 400, { error: 'payment_entity_required' });
+          }
           let order = supabase.isConfigured() ? await supabase.fetchOrder(subId) : store.orders[subId];
           if (order && supabase.isConfigured()) store.orders[subId] = order;
-          const custEmail = (paymentEntity && paymentEntity.email) || (order && order.email);
-          const custPlan = (order && order.plan) || 'pro_monthly';
-          const payId = (paymentEntity && paymentEntity.id) || (subEntity && subEntity.id) || subId;
-
-          let existingLic = await findExistingLicense(payId, subId);
+          const payId = paymentEntity.id;
+          const payment = { id: payId, amount: paymentEntity.amount, currency: paymentEntity.currency };
+          const existingLic = await findExistingLicense(payId, subId);
           if (existingLic) {
-            // RENEWAL: update period end and billing status, DO NOT issue duplicate key or email
-            const plan = getPlan(canonicalPlanId(existingLic.plan));
-            if (subEntity && subEntity.current_end) {
-              existingLic.expiresAt = subEntity.current_end * 1000;
-              existingLic.currentPeriodEnd = existingLic.expiresAt;
-            } else if (plan && plan.durationDays) {
-              existingLic.expiresAt = L.expiryFor(plan.durationDays, Math.max(Date.now(), existingLic.expiresAt || 0));
-              existingLic.currentPeriodEnd = existingLic.expiresAt;
-            }
-            existingLic.billingStatus = 'active';
-            existingLic.lastPaymentAt = Date.now();
-            if (paymentEntity && paymentEntity.id) existingLic.paymentId = paymentEntity.id;
-            store.saveSync();
-            if (supabase.isConfigured()) {
-              const synced = await supabase.syncLicense(existingLic);
-              if (!synced.ok) throw new Error('renewal_license_sync_failed: ' + (synced.error || ''));
-              // Record renewal payment in history (idempotent, does not overwrite original).
-              if (paymentEntity && paymentEntity.id) {
-                await supabase.recordPayment(paymentEntity.id, existingLic.hash, {
-                  subscriptionId: subId, email: custEmail,
-                  plan: existingLic.plan,
-                });
+            if (staleBillingEvent(existingLic)) {
+              // A late older event still gets its payment history, but cannot
+              // shorten a newer period or overwrite a newer billing status.
+              await recordDurablePayment(payId, existingLic, payment);
+              if (!supabase.isConfigured()) store.saveSync();
+            } else {
+              const plan = getPlan(canonicalPlanId(existingLic.plan));
+              if (subEntity && subEntity.current_end) {
+                existingLic.expiresAt = subEntity.current_end * 1000;
+                existingLic.currentPeriodEnd = existingLic.expiresAt;
+              } else if (plan && plan.durationDays) {
+                existingLic.expiresAt = L.expiryFor(plan.durationDays, Math.max(Date.now(), existingLic.expiresAt || 0));
+                existingLic.currentPeriodEnd = existingLic.expiresAt;
               }
+              existingLic.billingStatus = 'active';
+              existingLic.lastPaymentAt = Date.now();
+              existingLic.billingEventAt = billingEventAt;
+              existingLic.paymentId = payId;
+              await persistLifecycleLicense(existingLic, payment);
             }
-          } else if (custEmail) {
-            let issued = await issueLicense(custEmail, canonicalPlanId(custPlan), payId, subId);
+          } else {
+            // Never guess a plan from a payment email. The persisted checkout
+            // target is required for first fulfillment and is retryable if a
+            // provider event arrives before the remote read can see it.
+            if (!order) return json(res, 404, { error: 'unknown_subscription', retryable: true });
+            const custEmail = order.email || paymentEntity.email;
+            if (!custEmail || !getPlan(canonicalPlanId(order.plan))) {
+              return json(res, 409, { error: 'invalid_subscription_order', retryable: true });
+            }
+            const issued = await issueLicense(custEmail, canonicalPlanId(order.plan), payId, subId);
             if (subEntity && subEntity.current_end) {
               issued.lic.expiresAt = subEntity.current_end * 1000;
               issued.lic.currentPeriodEnd = issued.lic.expiresAt;
-              store.saveSync();
-              if (supabase.isConfigured()) await supabase.syncLicense(issued.lic);
             }
+            issued.lic.billingEventAt = billingEventAt;
+            issued.lic.lastPaymentAt = Date.now();
+            await persistLifecycleLicense(issued.lic, payment);
           }
         }
       }
@@ -728,15 +864,15 @@ const server = http.createServer(async (req, res) => {
         const subId = subEntity && subEntity.id;
         if (subId) {
           let existingLic = await findExistingLicense(null, subId);
-          if (existingLic) {
+          if (existingLic && !staleBillingEvent(existingLic)) {
             existingLic.billingStatus = 'active';
             if (subEntity.current_start) existingLic.currentPeriodStart = subEntity.current_start * 1000;
             if (subEntity.current_end) {
               existingLic.expiresAt = subEntity.current_end * 1000;
               existingLic.currentPeriodEnd = existingLic.expiresAt;
             }
-            store.saveSync();
-            if (supabase.isConfigured()) await supabase.syncLicense(existingLic);
+            existingLic.billingEventAt = billingEventAt;
+            await persistLifecycleLicense(existingLic);
           }
         }
       }
@@ -745,11 +881,11 @@ const server = http.createServer(async (req, res) => {
         const subId = (subEntity && subEntity.id) || (paymentEntity && paymentEntity.subscription_id);
         if (subId) {
           let existingLic = await findExistingLicense(null, subId);
-          if (existingLic) {
+          if (existingLic && !staleBillingEvent(existingLic)) {
             existingLic.billingStatus = 'past_due';
             existingLic.failureReason = (paymentEntity && paymentEntity.error_description) || 'payment_failed';
-            store.saveSync();
-            if (supabase.isConfigured()) await supabase.syncLicense(existingLic);
+            existingLic.billingEventAt = billingEventAt;
+            await persistLifecycleLicense(existingLic);
           }
         }
       }
@@ -758,7 +894,7 @@ const server = http.createServer(async (req, res) => {
         const subId = subEntity && subEntity.id;
         if (subId) {
           let existingLic = await findExistingLicense(null, subId);
-          if (existingLic) {
+          if (existingLic && !staleBillingEvent(existingLic)) {
             existingLic.cancelAtPeriodEnd = true;
             existingLic.cancelledAt = Date.now();
             existingLic.billingStatus = 'cancelled';
@@ -766,8 +902,8 @@ const server = http.createServer(async (req, res) => {
               existingLic.expiresAt = subEntity.current_end * 1000;
               existingLic.currentPeriodEnd = existingLic.expiresAt;
             }
-            store.saveSync();
-            if (supabase.isConfigured()) await supabase.syncLicense(existingLic);
+            existingLic.billingEventAt = billingEventAt;
+            await persistLifecycleLicense(existingLic);
           }
         }
       }
@@ -776,10 +912,10 @@ const server = http.createServer(async (req, res) => {
         const subId = subEntity && subEntity.id;
         if (subId) {
           let existingLic = await findExistingLicense(null, subId);
-          if (existingLic) {
+          if (existingLic && !staleBillingEvent(existingLic)) {
             existingLic.billingStatus = evt.event === 'subscription.halted' ? 'halted' : 'completed';
-            store.saveSync();
-            if (supabase.isConfigured()) await supabase.syncLicense(existingLic);
+            existingLic.billingEventAt = billingEventAt;
+            await persistLifecycleLicense(existingLic);
           }
         }
       }
@@ -788,36 +924,64 @@ const server = http.createServer(async (req, res) => {
         const subId = subEntity && subEntity.id;
         if (subId) {
           let existingLic = await findExistingLicense(null, subId);
-          if (existingLic) {
+          if (existingLic && !staleBillingEvent(existingLic)) {
             existingLic.billingStatus = evt.event === 'subscription.paused' ? 'paused' : 'active';
-            store.saveSync();
-            if (supabase.isConfigured()) await supabase.syncLicense(existingLic);
+            existingLic.billingEventAt = billingEventAt;
+            await persistLifecycleLicense(existingLic);
           }
         }
       }
 
       if ((evt.event === 'refund.processed' || evt.event === 'payment.refunded') && entity) {
         const paymentId = entity.payment_id || entity.id;
-        let licenses = Object.values(store.licenses).filter(l =>
-          l.paymentId === paymentId || l.originalPaymentId === paymentId);
-        if (supabase.isConfigured()) licenses = await supabase.fetchLicensesByPayment(paymentId);
-        if (!licenses.length && paymentId) return json(res, 404, { error: 'license_not_found', retryable: true });
+        if (!paymentId) return json(res, 400, { error: 'payment_id_required' });
+        let licenses;
+        if (supabase.isConfigured()) {
+          licenses = await supabase.fetchLicensesByPayment(paymentId);
+        } else {
+          const byHash = new Map();
+          for (const lic of Object.values(store.licenses)) {
+            if (lic.paymentId === paymentId || lic.originalPaymentId === paymentId) byHash.set(lic.hash, lic);
+          }
+          const history = store.paymentHistory[paymentId];
+          if (history && store.licenses[history.licenseHash]) {
+            byHash.set(history.licenseHash, store.licenses[history.licenseHash]);
+          }
+          licenses = Array.from(byHash.values());
+        }
+        if (!licenses.length) return json(res, 404, { error: 'license_not_found', retryable: true });
         for (const remoteLic of licenses) {
           const lic = cacheLicense(remoteLic);
           lic.revoked = true;
-          lic.revokedReason = 'refund';
-          lic.revokedAt = Date.now();
-          if (supabase.isConfigured()) {
-            const synced = await supabase.syncLicense(lic);
-            if (!synced.ok) throw new Error('refund_persistence_failed');
+          lic.revokedReason = 'payment_refunded';
+          lic.billingStatus = 'refunded';
+          lic.revokedAt = lic.revokedAt || Date.now();
+          await persistLifecycleLicense(lic);
+          const subId = subscriptionIdForLicense(lic);
+          if (subId && !lic.cancelAtPeriodEnd && !String(subId).startsWith('sub_DEMO_')) {
+            // A refund revokes access immediately and must also stop future
+            // renewals. Failure is retryable; the webhook is not acknowledged.
+            await razorpayCancelSubscription(subId);
           }
+        }
+        if (supabase.isConfigured()) {
+          const markedRefund = await supabase.markPaymentRefunded(paymentId);
+          if (!markedRefund.ok) {
+            throw new Error('refund_history_persistence_failed: ' + (markedRefund.error || 'unknown error'));
+          }
+        } else {
+          const existingHistory = store.paymentHistory[paymentId];
+          const historyOwner = existingHistory && store.licenses[existingHistory.licenseHash];
+          recordLocalPayment(paymentId, historyOwner || licenses[licenses.length - 1], null);
+          store.paymentHistory[paymentId].refunded = true;
+          store.paymentHistory[paymentId].refundedAt = store.paymentHistory[paymentId].refundedAt || Date.now();
           store.saveSync();
         }
       }
 
+      // Receipt IDs are replay protection, not a bounded cache. Pruning an old
+      // ID would allow a provider retry to execute a refund/renewal again.
       store.processedWebhooks[eventId] = { receivedAt: Date.now(), event: evt.event || null };
-      const keys = Object.keys(store.processedWebhooks);
-      if (keys.length > 2000) delete store.processedWebhooks[keys[0]];
       store.saveSync();
       if (supabase.isConfigured()) {
         const marked = await supabase.markWebhookProcessed(eventId, evt.event || null);
@@ -835,9 +999,11 @@ const server = http.createServer(async (req, res) => {
       const hash = L.hashKey(key || '');
       let lic = store.licenses[hash];
       if (supabase.isConfigured()) {
-        // Supabase is authoritative when configured, including revocations.
-        const remoteLic = await supabase.fetchLicense(hash);
-        if (remoteLic) lic = cacheLicense(remoteLic);
+        // Supabase is authoritative when configured, including revocations and
+        // definitive not-found responses.
+        lic = cacheLicense(await supabase.fetchLicense(hash));
+      } else {
+        lic = normalizeLicenseBilling(lic);
       }
       if (lic) lic.devices = Array.isArray(lic.devices) ? lic.devices : [];
       const plan = lic ? getPlan(lic.plan) : null;
@@ -879,9 +1045,9 @@ const server = http.createServer(async (req, res) => {
         expiresAt: lic ? lic.expiresAt : null,
         hint: lic ? lic.hint : null,
         proPlus: Boolean(plan && plan.proPlus),
-        billingModel: plan ? plan.billingModel : null,
+        billingModel: lic ? billingModelForLicense(lic) : null,
         billingStatus: (lic && lic.billingStatus) || (st.active ? 'active' : 'inactive'),
-        subscriptionId: (lic && (lic.subscriptionId || lic.orderId)) || null,
+        subscriptionId: subscriptionIdForLicense(lic),
         currentPeriodEnd: (lic && (lic.currentPeriodEnd || lic.expiresAt)) || null,
         cancelAtPeriodEnd: Boolean(lic && lic.cancelAtPeriodEnd),
         cancelledAt: (lic && lic.cancelledAt) || null,
@@ -897,20 +1063,32 @@ const server = http.createServer(async (req, res) => {
       const hash = L.hashKey(key);
       let lic = store.licenses[hash];
       if (supabase.isConfigured()) {
-        const remoteLic = await supabase.fetchLicense(hash);
-        if (remoteLic) lic = cacheLicense(remoteLic);
+        lic = cacheLicense(await supabase.fetchLicense(hash));
+      } else {
+        lic = normalizeLicenseBilling(lic);
       }
       if (!lic) return json(res, 404, { error: 'license_not_found' }, req);
 
       // Refuse to cancel non-recurring licenses (lifetime, legacy prepaid).
-      // billingModel may be absent on very old licenses — check the subscription ID too.
-      const isRecurring = lic.billingModel === 'recurring' ||
-        (lic.subscriptionId && String(lic.subscriptionId).startsWith('sub_'));
+      const isRecurring = billingModelForLicense(lic) === 'recurring';
       if (!isRecurring) {
         return json(res, 400, {
           error: 'not_a_subscription',
           detail: 'This license is not a recurring subscription. Lifetime and legacy prepaid licenses do not have auto-renewal to cancel.'
         }, req);
+      }
+
+      // Fail closed if a supposedly recurring license lacks a real target.
+      const subId = subscriptionIdForLicense(lic);
+      const demoSubscription = String(subId || '').startsWith('sub_DEMO_');
+      if (!subId || (!demoSubscription && !/^sub_[A-Za-z0-9_-]{1,120}$/.test(subId))) {
+        return json(res, 400, {
+          error: 'subscription_id_missing',
+          detail: 'This recurring license has no valid linked Razorpay subscription ID. Contact support for assistance.'
+        }, req);
+      }
+      if (demoSubscription && !demoCheckoutEnabled()) {
+        return json(res, 409, { error: 'demo_subscription_inactive', detail: 'Demo checkout is no longer enabled.' }, req);
       }
 
       if (lic.cancelAtPeriodEnd) {
@@ -924,26 +1102,15 @@ const server = http.createServer(async (req, res) => {
         }, req);
       }
 
-      // Fail closed if a supposedly recurring license lacks a real subscription ID.
-      const subId = lic.subscriptionId;
-      if (!subId) {
-        return json(res, 400, {
-          error: 'subscription_id_missing',
-          detail: 'This recurring license has no linked subscription ID. Contact support for assistance.'
+      if (!demoSubscription && !razorpayConfigured()) {
+        return json(res, 503, {
+          error: 'payments_not_configured',
+          detail: 'Razorpay credentials are required to cancel the provider subscription. No cancellation was recorded.'
         }, req);
       }
-      if (razorpayConfigured() && !subId.startsWith('sub_DEMO_') && !subId.startsWith('order_DEMO_')) {
+      if (!demoSubscription) {
         try {
-          const auth = Buffer.from(KEY_ID + ':' + KEY_SECRET).toString('base64');
-          const cancelRes = await providerFetch(`https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(subId)}/cancel`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: 'Basic ' + auth },
-            body: JSON.stringify({ cancel_at_cycle_end: 1 })
-          });
-          const cancelData = await cancelRes.json();
-          if (!cancelRes.ok && !(cancelRes.status === 400 && String(cancelData && cancelData.error && cancelData.error.description || '').toLowerCase().includes('cancelled'))) {
-            return json(res, 502, { error: 'provider_cancellation_failed', detail: (cancelData.error && cancelData.error.description) || cancelRes.status }, req);
-          }
+          await razorpayCancelSubscription(subId);
         } catch (err) {
           return json(res, 502, { error: 'provider_cancellation_failed', detail: err.message }, req);
         }
@@ -953,11 +1120,8 @@ const server = http.createServer(async (req, res) => {
       lic.cancelledAt = Date.now();
       lic.cancelReason = String(reason || 'user_requested').slice(0, 100);
       lic.billingStatus = 'cancelled';
-      if (supabase.isConfigured()) {
-        const synced = await supabase.syncLicense(lic);
-        if (!synced.ok) return json(res, 500, { error: 'persistence_error' }, req);
-      }
-      store.saveSync();
+      lic.billingEventAt = Date.now();
+      await persistLifecycleLicense(lic);
       return json(res, 200, {
         ok: true,
         cancelAtPeriodEnd: true,
@@ -1199,13 +1363,12 @@ const server = http.createServer(async (req, res) => {
 
       const symbol = url.searchParams.get('symbol') || 'NIFTY';
       const resolution = url.searchParams.get('resolution') || '15';
-      const feed = await marketFeed.fetchMarket({ symbol, resolution, fetchImpl: providerFetch });
+      const expiry = url.searchParams.get('expiry') || 'current';
+      const feed = await marketFeed.fetchMarket({ symbol, resolution, expiry, fetchImpl: providerFetch });
 
       if (!feed.ok) {
-        // 503 = credentials missing/expired (operator action); 502 = upstream fault.
-        // 400 for a bad request from the client, 503 for operator action,
-        // 502 for an upstream fault.
-        const status = feed.error === 'unknown_symbol' ? 400
+        // 400 for a bad request, 503 for operator action, 502 for upstream failure.
+        const status = feed.status === 400 || feed.error === 'unknown_symbol' || feed.error === 'invalid_expiry' ? 400
           : feed.error === 'market_feed_not_configured' || feed.error === 'provider_token_expired' ? 503
             : 502;
         return json(res, status, {
@@ -1218,20 +1381,29 @@ const server = http.createServer(async (req, res) => {
       }
 
       const analysis = TLMarket.analyze(feed.candles, {
-        symbol, timeframe: resolution + 'm', optionChain: feed.optionChain,
+        symbol: feed.symbol, timeframe: resolution + 'm', optionChain: feed.optionChain,
       });
       const brief = await ai.summarize({ apiKey: OPENROUTER_API_KEY, geminiApiKey: GEMINI_API_KEY, analysis }, providerFetch);
+      const candles = feed.candles.slice(-400);
       return json(res, 200, {
         ok: true,
-        symbol,
+        symbol: feed.symbol,
         provider: feed.provider,
         cached: Boolean(feed.cached),
+        coalesced: Boolean(feed.coalesced),
+        fetchedAt: feed.fetchedAt,
+        expiry: feed.expiry,
+        stale: Boolean(feed.stale),
+        degraded: Boolean(feed.degraded),
+        warnings: Array.isArray(feed.warnings) ? feed.warnings : [],
+        optionChainStatus: feed.optionChainStatus,
+        vixStatus: feed.vixStatus,
         // The chart needs the OHLC series itself, not just how many candles
         // exist. This previously sent only a count, so chartState.candles was
         // never populated and the Pro+ chart always rendered "no data".
         // 400 candles is ~10 sessions of 15-minute bars and stays a small payload.
-        candles: feed.candles.slice(-400),
-        candleCount: feed.candles.length,
+        candles,
+        candleCount: candles.length,
         spot: feed.spot,
         vix: feed.vix || null,
         optionChain: feed.optionChain || null,

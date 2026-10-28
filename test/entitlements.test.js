@@ -18,6 +18,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const ROOT = path.join(__dirname, '..');
 const OPTIONS_JS = fs.readFileSync(path.join(ROOT, 'options', 'options.js'), 'utf8');
@@ -112,4 +113,32 @@ test('Lapsing a licence does not rewrite stored limits', () => {
   // But the stored object is untouched: enforcement filters a copy.
   assert.strictEqual(stored.maxDailyLoss, 5000,
     'effectiveSettings must not mutate the stored settings object');
+});
+
+test('License client never bypasses device registration when the registry is unavailable', async () => {
+  let requests = 0;
+  const context = {
+    chrome: {
+      storage: {
+        local: {
+          get(_key, cb) { cb({ tlDeviceId: 'dev-registry-test' }); },
+          set(_values, cb) { if (cb) cb(); },
+        },
+      },
+    },
+    fetch(url, options) {
+      requests += 1;
+      assert.strictEqual(url, 'https://license.test/api/validate');
+      assert.ok(JSON.parse(options.body).deviceId, 'the only request must include device identity');
+      return Promise.resolve({
+        json: () => Promise.resolve({ active: false, reason: 'device_registry_unavailable' }),
+      });
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'lib', 'license.js'), 'utf8'), context);
+  const result = await context.TLLicense.validate('https://license.test', 'TL-TEST-KEY');
+  assert.strictEqual(result.active, false);
+  assert.strictEqual(result.reason, 'device_registry_unavailable');
+  assert.strictEqual(requests, 1, 'no device-less fallback request may occur');
 });

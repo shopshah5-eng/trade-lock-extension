@@ -290,6 +290,15 @@
   // --------------------------------------------------------- evaluation ----
 
   function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+  function entryNetPnl(entry) {
+    if (!entry) return 0;
+    var gross = Number(entry.pnl) || 0;
+    var charges = Number(entry.charges) || 0;
+    var net = entry.netPnl !== undefined && entry.netPnl !== null
+      ? Number(entry.netPnl)
+      : gross - charges;
+    return Number.isFinite(net) ? net : 0;
+  }
 
   /** Daily risk budget in ₹ derived from the capital plan (0 = plan off). */
   function dailyRiskLimit(settings) {
@@ -511,7 +520,7 @@
     if (isDuplicateSignature) return state;
 
     var ch = Number(entry.charges) || 0;
-    var net = entry.netPnl !== undefined ? round2(entry.netPnl) : round2(pnl - ch);
+    var net = round2(entryNetPnl(entry));
 
     sess.trades += 1;
     if (entry.source === 'auto' || String(entry.provenance || '').indexOf('broker') !== -1) sess.autoTrades += 1;
@@ -604,7 +613,7 @@
     sess.maxTradeRisk = 0;
     sess.lastTradeAt = null;
     (state.log || []).forEach(function (e) {
-      var pnl = round2(e.netPnl !== undefined ? e.netPnl : (e.pnl - (Number(e.charges) || 0)));
+      var pnl = round2(entryNetPnl(e));
       var risk = Math.max(0, round2(e.risk));
       sess.trades += 1;
       if (e.source === 'auto' || String(e.provenance || '').indexOf('broker') !== -1) sess.autoTrades += 1;
@@ -786,27 +795,35 @@
     var rows = Array.isArray(log) ? log : [];
     var out = {
       trades: rows.length, wins: 0, losses: 0, breakeven: 0,
-      grossProfit: 0, grossLoss: 0, netPnl: 0, totalRisk: 0,
+      grossProfit: 0, grossLoss: 0, netProfit: 0, netLoss: 0,
+      netPnl: 0, charges: 0, totalRisk: 0,
       winRate: 0, avgWin: 0, avgLoss: 0, largestWin: 0, largestLoss: 0,
       autoTrades: 0, manualTrades: 0
     };
     rows.forEach(function (e) {
       var pnl = Number(e.pnl) || 0;
-      out.netPnl = round2(out.netPnl + pnl);
+      var charges = Number(e.charges) || 0;
+      var net = entryNetPnl(e);
+      out.netPnl = round2(out.netPnl + net);
+      out.charges = round2(out.charges + charges);
       out.totalRisk = round2(out.totalRisk + Math.max(0, Number(e.risk) || 0));
       if (e.source === 'auto') out.autoTrades++; else out.manualTrades++;
-      if (pnl > 0) {
-        out.wins++; out.grossProfit = round2(out.grossProfit + pnl);
-        out.largestWin = Math.max(out.largestWin, pnl);
-      } else if (pnl < 0) {
-        out.losses++; out.grossLoss = round2(out.grossLoss + pnl);
-        out.largestLoss = Math.min(out.largestLoss, pnl);
+      if (pnl > 0) out.grossProfit = round2(out.grossProfit + pnl);
+      else if (pnl < 0) out.grossLoss = round2(out.grossLoss + pnl);
+      // Outcomes and averages follow money realised after charges. Gross totals
+      // remain available separately for gross-P&L and profit-factor reporting.
+      if (net > 0) {
+        out.wins++; out.netProfit = round2(out.netProfit + net);
+        out.largestWin = Math.max(out.largestWin, net);
+      } else if (net < 0) {
+        out.losses++; out.netLoss = round2(out.netLoss + net);
+        out.largestLoss = Math.min(out.largestLoss, net);
       } else out.breakeven++;
     });
     var decided = out.wins + out.losses;
     out.winRate = decided ? Math.round((out.wins / decided) * 1000) / 10 : 0;
-    out.avgWin = out.wins ? round2(out.grossProfit / out.wins) : 0;
-    out.avgLoss = out.losses ? round2(out.grossLoss / out.losses) : 0;
+    out.avgWin = out.wins ? round2(out.netProfit / out.wins) : 0;
+    out.avgLoss = out.losses ? round2(out.netLoss / out.losses) : 0;
     out.grossProfit = round2(out.grossProfit);
     out.grossLoss = round2(out.grossLoss);
     return out;
@@ -835,7 +852,8 @@
     var rows = Array.isArray(trades) ? trades : [];
     var out = {
       trades: rows.length, totalTrades: rows.length, wins: 0, losses: 0, breakeven: 0,
-      grossProfit: 0, grossLoss: 0, grossPnl: 0, netPnl: 0, totalRisk: 0, charges: 0,
+      grossProfit: 0, grossLoss: 0, grossPnl: 0, netProfit: 0, netLoss: 0,
+      netPnl: 0, totalRisk: 0, charges: 0,
       winRate: 0, avgWin: 0, avgLoss: 0, largestWin: 0, largestLoss: 0,
       profitFactor: 0, ruleViolations: 0, autoTrades: 0, manualTrades: 0,
       brokerVerifiedCount: 0, manualCount: 0
@@ -843,7 +861,7 @@
     rows.forEach(function (e) {
       var pnl = Number(e.pnl) || 0;
       var ch = Number(e.charges) || 0;
-      var net = e.netPnl !== undefined ? Number(e.netPnl) : (pnl - ch);
+      var net = entryNetPnl(e);
       out.netPnl = round2(out.netPnl + net);
       out.charges = round2(out.charges + ch);
       out.totalRisk = round2(out.totalRisk + Math.max(0, Number(e.risk) || 0));
@@ -858,24 +876,26 @@
       if (e.adherence === 'VIOLATION') out.ruleViolations++;
       if (net > 0) {
         out.wins++;
+        out.netProfit = round2(out.netProfit + net);
+        out.largestWin = Math.max(out.largestWin, net);
       } else if (net < 0) {
         out.losses++;
+        out.netLoss = round2(out.netLoss + net);
+        out.largestLoss = Math.min(out.largestLoss, net);
       } else {
         out.breakeven++;
       }
       if (pnl > 0) {
         out.grossProfit = round2(out.grossProfit + pnl);
-        out.largestWin = Math.max(out.largestWin, pnl);
       } else if (pnl < 0) {
         out.grossLoss = round2(out.grossLoss + pnl);
-        out.largestLoss = Math.min(out.largestLoss, pnl);
       }
     });
     out.grossPnl = round2(out.grossProfit + out.grossLoss);
     var decided = out.wins + out.losses;
     out.winRate = decided ? Math.round((out.wins / decided) * 1000) / 10 : 0;
-    out.avgWin = out.wins ? round2(out.grossProfit / out.wins) : 0;
-    out.avgLoss = out.losses ? round2(out.grossLoss / out.losses) : 0;
+    out.avgWin = out.wins ? round2(out.netProfit / out.wins) : 0;
+    out.avgLoss = out.losses ? round2(out.netLoss / out.losses) : 0;
     out.profitFactor = out.grossLoss < 0 ? round2(out.grossProfit / Math.abs(out.grossLoss)) : (out.grossProfit > 0 ? 999 : 0);
     return out;
   }
@@ -885,39 +905,50 @@
     var dates = Object.keys(days).sort();
     var out = {
       totalTrades: 0, wins: 0, losses: 0, breakeven: 0,
-      winRate: 0, grossPnl: 0, netPnl: 0, charges: 0, totalRisk: 0,
+      winRate: 0, grossPnl: 0, netProfit: 0, netLoss: 0, netPnl: 0, charges: 0, totalRisk: 0,
       avgWin: 0, avgLoss: 0, profitFactor: 0, ruleViolations: 0,
       bestDay: null, worstDay: null, tradingDaysCount: dates.length
     };
-    var grossWin = 0, grossLoss = 0;
+    var grossWin = 0, grossLoss = 0, netWin = 0, netLoss = 0;
     dates.forEach(function (dateStr) {
-      var d = days[dateStr];
-      var s = d.summary || calculateDaySummary(d.trades || []);
+      var d = days[dateStr] || {};
+      // Trade rows are authoritative. Recomputing also upgrades summaries
+      // persisted before net-average accounting was introduced.
+      var s = Array.isArray(d.trades) ? calculateDaySummary(d.trades)
+        : (d.summary || calculateDaySummary([]));
       out.totalTrades += s.trades || s.totalTrades || 0;
       out.wins += s.wins || 0;
       out.losses += s.losses || 0;
       out.breakeven += s.breakeven || 0;
       grossWin += (s.grossProfit || 0);
       grossLoss += (s.grossLoss || 0);
+      var dayNetWin = Number(s.netProfit);
+      var dayNetLoss = Number(s.netLoss);
+      // Summary-only legacy records have no net totals; their stored averages
+      // are the best available fallback. Records with trade rows are recomputed above.
+      netWin += Number.isFinite(dayNetWin) ? dayNetWin : (Number(s.avgWin) || 0) * (s.wins || 0);
+      netLoss += Number.isFinite(dayNetLoss) ? dayNetLoss : (Number(s.avgLoss) || 0) * (s.losses || 0);
       out.netPnl = round2(out.netPnl + (s.netPnl || 0));
       out.charges = round2(out.charges + (s.charges || 0));
       out.totalRisk = round2(out.totalRisk + (s.totalRisk || 0));
       out.ruleViolations += (s.ruleViolations || 0);
 
       var dayNetPnl = round2(s.netPnl || 0);
-      if (!out.bestDay || dayNetPnl > (out.bestDay.netPnl !== undefined ? out.bestDay.netPnl : out.bestDay.pnl)) {
+      if (!out.bestDay || dayNetPnl > entryNetPnl(out.bestDay)) {
         out.bestDay = { date: dateStr, pnl: dayNetPnl, netPnl: dayNetPnl };
       }
-      if (!out.worstDay || dayNetPnl < (out.worstDay.netPnl !== undefined ? out.worstDay.netPnl : out.worstDay.pnl)) {
+      if (!out.worstDay || dayNetPnl < entryNetPnl(out.worstDay)) {
         out.worstDay = { date: dateStr, pnl: dayNetPnl, netPnl: dayNetPnl };
       }
     });
 
     out.grossPnl = round2(grossWin + grossLoss);
+    out.netProfit = round2(netWin);
+    out.netLoss = round2(netLoss);
     var decided = out.wins + out.losses;
     out.winRate = decided ? Math.round((out.wins / decided) * 1000) / 10 : 0;
-    out.avgWin = out.wins ? round2(grossWin / out.wins) : 0;
-    out.avgLoss = out.losses ? round2(grossLoss / out.losses) : 0;
+    out.avgWin = out.wins ? round2(netWin / out.wins) : 0;
+    out.avgLoss = out.losses ? round2(netLoss / out.losses) : 0;
     out.profitFactor = grossLoss < 0 ? round2(grossWin / Math.abs(grossLoss)) : (grossWin > 0 ? 999 : 0);
     return out;
   }
@@ -1016,7 +1047,7 @@
       var direction = t.direction || (side === 'SELL' ? 'SHORT' : 'LONG');
       var grossPnl = t.pnl !== undefined ? t.pnl : ((t.exit - t.entry) * (t.qty || 1) * (side === 'BUY' ? 1 : -1));
       var charges = t.charges || 0;
-      var netPnl = t.netPnl !== undefined ? t.netPnl : (grossPnl - charges);
+      var netPnl = t.netPnl !== undefined && t.netPnl !== null ? t.netPnl : (grossPnl - charges);
 
       return [
         formatCsvCell(t.id || ''),

@@ -41,22 +41,28 @@ const remote = {
 };
 let orderSeq = 0;
 const providerCalls = [];
+const failures = {
+  licenseSync: false, recordPayment: false, refundHistory: false,
+  paymentLookup: false, webhookReceipt: false,
+};
 const originalFetch = global.fetch;
 
 function rowLicense(body) {
   return {
     hash: body.hash || body.p_hash, hint: body.hint || body.p_hint,
     email: body.email || body.p_email, plan: body.plan || body.p_plan,
-    created_at: body.created_at || body.p_created_at || new Date().toISOString(),
-    expires_at: body.expires_at || body.p_expires_at,
-    payment_id: body.payment_id || body.p_payment_id,
-    order_id: body.order_id || body.p_order_id,
-    subscription_id: body.subscription_id || body.p_subscription_id || null,
-    billing_model: body.billing_model || body.p_billing_model || null,
-    billing_status: body.billing_status || body.p_billing_status || 'active',
-    current_period_start: body.current_period_start || body.p_current_period_start || null,
-    current_period_end: body.current_period_end || body.p_current_period_end || null,
-    cancel_at_period_end: Boolean(body.cancel_at_period_end || body.p_cancel_at_period_end),
+    created_at: body.created_at || body.p_created_at || (body.createdAt && new Date(body.createdAt).toISOString()) || new Date().toISOString(),
+    expires_at: body.expires_at || body.p_expires_at || (body.expiresAt && new Date(body.expiresAt).toISOString()),
+    payment_id: body.payment_id || body.p_payment_id || body.paymentId,
+    order_id: body.order_id || body.p_order_id || body.orderId,
+    subscription_id: body.subscription_id || body.p_subscription_id || body.subscriptionId || null,
+    provider_plan_id: body.provider_plan_id || body.p_provider_plan_id || body.providerPlanId || null,
+    billing_model: body.billing_model || body.p_billing_model || body.billingModel || null,
+    billing_status: body.billing_status || body.p_billing_status || body.billingStatus || 'active',
+    billing_event_at: body.billing_event_at || body.p_billing_event_at || (body.billingEventAt && new Date(body.billingEventAt).toISOString()) || null,
+    current_period_start: body.current_period_start || body.p_current_period_start || (body.currentPeriodStart && new Date(body.currentPeriodStart).toISOString()) || null,
+    current_period_end: body.current_period_end || body.p_current_period_end || (body.currentPeriodEnd && new Date(body.currentPeriodEnd).toISOString()) || null,
+    cancel_at_period_end: Boolean(body.cancel_at_period_end || body.p_cancel_at_period_end || body.cancelAtPeriodEnd),
     devices: body.devices || [], revoked: !!body.revoked,
     email_sent_at: body.email_sent_at || null,
     original_payment_id: body.original_payment_id || body.p_original_payment_id || null,
@@ -109,6 +115,7 @@ global.fetch = async (url, options = {}) => {
     return ok(remote.orders.has(id) ? [remote.orders.get(id)] : []);
   }
   if (target.pathname === '/rest/v1/licenses' && method === 'POST') {
+    if (failures.licenseSync) return fail(500, 'injected license sync outage');
     remote.licenses.set(body.hash, { ...(remote.licenses.get(body.hash) || {}), ...body });
     return ok(null);
   }
@@ -155,13 +162,15 @@ global.fetch = async (url, options = {}) => {
     const old = remote.licenses.get(body.p_old_hash);
     if (!old || old.revoked) return fail(400, 'active license not found');
     const savedSubId = old.subscription_id;
+    const savedPaymentId = old.payment_id;
+    const savedOrderId = old.order_id;
     old.revoked = true; old.revoked_reason = 'support_reissue'; old.revoked_at = new Date().toISOString();
     old.original_payment_id = old.original_payment_id || old.payment_id;
     old.original_order_id = old.original_order_id || old.order_id;
     old.payment_id = null; old.order_id = null; old.subscription_id = null;
     remote.licenses.set(old.hash, old);
     const rep = { ...old, hash: body.p_new_hash, hint: body.p_new_hint,
-      created_at: new Date().toISOString(), payment_id: null, order_id: null,
+      created_at: new Date().toISOString(), payment_id: savedPaymentId, order_id: savedOrderId,
       subscription_id: savedSubId, reissued_from: old.hint, devices: [], revoked: false,
       revoked_reason: null, revoked_at: null, email_sent_at: null };
     remote.licenses.set(rep.hash, rep);
@@ -171,6 +180,7 @@ global.fetch = async (url, options = {}) => {
     return ok(rep.hash);
   }
   if (target.pathname === '/rpc/record_payment' && method === 'POST') {
+    if (failures.recordPayment) return fail(500, 'injected payment history outage');
     if (!remote.payments.has(body.p_payment_id)) {
       remote.payments.set(body.p_payment_id, {
         payment_id: body.p_payment_id, license_hash: body.p_license_hash,
@@ -181,16 +191,19 @@ global.fetch = async (url, options = {}) => {
     return ok(null);
   }
   if (target.pathname === '/rpc/mark_payment_refunded' && method === 'POST') {
+    if (failures.refundHistory) return fail(500, 'injected refund history outage');
     const ph = remote.payments.get(body.p_payment_id);
     if (ph && !ph.refunded) { ph.refunded = true; ph.refunded_at = new Date().toISOString(); }
     return ok(ph ? ph.license_hash : null);
   }
   if (target.pathname === '/rest/v1/payment_history' && method === 'GET') {
+    if (failures.paymentLookup) return fail(500, 'injected payment lookup outage');
     const pid = (target.searchParams.get('payment_id') || '').replace('eq.', '');
     const rows = pid ? Array.from(remote.payments.values()).filter(p => p.payment_id === pid) : [];
     return ok(rows.map(p => ({ license_hash: p.license_hash })));
   }
   if (target.pathname === '/rest/v1/processed_webhooks' && method === 'POST') {
+    if (failures.webhookReceipt) return fail(500, 'injected webhook receipt outage');
     remote.webhooks.set(body.event_id, body); return ok(null);
   }
   if (target.pathname === '/rest/v1/processed_webhooks' && method === 'GET') {
@@ -267,6 +280,22 @@ async function reloadServer({ emptyLocal = false } = {}) {
   await stopServer();
   if (emptyLocal) process.env.TL_DATA_FILE = `${baseFile}-cold-${++fileSeq}.json`;
   await startServer();
+}
+
+async function createVerifiedLicense(plan, email) {
+  const created = await httpReq(port, 'POST', '/api/create-order', { plan, email });
+  assert.strictEqual(created.status, 200, created.text);
+  const targetId = created.body.subscriptionId || created.body.orderId;
+  const paymentId = 'pay_' + plan + '_' + (++orderSeq);
+  const recurring = Boolean(created.body.recurring);
+  const signature = recurring ? subscriptionSig(paymentId, targetId) : paymentSig(targetId, paymentId);
+  const verified = await httpReq(port, 'POST', '/api/verify-payment', {
+    orderId: targetId, subscriptionId: recurring ? targetId : undefined,
+    paymentId, signature, email,
+  });
+  assert.strictEqual(verified.status, 200, verified.text);
+  return { created: created.body, verified: verified.body, targetId, paymentId,
+    key: verified.body.licenseKey, hash: require('../license').hashKey(verified.body.licenseKey) };
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -508,6 +537,15 @@ test('§6 reissue: subscription linkage transfers; renewal updates replacement; 
   assert.strictEqual(newLic.subscription_id, subId, 'replacement must own the subscription_id');
   assert.strictEqual(newLic.revoked, false, 'replacement must be active');
 
+  const warmRetry = await httpReq(port, 'POST', '/api/verify-payment', {
+    subscriptionId: subId, orderId: subId, paymentId: payId,
+    signature: sig, email: 'reissue@example.com',
+  });
+  assert.strictEqual(warmRetry.status, 200, warmRetry.text);
+  assert.strictEqual(warmRetry.body.licenseKey, null,
+    'a warm retry must never return the revoked pre-reissue key');
+  assert.strictEqual(warmRetry.body.hint, newHint);
+
   // 3. Cold-start; renewal webhook must update replacement, not old
   await reloadServer({ emptyLocal: true });
 
@@ -558,6 +596,7 @@ test('§8 UI copy: recurring plans must not claim "no auto-renewal" or "prepaid"
     path.join(projectRoot, 'options', 'options.js'),
     path.join(projectRoot, 'popup', 'popup.js'),
     path.join(projectRoot, 'server', 'public', 'index.html'),
+    path.join(projectRoot, 'server', 'email.js'),
     path.join(projectRoot, 'README.md'),
     path.join(projectRoot, 'RAZORPAY_SETUP.md'),
   ];
@@ -604,6 +643,7 @@ test('§9 legacy billing semantics: stored billing_model wins; cancel refuses le
     devices: [], revoked: false,
   };
   store.saveSync();
+  remote.licenses.set(legacyHash, rowLicense(store.licenses[legacyHash]));
 
   const cancelLegacy = await httpReq(port, 'POST', '/api/subscription/cancel', { key: legacyKey });
   assert.ok(cancelLegacy.status >= 400, 'legacy prepaid must be rejected by cancel');
@@ -620,6 +660,7 @@ test('§9 legacy billing semantics: stored billing_model wins; cancel refuses le
     devices: [], revoked: false,
   };
   store.saveSync();
+  remote.licenses.set(lifetimeHash, rowLicense(store.licenses[lifetimeHash]));
 
   const cancelLifetime = await httpReq(port, 'POST', '/api/subscription/cancel', { key: lifetimeKey });
   assert.ok(cancelLifetime.status >= 400, 'founder_lifetime must be rejected by cancel');
@@ -637,6 +678,7 @@ test('§9 legacy billing semantics: stored billing_model wins; cancel refuses le
     devices: [], revoked: false,
   };
   store.saveSync();
+  remote.licenses.set(cancelledHash, rowLicense(store.licenses[cancelledHash]));
 
   const valCancelled = await httpReq(port, 'POST', '/api/validate', { key: cancelledKey });
   assert.strictEqual(valCancelled.status, 200);
@@ -741,4 +783,314 @@ test('§11 payment history: P1 initial, P2 renewal, P3 renewal, cold-reload, ref
   const replayRes = await httpReq(port, 'POST', '/api/webhook', refundRaw, { 'x-razorpay-signature': webhookSig(refundRaw) });
   assert.strictEqual(replayRes.status, 200, 'refund replay must return 200');
   assert.strictEqual(replayRes.body.duplicate, true, 'refund replay must be marked duplicate');
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §12 Legacy validation and authoritative not-found behavior
+// ──────────────────────────────────────────────────────────────────────────────
+test('§12 legacy prepaid stays prepaid and legacy sub-order linkage is derived explicitly', async t => {
+  t.after(() => stopServer());
+  await reloadServer({ emptyLocal: true });
+  remote.licenses.clear(); remote.orders.clear(); remote.payments.clear(); remote.webhooks.clear();
+  const L = require('../license');
+
+  const prepaidKey = L.generateLicenseKey();
+  const prepaidHash = L.hashKey(prepaidKey);
+  remote.licenses.set(prepaidHash, rowLicense({
+    hash: prepaidHash, hint: L.keyHint(prepaidKey), email: 'old-prepaid@example.com',
+    plan: 'pro_yearly', createdAt: Date.now(), expiresAt: Date.now() + 86400000,
+    paymentId: 'pay_old_prepaid', orderId: 'order_old_prepaid', devices: [], revoked: false,
+    billingModel: null, subscriptionId: null,
+  }));
+  // Force billing_status to represent a legacy row too; model inference must not
+  // depend on newer lifecycle fields being populated.
+  remote.licenses.get(prepaidHash).billing_status = null;
+
+  const prepaid = await httpReq(port, 'POST', '/api/validate', { key: prepaidKey });
+  assert.strictEqual(prepaid.status, 200, prepaid.text);
+  assert.strictEqual(prepaid.body.active, true);
+  assert.strictEqual(prepaid.body.billingModel, 'prepaid');
+  assert.strictEqual(prepaid.body.subscriptionId, null, 'an order ID is not a subscription ID');
+  const cancelPrepaid = await httpReq(port, 'POST', '/api/subscription/cancel', { key: prepaidKey });
+  assert.strictEqual(cancelPrepaid.status, 400);
+  assert.strictEqual(cancelPrepaid.body.error, 'not_a_subscription');
+
+  const recurringKey = L.generateLicenseKey();
+  const recurringHash = L.hashKey(recurringKey);
+  remote.licenses.set(recurringHash, rowLicense({
+    hash: recurringHash, hint: L.keyHint(recurringKey), email: 'old-recurring@example.com',
+    plan: 'pro_monthly', createdAt: Date.now(), expiresAt: Date.now() + 86400000,
+    paymentId: 'pay_old_recurring', orderId: 'sub_old_recurring_1', devices: [], revoked: false,
+    billingModel: null, subscriptionId: null,
+  }));
+  remote.licenses.get(recurringHash).billing_status = null;
+  const recurring = await httpReq(port, 'POST', '/api/validate', { key: recurringKey });
+  assert.strictEqual(recurring.status, 200, recurring.text);
+  assert.strictEqual(recurring.body.billingModel, 'recurring');
+  assert.strictEqual(recurring.body.subscriptionId, 'sub_old_recurring_1');
+});
+
+test('§13 configured Supabase not-found revokes cached validation, Pro+ and cancellation access', async t => {
+  t.after(() => stopServer());
+  await reloadServer({ emptyLocal: true });
+  remote.licenses.clear(); remote.orders.clear();
+  const L = require('../license');
+  const store = require('../store');
+  const key = L.generateLicenseKey();
+  const hash = L.hashKey(key);
+  store.licenses[hash] = {
+    hash, hint: L.keyHint(key), email: 'cache-only@example.com', plan: 'pro_plus_ai_monthly',
+    createdAt: Date.now(), expiresAt: Date.now() + 86400000, paymentId: 'pay_cache_only',
+    orderId: 'order_cache_only', devices: [], revoked: false,
+  };
+  store.saveSync();
+
+  const validated = await httpReq(port, 'POST', '/api/validate', { key, deviceId: 'cache-device' });
+  assert.strictEqual(validated.status, 200, validated.text);
+  assert.strictEqual(validated.body.active, false);
+  assert.strictEqual(validated.body.plan, null);
+  assert.strictEqual(validated.body.proPlus, false);
+  const market = await httpReq(port, 'GET', '/api/market/live?symbol=NIFTY', undefined,
+    { Authorization: 'Bearer ' + key });
+  assert.strictEqual(market.status, 403, market.text);
+  const cancelled = await httpReq(port, 'POST', '/api/subscription/cancel', { key });
+  assert.strictEqual(cancelled.status, 404);
+  assert.strictEqual(cancelled.body.error, 'license_not_found');
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §14 Durable lifecycle failure injection and exact signed retries
+// ──────────────────────────────────────────────────────────────────────────────
+test('§14 renewal license/history failures return 500 and exact retries finish durable work', async t => {
+  t.after(() => { failures.licenseSync = false; failures.recordPayment = false; });
+  t.after(() => stopServer());
+  await reloadServer({ emptyLocal: true });
+  remote.licenses.clear(); remote.orders.clear(); remote.payments.clear(); remote.webhooks.clear();
+  const purchase = await createVerifiedLicense('pro_monthly', 'durable-renewal@example.com');
+  const subId = purchase.targetId;
+
+  const p2 = 'pay_durable_p2';
+  const end2 = Math.floor(Date.now() / 1000) + 60 * 86400;
+  const evt2 = { id: 'evt_durable_p2', event: 'subscription.charged', created_at: 2000,
+    payload: { subscription: { entity: { id: subId, current_end: end2 } },
+      payment: { entity: { id: p2, subscription_id: subId, amount: 19900, currency: 'INR' } } } };
+  const raw2 = JSON.stringify(evt2);
+  failures.licenseSync = true;
+  const failedSync = await httpReq(port, 'POST', '/api/webhook', raw2,
+    { 'x-razorpay-signature': webhookSig(raw2) });
+  assert.strictEqual(failedSync.status, 500, failedSync.text);
+  assert.strictEqual(remote.payments.has(p2), false);
+  assert.strictEqual(remote.webhooks.has('evt_durable_p2'), false, 'failed write must not be acknowledged');
+
+  failures.licenseSync = false;
+  const retriedSync = await httpReq(port, 'POST', '/api/webhook', raw2,
+    { 'x-razorpay-signature': webhookSig(raw2) });
+  assert.strictEqual(retriedSync.status, 200, retriedSync.text);
+  assert.strictEqual(remote.payments.get(p2).license_hash, purchase.hash);
+  assert.strictEqual(remote.webhooks.has('evt_durable_p2'), true);
+
+  const p3 = 'pay_durable_p3';
+  const end3 = Math.floor(Date.now() / 1000) + 90 * 86400;
+  const evt3 = { id: 'evt_durable_p3', event: 'subscription.charged', created_at: 3000,
+    payload: { subscription: { entity: { id: subId, current_end: end3 } },
+      payment: { entity: { id: p3, subscription_id: subId, amount: 19900, currency: 'INR' } } } };
+  const raw3 = JSON.stringify(evt3);
+  failures.recordPayment = true;
+  const failedHistory = await httpReq(port, 'POST', '/api/webhook', raw3,
+    { 'x-razorpay-signature': webhookSig(raw3) });
+  assert.strictEqual(failedHistory.status, 500, failedHistory.text);
+  assert.strictEqual(remote.payments.has(p3), false);
+  assert.strictEqual(remote.webhooks.has('evt_durable_p3'), false);
+  failures.recordPayment = false;
+  const retriedHistory = await httpReq(port, 'POST', '/api/webhook', raw3,
+    { 'x-razorpay-signature': webhookSig(raw3) });
+  assert.strictEqual(retriedHistory.status, 200, retriedHistory.text);
+  assert.strictEqual(remote.payments.get(p3).license_hash, purchase.hash);
+  assert.strictEqual(remote.webhooks.has('evt_durable_p3'), true);
+});
+
+test('§15 older lifecycle events cannot shorten a newer period but still record their payment', async t => {
+  t.after(() => stopServer());
+  await reloadServer({ emptyLocal: true });
+  remote.licenses.clear(); remote.orders.clear(); remote.payments.clear(); remote.webhooks.clear();
+  const purchase = await createVerifiedLicense('pro_monthly', 'event-order@example.com');
+  const subId = purchase.targetId;
+  const newerEnd = Math.floor(Date.now() / 1000) + 90 * 86400;
+  const olderEnd = Math.floor(Date.now() / 1000) + 30 * 86400;
+  const makeEvent = (id, paymentId, createdAt, currentEnd) => ({
+    id, event: 'subscription.charged', created_at: createdAt,
+    payload: { subscription: { entity: { id: subId, current_end: currentEnd } },
+      payment: { entity: { id: paymentId, subscription_id: subId, amount: 19900, currency: 'INR' } } },
+  });
+  const newer = makeEvent('evt_newer_period', 'pay_newer_period', 5000, newerEnd);
+  const older = makeEvent('evt_older_period', 'pay_older_period', 4000, olderEnd);
+  for (const evt of [newer, older]) {
+    const raw = JSON.stringify(evt);
+    const response = await httpReq(port, 'POST', '/api/webhook', raw,
+      { 'x-razorpay-signature': webhookSig(raw) });
+    assert.strictEqual(response.status, 200, response.text);
+  }
+  const stored = remote.licenses.get(purchase.hash);
+  assert.strictEqual(new Date(stored.expires_at).getTime(), newerEnd * 1000);
+  assert.strictEqual(remote.payments.get('pay_older_period').license_hash, purchase.hash);
+  assert.strictEqual(new Date(stored.billing_event_at).getTime(), 5000000);
+});
+
+test('§16 refund lookup/history failures are retryable and eventually mark payment refunded', async t => {
+  t.after(() => { failures.paymentLookup = false; failures.refundHistory = false; });
+  t.after(() => stopServer());
+  await reloadServer({ emptyLocal: true });
+  remote.licenses.clear(); remote.orders.clear(); remote.payments.clear(); remote.webhooks.clear();
+  const purchase = await createVerifiedLicense('founder_lifetime', 'durable-refund@example.com');
+  const event = { id: 'evt_durable_refund', event: 'refund.processed',
+    payload: { refund: { entity: { id: 'rfnd_durable', payment_id: purchase.paymentId } } } };
+  const raw = JSON.stringify(event);
+
+  failures.paymentLookup = true;
+  const lookupFailed = await httpReq(port, 'POST', '/api/webhook', raw,
+    { 'x-razorpay-signature': webhookSig(raw) });
+  assert.strictEqual(lookupFailed.status, 500, lookupFailed.text);
+  assert.strictEqual(remote.licenses.get(purchase.hash).revoked, false);
+  assert.strictEqual(remote.webhooks.has(event.id), false);
+
+  failures.paymentLookup = false;
+  failures.refundHistory = true;
+  const historyFailed = await httpReq(port, 'POST', '/api/webhook', raw,
+    { 'x-razorpay-signature': webhookSig(raw) });
+  assert.strictEqual(historyFailed.status, 500, historyFailed.text);
+  assert.strictEqual(remote.licenses.get(purchase.hash).revoked, true);
+  assert.strictEqual(remote.payments.get(purchase.paymentId).refunded, false);
+  assert.strictEqual(remote.webhooks.has(event.id), false);
+
+  failures.refundHistory = false;
+  const completed = await httpReq(port, 'POST', '/api/webhook', raw,
+    { 'x-razorpay-signature': webhookSig(raw) });
+  assert.strictEqual(completed.status, 200, completed.text);
+  assert.strictEqual(remote.payments.get(purchase.paymentId).refunded, true);
+  assert.strictEqual(remote.webhooks.has(event.id), true);
+});
+
+test('§17 live cancellation without provider credentials fails without changing durable state', async t => {
+  t.after(() => stopServer());
+  await reloadServer({ emptyLocal: true });
+  remote.licenses.clear(); remote.orders.clear(); remote.payments.clear();
+  const purchase = await createVerifiedLicense('pro_monthly', 'cancel-config@example.com');
+  const stored = remote.licenses.get(purchase.hash);
+  const previousId = process.env.RAZORPAY_KEY_ID;
+  const previousSecret = process.env.RAZORPAY_KEY_SECRET;
+  const callsBefore = providerCalls.filter(c => c === 'cancel').length;
+  try {
+    process.env.RAZORPAY_KEY_ID = '';
+    process.env.RAZORPAY_KEY_SECRET = '';
+    const response = await httpReq(port, 'POST', '/api/subscription/cancel', { key: purchase.key });
+    assert.strictEqual(response.status, 503, response.text);
+    assert.strictEqual(response.body.error, 'payments_not_configured');
+    assert.strictEqual(remote.licenses.get(purchase.hash).cancel_at_period_end, false);
+    assert.strictEqual(providerCalls.filter(c => c === 'cancel').length, callsBefore);
+    assert.strictEqual(stored.billing_status, 'active');
+  } finally {
+    process.env.RAZORPAY_KEY_ID = previousId;
+    process.env.RAZORPAY_KEY_SECRET = previousSecret;
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §18 File-store payment history, cold restart, reissue and historical refunds
+// ──────────────────────────────────────────────────────────────────────────────
+test('§18 local billing survives cold reload and reissue without losing historical payments', async t => {
+  const saved = {};
+  const names = ['TL_DATA_FILE', 'NETLIFY', 'VERCEL', 'AWS_LAMBDA_FUNCTION_NAME',
+    'SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'SUPABASE_KEY', 'RAZORPAY_KEY_ID',
+    'RAZORPAY_KEY_SECRET', 'TL_DEMO_MODE', 'NODE_ENV'];
+  for (const name of names) saved[name] = process.env[name];
+  t.after(async () => {
+    await stopServer();
+    for (const name of names) {
+      if (saved[name] === undefined) delete process.env[name];
+      else process.env[name] = saved[name];
+    }
+  });
+
+  await stopServer();
+  process.env.TL_DATA_FILE = `${baseFile}-local-billing-${++fileSeq}.json`;
+  delete process.env.NETLIFY; delete process.env.VERCEL; delete process.env.AWS_LAMBDA_FUNCTION_NAME;
+  process.env.SUPABASE_URL = ''; process.env.SUPABASE_SERVICE_KEY = ''; process.env.SUPABASE_KEY = '';
+  process.env.RAZORPAY_KEY_ID = ''; process.env.RAZORPAY_KEY_SECRET = '';
+  process.env.TL_DEMO_MODE = '1'; process.env.NODE_ENV = 'test';
+  await startServer();
+
+  const created = await httpReq(port, 'POST', '/api/create-order',
+    { plan: 'pro_monthly', email: 'local-billing@example.com' });
+  assert.strictEqual(created.status, 200, created.text);
+  const subId = created.body.subscriptionId;
+  assert.ok(subId.startsWith('sub_DEMO_'));
+  const p1 = 'pay_local_initial';
+  const verified = await httpReq(port, 'POST', '/api/verify-payment', {
+    subscriptionId: subId, orderId: subId, paymentId: p1,
+    signature: 'demo', email: 'local-billing@example.com',
+  });
+  assert.strictEqual(verified.status, 200, verified.text);
+  const originalKey = verified.body.licenseKey;
+  const originalHash = require('../license').hashKey(originalKey);
+  let store = require('../store');
+  assert.strictEqual(store.paymentHistory[p1].licenseHash, originalHash);
+  assert.strictEqual(store.paymentHistory[p1].amount, 19900);
+
+  const p2 = 'pay_local_renewal';
+  const futureEnd = Math.floor(Date.now() / 1000) + 60 * 86400;
+  const renewal = { id: 'evt_local_renewal', event: 'subscription.charged', created_at: 6000,
+    payload: { subscription: { entity: { id: subId, current_end: futureEnd } },
+      payment: { entity: { id: p2, subscription_id: subId, amount: 19900, currency: 'INR' } } } };
+  const renewalRaw = JSON.stringify(renewal);
+  const renewed = await httpReq(port, 'POST', '/api/webhook', renewalRaw,
+    { 'x-razorpay-signature': webhookSig(renewalRaw) });
+  assert.strictEqual(renewed.status, 200, renewed.text);
+  assert.strictEqual(store.paymentHistory[p2].licenseHash, originalHash);
+
+  await reloadServer();
+  store = require('../store');
+  assert.strictEqual(store.paymentHistory[p1].licenseHash, originalHash);
+  assert.strictEqual(store.paymentHistory[p2].licenseHash, originalHash);
+  assert.strictEqual(store.licenses[originalHash].billingEventAt, 6000000);
+
+  const { spawnSync } = require('node:child_process');
+  const projectRoot = path.join(__dirname, '..', '..');
+  const reissued = spawnSync(process.execPath, ['server/admin.js', 'reissue', 'local-billing@example.com'], {
+    cwd: projectRoot, env: { ...process.env }, encoding: 'utf8',
+  });
+  assert.strictEqual(reissued.status, 0, reissued.stderr);
+  const keyMatch = reissued.stdout.match(/NEW KEY \(shown once\): (TL-\S+)/);
+  assert.ok(keyMatch, reissued.stdout);
+  const newHash = require('../license').hashKey(keyMatch[1]);
+
+  await reloadServer();
+  store = require('../store');
+  const replacement = store.licenses[newHash];
+  assert.ok(replacement, 'replacement must survive a cold reload');
+  assert.strictEqual(replacement.revoked, false);
+  assert.strictEqual(replacement.subscriptionId, subId);
+  assert.strictEqual(replacement.orderId, subId);
+  assert.strictEqual(replacement.paymentId, p2);
+  assert.strictEqual(replacement.billingModel, 'recurring');
+  assert.strictEqual(store.licenses[originalHash].revoked, true);
+  assert.strictEqual(store.licenses[originalHash].subscriptionId, null);
+  assert.strictEqual(store.paymentHistory[p1].licenseHash, newHash);
+  assert.strictEqual(store.paymentHistory[p2].licenseHash, newHash);
+  const persistedText = fs.readFileSync(process.env.TL_DATA_FILE, 'utf8');
+  assert.ok(!persistedText.includes(originalKey), 'plain original key must never be persisted');
+  assert.ok(!persistedText.includes(keyMatch[1]), 'plain replacement key must never be persisted');
+
+  for (const [eventId, paymentId] of [['evt_local_refund_p1', p1], ['evt_local_refund_p2', p2]]) {
+    const refund = { id: eventId, event: 'refund.processed',
+      payload: { refund: { entity: { id: 'rfnd_' + paymentId, payment_id: paymentId } } } };
+    const raw = JSON.stringify(refund);
+    const response = await httpReq(port, 'POST', '/api/webhook', raw,
+      { 'x-razorpay-signature': webhookSig(raw) });
+    assert.strictEqual(response.status, 200, response.text);
+    await reloadServer();
+    store = require('../store');
+    assert.strictEqual(store.licenses[newHash].revoked, true);
+    assert.strictEqual(store.paymentHistory[paymentId].refunded, true);
+    assert.ok(store.paymentHistory[paymentId].refundedAt > 0);
+  }
 });

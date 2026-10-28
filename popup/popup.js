@@ -526,7 +526,7 @@
   });
   if (els.planBadge) {
     els.planBadge.style.cursor = 'pointer';
-    els.planBadge.title = 'Click to view Pro prepaid plans';
+    els.planBadge.title = 'Click to view Trade Lock plans and billing';
     els.planBadge.addEventListener('click', function () { openWorkspace('license'); });
     els.planBadge.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openWorkspace('license'); }

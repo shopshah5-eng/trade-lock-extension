@@ -58,19 +58,19 @@ For Netlify, Vercel, multiple Node instances, or any production deployment that 
 1. Create/open the Supabase project.
 2. Back up and de-duplicate legacy license/order rows if migrating an existing database. The schema adds unique indexes for payment and order fulfillment.
 3. Run the **entire** `server/schema.sql` in the SQL editor.
-4. Confirm these tables exist: `licenses`, `orders`, `processed_webhooks`.
-5. Confirm these RPC functions exist and are executable only by `service_role`: `fulfill_order`, `register_device`, `reissue_license`.
+4. Confirm these tables exist: `licenses`, `orders`, `processed_webhooks`, `payment_history`.
+5. Confirm these RPC functions exist with the signatures in `server/schema.sql` and are executable only by `service_role`: `fulfill_order`, `register_device`, `reissue_license`, `record_payment`, `mark_payment_refunded`.
 6. Set `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` in the deployment environment.
 7. Restart/redeploy and check `/health` and `/api/config`.
 
 The SQL is not applied by application startup. The mocked tests do not prove that it was run successfully in the real project.
 
-`fulfill_order` performs the database-side idempotent order/license transition without overwriting an existing order/payment linkage. `register_device` serializes device registration and enforces the plan-derived limit supplied by the server. `reissue_license` revokes the old key and creates the replacement atomically.
+`fulfill_order` performs the database-side idempotent order/license transition without overwriting an existing order/payment linkage and records the initial payment. `record_payment` preserves every renewal and rejects a payment linked to a different license. `mark_payment_refunded` records the exact refunded payment. `register_device` serializes device registration and enforces the plan-derived limit supplied by the server. `reissue_license` revokes the old key, transfers order/subscription/payment linkage and history, and creates the replacement atomically.
 
 ## 4. Configure Razorpay
 
 1. In Razorpay Dashboard, use the intended test or live API key pair in the server environment.
-2. (Optional) Set `RAZORPAY_PLAN_PRO_MONTHLY`, `RAZORPAY_PLAN_PRO_YEARLY`, `RAZORPAY_PLAN_PRO_PLUS_AI_MONTHLY`, and `RAZORPAY_PLAN_PRO_PLUS_AI_YEARLY` if you have pre-created plans in the Razorpay Dashboard. If unset, the server will auto-create them via the Razorpay Plans API.
+2. Pre-create the four recurring plans in Razorpay Dashboard with the exact catalog amount/currency and monthly/yearly interval. Set `RAZORPAY_PLAN_PRO_MONTHLY`, `RAZORPAY_PLAN_PRO_YEARLY`, `RAZORPAY_PLAN_PRO_PLUS_AI_MONTHLY`, and `RAZORPAY_PLAN_PRO_PLUS_AI_YEARLY` to their `plan_...` IDs. All four are required while all four products are on sale; the server never auto-creates plans.
 3. Add a webhook pointing to `https://YOUR-SERVER/api/webhook`.
 4. Use a long random webhook secret and set it as `RAZORPAY_WEBHOOK_SECRET`.
 5. Enable these webhook events:
@@ -81,7 +81,7 @@ The SQL is not applied by application startup. The mocked tests do not prove tha
    - `subscription.completed` / `subscription.halted`: Marks subscription completed/halted.
    - `subscription.paused` / `subscription.resumed`: Syncs temporary hold and resumption.
    - `payment.captured`: One-time order recovery (Founder Lifetime).
-   - `refund.processed` / `payment.refunded`: Revokes license immediately.
+   - `refund.processed` / `payment.refunded`: Revokes the linked license immediately, marks the historical payment refunded, and stops future recurring renewals.
 6. Auto-renewal cancellation (`POST /api/subscription/cancel`) calls the Razorpay API with `cancel_at_cycle_end: 1` so the subscriber retains access through their paid billing cycle.
 7. Use Razorpay's current official test instruments for test-mode validation; do not use live card details in development.
 
@@ -90,7 +90,7 @@ The SQL is not applied by application startup. The mocked tests do not prove tha
 - Free/unknown plans cannot create orders.
 - A valid email is required and is bound to the order. Verification also checks any supplied email/plan against that order.
 - Amount, currency, plan, duration and device limit come from `server/plans.js`, not browser-supplied prices.
-- `/api/verify-payment` requires `orderId`, `paymentId`, and the Razorpay signature outside demo mode. With Supabase configured, the remote order—not a stale local cache—is authoritative.
+- `/api/verify-payment` requires an `orderId` or `subscriptionId`, plus `paymentId` and the Razorpay signature outside demo mode. With Supabase configured, the remote order—not a stale local cache—is authoritative.
 - An order already linked to a different payment returns HTTP 409 `order_payment_mismatch`; verification cannot overwrite that linkage or issue another key.
 - Concurrent in-process fulfillment returns HTTP 409 so the checkout can retry instead of creating duplicate keys.
 - A database/email failure does not mark webhook processing complete. Non-2xx responses leave the event retryable.

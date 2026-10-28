@@ -54,8 +54,17 @@ function withEnv(vars, fn) {
 
 const { checkSchema, collect } = require('../paymentStatus');
 
+const PLAN_ENV = {
+  RAZORPAY_PLAN_PRO_MONTHLY: 'plan_pro_monthly',
+  RAZORPAY_PLAN_PRO_YEARLY: 'plan_pro_yearly',
+  RAZORPAY_PLAN_PRO_PLUS_AI_MONTHLY: 'plan_plus_monthly',
+  RAZORPAY_PLAN_PRO_PLUS_AI_YEARLY: 'plan_plus_yearly',
+};
+
 const CLEAR = {
   RAZORPAY_KEY_ID: undefined, RAZORPAY_KEY_SECRET: undefined, RAZORPAY_WEBHOOK_SECRET: undefined,
+  RAZORPAY_PLAN_PRO_MONTHLY: undefined, RAZORPAY_PLAN_PRO_YEARLY: undefined,
+  RAZORPAY_PLAN_PRO_PLUS_AI_MONTHLY: undefined, RAZORPAY_PLAN_PRO_PLUS_AI_YEARLY: undefined,
   SUPABASE_URL: undefined, SUPABASE_SERVICE_KEY: undefined, SUPABASE_KEY: undefined,
   FYERS_ADMIN_TOKEN: undefined, PUBLIC_BASE_URL: undefined, TL_DEMO_MODE: undefined,
   NETLIFY: undefined, VERCEL: undefined, AWS_LAMBDA_FUNCTION_NAME: undefined, NODE_ENV: undefined,
@@ -66,9 +75,11 @@ test('checkSchema passes when all tables and the RPC answer', async () => {
   try {
     const r = await checkSchema(sb.url, 'service-key');
     assert.strictEqual(r.ok, true, r.detail);
-    // All three tables must be probed, not just one.
-    for (const t of ['licenses', 'orders', 'processed_webhooks']) {
+    for (const t of ['licenses', 'orders', 'processed_webhooks', 'payment_history']) {
       assert.ok(sb.seen.some((s) => s.includes('/rest/v1/' + t)), `must probe ${t}`);
+    }
+    for (const rpc of ['fulfill_order', 'record_payment', 'mark_payment_refunded', 'reissue_license']) {
+      assert.ok(sb.seen.some((s) => s.includes('/rest/v1/rpc/' + rpc)), `must probe ${rpc}`);
     }
   } finally { sb.close(); }
 });
@@ -111,7 +122,7 @@ test('collect reports every blocker when nothing is configured', async () => {
   await withEnv(CLEAR, async () => {
     const report = await collect();
     assert.strictEqual(report.ok, false);
-    for (const key of ['razorpay', 'webhookSecret', 'supabase', 'schema', 'adminToken']) {
+    for (const key of ['razorpay', 'razorpayPlans', 'webhookSecret', 'supabase', 'schema', 'adminToken']) {
       assert.strictEqual(report.checks[key].ok, false, `${key} must be reported as failing`);
       assert.ok(report.checks[key].detail.length > 10, `${key} must explain how to fix it`);
     }
@@ -120,7 +131,7 @@ test('collect reports every blocker when nothing is configured', async () => {
     // A long-lived host stores orders in its JSON file, so Supabase is optional
     // there. Blocking on it would contradict /api/create-order, which accepts
     // payments in exactly this configuration.
-    assert.deepStrictEqual(report.blocking, ['razorpay', 'webhookSecret', 'adminToken']);
+    assert.deepStrictEqual(report.blocking, ['razorpay', 'razorpayPlans', 'webhookSecret', 'adminToken']);
     assert.strictEqual(report.checks.supabase.advisory, true);
     assert.strictEqual(report.checks.schema.advisory, true);
     assert.match(report.checks.supabase.detail, /optional/i);
@@ -136,7 +147,7 @@ test('a serverless host is blocked until Supabase is configured', async () => {
     FYERS_ADMIN_TOKEN: 'admin',
   }), async () => {
     const report = await collect();
-    assert.deepStrictEqual(report.blocking, ['razorpay', 'webhookSecret', 'adminToken', 'supabase', 'schema']);
+    assert.deepStrictEqual(report.blocking, ['razorpay', 'razorpayPlans', 'webhookSecret', 'adminToken', 'supabase', 'schema']);
     assert.strictEqual(report.checks.supabase.advisory, false);
     assert.match(report.checks.supabase.detail, /required on serverless/i);
     assert.strictEqual(report.ok, false, 'Netlify without Supabase cannot persist an order');
@@ -154,6 +165,7 @@ test('collect passes when the full payment configuration is present', async () =
       SUPABASE_URL: sb.url,
       SUPABASE_SERVICE_KEY: 'service-key',
       FYERS_ADMIN_TOKEN: 'admin',
+      ...PLAN_ENV,
     }), async () => {
       const report = await collect();
       assert.strictEqual(report.ok, true, JSON.stringify(report.checks, null, 2));
@@ -174,6 +186,7 @@ test('an advisory setting never blocks checkout', async () => {
       SUPABASE_SERVICE_KEY: 'service-key',
       FYERS_ADMIN_TOKEN: 'admin',
       PUBLIC_BASE_URL: undefined,
+      ...PLAN_ENV,
     }), async () => {
       const report = await collect();
       assert.strictEqual(report.checks.publicBaseUrl.ok, false);

@@ -28,12 +28,11 @@ async function lookup(emailOrPayment) {
   let hits = Object.values(store.licenses).filter(l =>
     l.email === needle || l.paymentId === emailOrPayment || l.originalPaymentId === emailOrPayment);
   if (supabase.isConfigured()) {
-    const remote = needle.includes('@')
+    // Remote state is authoritative for support operations. Merging stale local
+    // hits can otherwise reissue a key that was already revoked or replaced.
+    return needle.includes('@')
       ? await supabase.fetchLicensesByEmail(needle)
       : await supabase.fetchLicensesByPayment(emailOrPayment);
-    const byHash = new Map(hits.map(l => [l.hash, l]));
-    remote.forEach(l => byHash.set(l.hash, l));
-    hits = Array.from(byHash.values());
   }
   return hits;
 }
@@ -56,14 +55,15 @@ async function main() {
     if (!hits.length) throw new Error('no active, unexpired license for ' + arg);
     const old = hits[0];
     const key = L.generateLicenseKey();
-    const replacement = {
-      hash: L.hashKey(key), hint: L.keyHint(key), email: old.email, plan: old.plan,
-      createdAt: Date.now(), expiresAt: old.expiresAt,
-      paymentId: null, orderId: null,
+    const replacement = Object.assign({}, old, {
+      hash: L.hashKey(key), hint: L.keyHint(key), createdAt: Date.now(),
+      paymentId: old.paymentId || null, orderId: old.orderId || null,
+      subscriptionId: old.subscriptionId || null,
       originalPaymentId: old.originalPaymentId || old.paymentId || null,
       originalOrderId: old.originalOrderId || old.orderId || null,
-      devices: [], revoked: false, reissuedFrom: old.hint,
-    };
+      devices: [], revoked: false, revokedReason: null, revokedAt: null,
+      emailSentAt: null, reissuedFrom: old.hint,
+    });
     let remoteCommitted = false;
     if (supabase.isConfigured()) {
       const result = await supabase.reissueLicense(old.hash, replacement.hash, replacement.hint);
@@ -72,9 +72,20 @@ async function main() {
     }
     old.revoked = true;
     old.revokedReason = 'support_reissue';
+    old.billingStatus = 'revoked';
     old.revokedAt = Date.now();
+    old.originalPaymentId = replacement.originalPaymentId;
+    old.originalOrderId = replacement.originalOrderId;
+    old.paymentId = null;
+    old.orderId = null;
+    old.subscriptionId = null;
     store.licenses[old.hash] = old;
     store.licenses[replacement.hash] = replacement;
+    for (const [paymentId, history] of Object.entries(store.paymentHistory)) {
+      if (history.licenseHash === old.hash) {
+        store.paymentHistory[paymentId] = Object.assign({}, history, { licenseHash: replacement.hash });
+      }
+    }
     try {
       store.saveSync();
     } catch (e) {

@@ -1,5 +1,5 @@
 'use strict';
-/* Single source of truth for prepaid pricing. Amounts are in paise (₹1 = 100). */
+/* Single source of truth for paid pricing. Amounts are in paise (₹1 = 100). */
 const PLANS = {
   pro_monthly: {
     id: 'pro_monthly', name: 'Pro — Monthly Subscription', amount: 19900, currency: 'INR',
