@@ -604,24 +604,18 @@
   var selectedBillingCycle = 'recurring';
 
   function applyBillingCycle(cycle, lic) {
-    selectedBillingCycle = cycle || 'recurring';
+    selectedBillingCycle = cycle === 'yearly' ? 'yearly' : 'monthly';
     var isYearly = selectedBillingCycle === 'yearly';
-    var isRecurring = selectedBillingCycle === 'recurring';
-    var is30Day = selectedBillingCycle === 'monthly';
 
     // Update pill buttons visual state
     var recBtn = el('billingRecurringBtn');
     var monBtn = el('billingMonthlyBtn');
     var yrBtn = el('billingYearlyBtn');
-    if (recBtn) {
-      recBtn.style.background = isRecurring ? '#3b82f6' : 'transparent';
-      recBtn.style.color = isRecurring ? '#fff' : 'var(--dim)';
-      recBtn.style.fontWeight = isRecurring ? '700' : '500';
-    }
+    if (recBtn) recBtn.style.display = 'none';
     if (monBtn) {
-      monBtn.style.background = is30Day ? '#3b82f6' : 'transparent';
-      monBtn.style.color = is30Day ? '#fff' : 'var(--dim)';
-      monBtn.style.fontWeight = is30Day ? '700' : '500';
+      monBtn.style.background = !isYearly ? '#3b82f6' : 'transparent';
+      monBtn.style.color = !isYearly ? '#fff' : 'var(--dim)';
+      monBtn.style.fontWeight = !isYearly ? '700' : '500';
     }
     if (yrBtn) {
       yrBtn.style.background = isYearly ? '#3b82f6' : 'transparent';
@@ -634,20 +628,15 @@
     var proPrice = el('proCardPrice');
     var proSub = el('proCardSub');
     var proBtn = el('proCardBtn');
-    if (isRecurring) {
-      if (proName) proName.textContent = 'Pro Monthly Auto-Renewal';
-      if (proPrice) proPrice.innerHTML = '₹199 <span style="font-size:12px;font-weight:400">/ month (recurring)</span>';
-      if (proSub) proSub.textContent = 'Complete risk rules suite · Auto-renews monthly · Cancel anytime';
-      if (proBtn) proBtn.setAttribute('data-plan', 'pro_monthly_recurring');
-    } else if (isYearly) {
-      if (proName) proName.textContent = 'Pro 365-Day Pass';
-      if (proPrice) proPrice.innerHTML = '₹1,499 <span style="font-size:12px;font-weight:400">/ 365 days</span>';
-      if (proSub) proSub.textContent = '365-day prepaid access · equivalent ₹125/month (Save 37%)';
+    if (isYearly) {
+      if (proName) proName.textContent = 'Pro Annual Subscription';
+      if (proPrice) proPrice.innerHTML = '₹1,499 <span style="font-size:12px;font-weight:400">/ year (billed annually)</span>';
+      if (proSub) proSub.textContent = 'Complete risk rules suite · Auto-renews yearly · Save 37% · Cancel anytime';
       if (proBtn) proBtn.setAttribute('data-plan', 'pro_yearly');
     } else {
-      if (proName) proName.textContent = 'Pro 30-Day Pass';
-      if (proPrice) proPrice.innerHTML = '₹199 <span style="font-size:12px;font-weight:400">/ 30 days</span>';
-      if (proSub) proSub.textContent = 'Complete risk rules suite · 30-day one-time prepaid access';
+      if (proName) proName.textContent = 'Pro Monthly Subscription';
+      if (proPrice) proPrice.innerHTML = '₹199 <span style="font-size:12px;font-weight:400">/ month</span>';
+      if (proSub) proSub.textContent = 'Complete risk rules suite · Auto-renews monthly · Cancel anytime';
       if (proBtn) proBtn.setAttribute('data-plan', 'pro_monthly');
     }
 
@@ -657,22 +646,16 @@
     var proAiSub = el('proAiCardSub');
     var proAiBadge = el('proAiBadge');
     var proAiBtn = el('proAiCardBtn');
-    if (isRecurring) {
-      if (proAiName) proAiName.textContent = 'Pro+ AI Monthly Auto-Renewal';
-      if (proAiPrice) proAiPrice.innerHTML = '₹399 <span style="font-size:12px;font-weight:400">/ month (recurring)</span>';
-      if (proAiSub) proAiSub.textContent = 'Discipline + live market intelligence · Auto-renews monthly · Cancel anytime';
-      if (proAiBadge) proAiBadge.style.display = 'none';
-      if (proAiBtn) proAiBtn.setAttribute('data-plan', 'pro_plus_ai_monthly_recurring');
-    } else if (isYearly) {
-      if (proAiName) proAiName.textContent = 'Pro+ AI 365-Day Pass';
-      if (proAiPrice) proAiPrice.innerHTML = '₹3,999 <span style="font-size:12px;font-weight:400">/ 365 days</span>';
-      if (proAiSub) proAiSub.textContent = '365-day prepaid access · equivalent ₹333/month (Save 16%)';
+    if (isYearly) {
+      if (proAiName) proAiName.textContent = 'Pro+ AI Annual Subscription';
+      if (proAiPrice) proAiPrice.innerHTML = '₹3,999 <span style="font-size:12px;font-weight:400">/ year (billed annually)</span>';
+      if (proAiSub) proAiSub.textContent = 'Discipline + live market intelligence · Auto-renews yearly · Save 16% · Cancel anytime';
       if (proAiBadge) proAiBadge.style.display = 'inline-block';
       if (proAiBtn) proAiBtn.setAttribute('data-plan', 'pro_plus_ai_yearly');
     } else {
-      if (proAiName) proAiName.textContent = 'Pro+ AI 30-Day Pass';
-      if (proAiPrice) proAiPrice.innerHTML = '₹399 <span style="font-size:12px;font-weight:400">/ 30 days</span>';
-      if (proAiSub) proAiSub.textContent = 'Discipline + market intelligence · 30-day one-time prepaid access';
+      if (proAiName) proAiName.textContent = 'Pro+ AI Monthly Subscription';
+      if (proAiPrice) proAiPrice.innerHTML = '₹399 <span style="font-size:12px;font-weight:400">/ month</span>';
+      if (proAiSub) proAiSub.textContent = 'Discipline + live market intelligence · Auto-renews monthly · Cancel anytime';
       if (proAiBadge) proAiBadge.style.display = 'none';
       if (proAiBtn) proAiBtn.setAttribute('data-plan', 'pro_plus_ai_monthly');
     }
@@ -702,12 +685,10 @@
       } else {
         btn.disabled = false;
         btn.style.opacity = '1';
-        if (p === 'pro_monthly_recurring') btn.textContent = pro ? 'Switch to Pro Monthly' : 'Start Pro Auto-Renewal (₹199/mo)';
-        else if (p === 'pro_plus_ai_monthly_recurring') btn.textContent = 'Start Pro+ AI (₹399/mo)';
-        else if (p === 'pro_monthly') btn.textContent = pro ? 'Switch to Pro 30-Day' : 'Upgrade to Pro 30-Day';
-        else if (p === 'pro_yearly') btn.textContent = pro ? 'Switch to Pro 365-Day' : 'Get Pro 365-Day (Save 37%)';
-        else if (p === 'pro_plus_ai_monthly') btn.textContent = 'Get Pro+ AI 30-Day';
-        else if (p === 'pro_plus_ai_yearly') btn.textContent = 'Get Pro+ AI 365-Day (Save 16%)';
+        if (p === 'pro_monthly' || p === 'pro_monthly_recurring') btn.textContent = pro ? 'Switch to Pro Monthly' : 'Start Pro Monthly (₹199/mo)';
+        else if (p === 'pro_yearly') btn.textContent = pro ? 'Switch to Pro Annual' : 'Start Pro Annual (Save 37%)';
+        else if (p === 'pro_plus_ai_monthly' || p === 'pro_plus_ai_monthly_recurring') btn.textContent = 'Start Pro+ AI Monthly (₹399/mo)';
+        else if (p === 'pro_plus_ai_yearly') btn.textContent = 'Start Pro+ AI Annual (Save 16%)';
         else if (p === 'founder_lifetime') btn.textContent = 'Get Founder Access';
       }
     });

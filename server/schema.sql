@@ -61,9 +61,29 @@ CREATE TABLE IF NOT EXISTS public.processed_webhooks (
   received_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Payment history: every captured payment linked to a license/subscription.
+-- Idempotent on payment_id (unique). Supports refund reconciliation of historical payments.
+CREATE TABLE IF NOT EXISTS public.payment_history (
+  payment_id text PRIMARY KEY,
+  license_hash text NOT NULL,
+  subscription_id text,
+  order_id text,
+  email text,
+  plan text,
+  amount bigint,
+  currency text DEFAULT 'INR',
+  captured_at timestamptz NOT NULL DEFAULT now(),
+  refunded_at timestamptz,
+  refunded boolean DEFAULT false
+);
+
+CREATE INDEX IF NOT EXISTS payment_history_license_hash_idx ON public.payment_history(license_hash);
+CREATE INDEX IF NOT EXISTS payment_history_subscription_id_idx ON public.payment_history(subscription_id) WHERE subscription_id IS NOT NULL;
+
 ALTER TABLE public.licenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.processed_webhooks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payment_history ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
@@ -76,10 +96,15 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'processed_webhooks' AND policyname = 'service_role_all_webhooks') THEN
     CREATE POLICY service_role_all_webhooks ON public.processed_webhooks FOR ALL TO service_role USING (true) WITH CHECK (true);
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'payment_history' AND policyname = 'service_role_all_payment_history') THEN
+    CREATE POLICY service_role_all_payment_history ON public.payment_history FOR ALL TO service_role USING (true) WITH CHECK (true);
+  END IF;
 END $$;
 
--- One transaction shared by signature verification and payment.captured webhooks.
--- ON CONFLICT DO NOTHING plus the unique indexes makes concurrent retries idempotent.
+-- fulfill_order: atomically inserts one license and marks the order fulfilled.
+-- Now includes all subscription/billing fields so a recurring license is fully
+-- populated immediately; no later email-sync is needed to complete the record.
+-- ON CONFLICT DO NOTHING plus unique indexes makes concurrent retries idempotent.
 CREATE OR REPLACE FUNCTION public.fulfill_order(
   p_order_id text,
   p_payment_id text,
@@ -88,7 +113,14 @@ CREATE OR REPLACE FUNCTION public.fulfill_order(
   p_hash text,
   p_hint text,
   p_created_at timestamptz,
-  p_expires_at timestamptz
+  p_expires_at timestamptz,
+  p_subscription_id text DEFAULT NULL,
+  p_provider_plan_id text DEFAULT NULL,
+  p_billing_model text DEFAULT NULL,
+  p_billing_status text DEFAULT 'active',
+  p_current_period_start timestamptz DEFAULT NULL,
+  p_current_period_end timestamptz DEFAULT NULL,
+  p_cancel_at_period_end boolean DEFAULT false
 ) RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -124,15 +156,24 @@ BEGIN
    WHERE order_id = p_order_id;
 
   INSERT INTO public.licenses (
-    hash, hint, email, plan, created_at, expires_at, payment_id, order_id, devices, revoked
+    hash, hint, email, plan, created_at, expires_at, payment_id, order_id,
+    subscription_id, provider_plan_id, billing_model, billing_status,
+    current_period_start, current_period_end, cancel_at_period_end,
+    devices, revoked
   ) VALUES (
     p_hash, p_hint, p_email, p_plan, p_created_at, p_expires_at,
-    p_payment_id, p_order_id, '{}', false
+    p_payment_id, p_order_id,
+    p_subscription_id, p_provider_plan_id, p_billing_model,
+    COALESCE(p_billing_status, 'active'),
+    p_current_period_start, p_current_period_end,
+    COALESCE(p_cancel_at_period_end, false),
+    '{}', false
   ) ON CONFLICT DO NOTHING;
 
   SELECT hash INTO result_hash
     FROM public.licenses
    WHERE (p_order_id IS NOT NULL AND order_id = p_order_id)
+      OR (p_subscription_id IS NOT NULL AND subscription_id = p_subscription_id)
       OR (p_payment_id IS NOT NULL AND payment_id = p_payment_id)
    ORDER BY created_at DESC
    LIMIT 1;
@@ -142,14 +183,37 @@ BEGIN
 
   UPDATE public.orders
      SET status = 'paid', fulfillment_status = 'FULFILLED',
-         payment_id = p_payment_id, fulfilled_at = now(), updated_at = now()
+         payment_id = p_payment_id, fulfilled_at = now(), updated_at = now(),
+         subscription_id = COALESCE(p_subscription_id, subscription_id),
+         billing_model = COALESCE(p_billing_model, billing_model)
    WHERE order_id = p_order_id;
+
+  -- Record initial payment in history (idempotent)
+  INSERT INTO public.payment_history (
+    payment_id, license_hash, subscription_id, order_id, email, plan,
+    captured_at
+  ) VALUES (
+    p_payment_id, result_hash, p_subscription_id, p_order_id, p_email, p_plan,
+    now()
+  ) ON CONFLICT (payment_id) DO NOTHING;
+
   RETURN result_hash;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.fulfill_order(text,text,text,text,text,text,timestamptz,timestamptz) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.fulfill_order(text,text,text,text,text,text,timestamptz,timestamptz) TO service_role;
+REVOKE ALL ON FUNCTION public.fulfill_order(text,text,text,text,text,text,timestamptz,timestamptz,text,text,text,text,timestamptz,timestamptz,boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fulfill_order(text,text,text,text,text,text,timestamptz,timestamptz,text,text,text,text,timestamptz,timestamptz,boolean) TO service_role;
+
+-- Drop the old 8-arg signature if it still exists (migration safety).
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'fulfill_order' AND pronargs = 8
+  ) THEN
+    DROP FUNCTION IF EXISTS public.fulfill_order(text,text,text,text,text,text,timestamptz,timestamptz);
+  END IF;
+END $$;
 
 
 CREATE OR REPLACE FUNCTION public.register_device(
@@ -190,6 +254,11 @@ REVOKE ALL ON FUNCTION public.register_device(text,text,integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.register_device(text,text,integer) TO service_role;
 
 
+-- reissue_license: atomically revokes the old key and inserts a replacement,
+-- transferring the active subscription linkage to the replacement.
+-- The old row keeps its original_* fields for payment lineage.
+-- Unique indexes (order_id, payment_id, subscription_id) are handled by
+-- nulling them on the old row BEFORE inserting the replacement.
 CREATE OR REPLACE FUNCTION public.reissue_license(
   p_old_hash text, p_new_hash text, p_new_hint text
 ) RETURNS text
@@ -197,24 +266,104 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
+DECLARE
+  old_row public.licenses%ROWTYPE;
 BEGIN
-  UPDATE public.licenses
-     SET revoked = true, revoked_reason = 'support_reissue', revoked_at = now()
-   WHERE hash = p_old_hash AND revoked = false;
+  SELECT * INTO old_row FROM public.licenses WHERE hash = p_old_hash AND revoked = false FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'active license not found'; END IF;
 
+  -- Preserve lineage fields on the old row before nulling unique columns.
+  UPDATE public.licenses
+     SET revoked = true, revoked_reason = 'support_reissue', revoked_at = now(),
+         -- Null out the unique-indexed columns so the replacement can own them.
+         order_id = NULL,
+         payment_id = NULL,
+         subscription_id = NULL,
+         -- Keep original_* as historical lineage.
+         original_payment_id = COALESCE(original_payment_id, old_row.payment_id),
+         original_order_id   = COALESCE(original_order_id, old_row.order_id)
+   WHERE hash = p_old_hash;
+
+  -- Insert the replacement with the active subscription linkage transferred.
   INSERT INTO public.licenses (
     hash, hint, email, plan, created_at, expires_at,
-    payment_id, order_id, original_payment_id, original_order_id,
+    payment_id, order_id, subscription_id, provider_plan_id,
+    billing_model, billing_status,
+    current_period_start, current_period_end, cancel_at_period_end,
+    original_payment_id, original_order_id,
     reissued_from, devices, revoked
   )
-  SELECT p_new_hash, p_new_hint, email, plan, now(), expires_at,
-         null, null, COALESCE(original_payment_id, payment_id), COALESCE(original_order_id, order_id),
-         hint, '{}', false
-    FROM public.licenses WHERE hash = p_old_hash;
+  SELECT p_new_hash, p_new_hint, old_row.email, old_row.plan, now(), old_row.expires_at,
+         NULL, NULL,
+         -- Transfer the active subscription linkage
+         old_row.subscription_id,
+         old_row.provider_plan_id,
+         old_row.billing_model, old_row.billing_status,
+         old_row.current_period_start, old_row.current_period_end,
+         old_row.cancel_at_period_end,
+         COALESCE(old_row.original_payment_id, old_row.payment_id),
+         COALESCE(old_row.original_order_id, old_row.order_id),
+         old_row.hint, '{}', false;
+
+  -- Update payment history so future webhooks find the replacement hash.
+  UPDATE public.payment_history
+     SET license_hash = p_new_hash
+   WHERE license_hash = p_old_hash;
+
   RETURN p_new_hash;
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public.reissue_license(text,text,text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.reissue_license(text,text,text) TO service_role;
+
+
+-- record_payment: idempotent payment-history append (used for renewals).
+CREATE OR REPLACE FUNCTION public.record_payment(
+  p_payment_id text,
+  p_license_hash text,
+  p_subscription_id text DEFAULT NULL,
+  p_order_id text DEFAULT NULL,
+  p_email text DEFAULT NULL,
+  p_plan text DEFAULT NULL,
+  p_amount bigint DEFAULT NULL,
+  p_currency text DEFAULT 'INR'
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.payment_history (
+    payment_id, license_hash, subscription_id, order_id, email, plan, amount, currency, captured_at
+  ) VALUES (
+    p_payment_id, p_license_hash, p_subscription_id, p_order_id, p_email, p_plan, p_amount, p_currency, now()
+  ) ON CONFLICT (payment_id) DO NOTHING;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.record_payment(text,text,text,text,text,text,bigint,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_payment(text,text,text,text,text,text,bigint,text) TO service_role;
+
+
+-- mark_payment_refunded: marks a specific historical payment refunded (idempotent).
+CREATE OR REPLACE FUNCTION public.mark_payment_refunded(
+  p_payment_id text
+) RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_hash text;
+BEGIN
+  UPDATE public.payment_history
+     SET refunded = true, refunded_at = now()
+   WHERE payment_id = p_payment_id AND NOT refunded
+  RETURNING license_hash INTO v_hash;
+  RETURN v_hash;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.mark_payment_refunded(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.mark_payment_refunded(text) TO service_role;

@@ -23,7 +23,7 @@ process.env.RAZORPAY_PLAN_PRO_PLUS_AI_MONTHLY = 'plan_mock_plus_monthly';
 process.env.RAZORPAY_PLAN_PRO_PLUS_AI_YEARLY = 'plan_mock_plus_yearly';
 delete process.env.TL_DEMO_MODE;
 
-const remote = { orders: new Map(), licenses: new Map(), webhooks: new Map() };
+const remote = { orders: new Map(), licenses: new Map(), webhooks: new Map(), payments: new Map() };
 let orderSequence = 0;
 let failNextFulfillment = false;
 let failNextEmail = false;
@@ -37,9 +37,18 @@ function rowLicense(body) {
     plan: body.plan || body.p_plan, created_at: body.created_at || body.p_created_at,
     expires_at: body.expires_at || body.p_expires_at, payment_id: body.payment_id || body.p_payment_id,
     order_id: body.order_id || body.p_order_id,
-    subscription_id: body.subscription_id || body.p_subscription_id || body.order_id || null,
+    // Preserve subscription/billing fields from new RPC params
+    subscription_id: body.subscription_id || body.p_subscription_id || null,
+    billing_model: body.billing_model || body.p_billing_model || null,
+    billing_status: body.billing_status || body.p_billing_status || 'active',
+    provider_plan_id: body.provider_plan_id || body.p_provider_plan_id || null,
+    current_period_start: body.current_period_start || body.p_current_period_start || null,
+    current_period_end: body.current_period_end || body.p_current_period_end || null,
+    cancel_at_period_end: Boolean(body.cancel_at_period_end || body.p_cancel_at_period_end),
     devices: body.devices || [], revoked: !!body.revoked,
     email_sent_at: body.email_sent_at || null,
+    original_payment_id: body.original_payment_id || body.p_original_payment_id || null,
+    original_order_id: body.original_order_id || body.p_original_order_id || null,
   };
 }
 
@@ -108,16 +117,32 @@ global.fetch = async (url, options = {}) => {
   if (target.pathname === '/rpc/reissue_license' && method === 'POST') {
     const old = remote.licenses.get(body.p_old_hash);
     if (!old || old.revoked) return fail(400, 'active license not found');
+    // Model the real SQL: null unique columns on old row, then insert replacement
+    // with subscription linkage transferred.
+    const savedSubId = old.subscription_id;
     old.revoked = true;
     old.revoked_reason = 'support_reissue';
     old.revoked_at = new Date().toISOString();
+    old.original_payment_id = old.original_payment_id || old.payment_id;
+    old.original_order_id = old.original_order_id || old.order_id;
+    old.payment_id = null;
+    old.order_id = null;
+    old.subscription_id = null;
+    remote.licenses.set(old.hash, old);
     const replacement = { ...old, hash: body.p_new_hash, hint: body.p_new_hint,
-      created_at: new Date().toISOString(), payment_id: null, order_id: null,
-      original_payment_id: old.original_payment_id || old.payment_id,
-      original_order_id: old.original_order_id || old.order_id,
+      created_at: new Date().toISOString(),
+      payment_id: null, order_id: null,
+      // Transfer subscription linkage to replacement
+      subscription_id: savedSubId,
       reissued_from: old.hint, devices: [], revoked: false,
       revoked_reason: null, revoked_at: null, email_sent_at: null };
     remote.licenses.set(replacement.hash, replacement);
+    // Update payment history to point to replacement hash
+    for (const [pid, ph] of remote.payments) {
+      if (ph.license_hash === body.p_old_hash) {
+        remote.payments.set(pid, { ...ph, license_hash: body.p_new_hash });
+      }
+    }
     return ok(replacement.hash);
   }
   if (target.pathname === '/rpc/fulfill_order' && method === 'POST') {
@@ -126,15 +151,51 @@ global.fetch = async (url, options = {}) => {
       failNextFulfillment = false;
       return fail(500, 'injected database outage');
     }
-    const existing = Array.from(remote.licenses.values()).find(l => l.order_id === body.p_order_id || l.payment_id === body.p_payment_id);
+    // Check subscription_id as well as order_id for idempotency
+    const existing = Array.from(remote.licenses.values()).find(l =>
+      l.order_id === body.p_order_id ||
+      (body.p_subscription_id && l.subscription_id === body.p_subscription_id) ||
+      l.payment_id === body.p_payment_id);
     if (existing) return ok(existing.hash);
     const order = remote.orders.get(body.p_order_id);
     if (!order) return fail(400, 'unknown order');
     const lic = rowLicense(body);
     remote.licenses.set(lic.hash, lic);
     remote.orders.set(body.p_order_id, { ...order, status: 'paid', payment_id: body.p_payment_id,
+      subscription_id: body.p_subscription_id || null,
+      billing_model: body.p_billing_model || null,
       fulfillment_status: 'FULFILLED', fulfilled_at: new Date().toISOString() });
+    // Record initial payment in history
+    if (body.p_payment_id) {
+      remote.payments.set(body.p_payment_id, {
+        payment_id: body.p_payment_id, license_hash: lic.hash,
+        subscription_id: body.p_subscription_id || null,
+        order_id: body.p_order_id, email: body.p_email, plan: body.p_plan,
+        captured_at: new Date().toISOString(), refunded: false,
+      });
+    }
     return ok(lic.hash);
+  }
+  if (target.pathname === '/rpc/record_payment' && method === 'POST') {
+    if (!remote.payments.has(body.p_payment_id)) {
+      remote.payments.set(body.p_payment_id, {
+        payment_id: body.p_payment_id, license_hash: body.p_license_hash,
+        subscription_id: body.p_subscription_id || null,
+        order_id: body.p_order_id || null, email: body.p_email || null,
+        plan: body.p_plan || null, captured_at: new Date().toISOString(), refunded: false,
+      });
+    }
+    return ok(null);
+  }
+  if (target.pathname === '/rpc/mark_payment_refunded' && method === 'POST') {
+    const ph = remote.payments.get(body.p_payment_id);
+    if (ph && !ph.refunded) { ph.refunded = true; ph.refunded_at = new Date().toISOString(); }
+    return ok(ph ? ph.license_hash : null);
+  }
+  if (target.pathname === '/rest/v1/payment_history' && method === 'GET') {
+    const pid = (target.searchParams.get('payment_id') || '').replace('eq.', '');
+    const rows = pid ? Array.from(remote.payments.values()).filter(p => p.payment_id === pid) : [];
+    return ok(rows.map(p => ({ license_hash: p.license_hash })));
   }
   if (target.pathname === '/rest/v1/processed_webhooks' && method === 'POST') {
     remote.webhooks.set(body.event_id, body);
@@ -332,7 +393,7 @@ test('serverless payments fail closed without Supabase and recover through remot
   const refundSignature = crypto.createHmac('sha256', 'mock_webhook_secret').update(refundRaw).digest('hex');
   const refunded = await request(port, 'POST', '/api/webhook', refundRaw, { 'x-razorpay-signature': refundSignature });
   assert.strictEqual(refunded.status, 200, refunded.text);
-  const refundedLicense = Array.from(remote.licenses.values()).find(l => l.payment_id === 'pay_remote_1');
+  const refundedLicense = Array.from(remote.licenses.values()).find(l => l.payment_id === 'pay_remote_1' || l.original_payment_id === 'pay_remote_1');
   assert.strictEqual(refundedLicense.revoked, true);
   const validation = await request(port, 'POST', '/api/validate', { key: recovered.body.licenseKey });
   assert.strictEqual(validation.status, 200);

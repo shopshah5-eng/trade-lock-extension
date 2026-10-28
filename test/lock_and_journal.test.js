@@ -312,12 +312,11 @@ test('Paid Plans Catalog: Client and server plan catalogs match proposed pricing
 
   // Verify options/options.html contains Upgrade / Plans entry points
   const optionsHtml = fs.readFileSync(path.join(rootDir, 'options/options.html'), 'utf8');
-  assert.ok(optionsHtml.includes('Pro 30-Day'), 'Options must present 30-day prepaid Pro');
-  assert.ok(optionsHtml.includes('365 days'), 'Options must present 365-day prepaid access');
-  assert.ok(optionsHtml.includes('Pro+ AI 30-Day'), 'Options must present 30-day prepaid Pro+');
+  assert.ok(optionsHtml.includes('Pro Monthly'), 'Options must present monthly Pro');
+  assert.ok(optionsHtml.includes('Annual Billing') || optionsHtml.includes('yr'), 'Options must present annual option');
+  assert.ok(optionsHtml.includes('Pro+ AI Monthly'), 'Options must present monthly Pro+');
   assert.ok(!optionsHtml.includes('Not for sale yet'), 'Pro+ must be back on sale');
-  assert.ok(optionsHtml.includes('no auto-renewal'), 'Options must disclose prepaid non-renewing access');
-  assert.strictEqual(optionsHtml.includes('Recurring subscriptions can be managed or cancelled'), false);
+  assert.ok(optionsHtml.includes('Recurring subscription') || optionsHtml.includes('Recurring'), 'Options must disclose recurring access');
   assert.ok(optionsHtml.includes('Founder Lifetime'), 'Options must present Founder Lifetime');
   assert.ok(optionsHtml.includes('Plan Comparison Matrix'), 'Options must include full plan comparison table');
 });

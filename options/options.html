@@ -1353,19 +1353,19 @@
       <!-- Checkout Feedback Notification -->
       <div id="checkoutNotice" style="display:none;padding:12px;border-radius:8px;margin-bottom:16px;font-size:12.5px"></div>
 
-      <!-- Plan catalog with Recurring / 30-day / 365-day toggle -->
+      <!-- Plan catalog with Monthly / Annual toggle -->
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin:24px 0 10px;">
         <div>
           <h3 style="margin:0;font-size:15px;font-weight:750">Choose Your Plan</h3>
-          <p style="margin:3px 0 0;font-size:12px;color:var(--muted)">Transparent pricing · Choose recurring auto-renewal or one-time prepaid access.</p>
+          <p style="margin:3px 0 0;font-size:12px;color:var(--muted)">Transparent pricing · Recurring subscriptions with self-serve cancellation anytime.</p>
         </div>
         <!-- Billing Cycle Toggle Switch -->
         <div style="display:inline-flex;align-items:center;gap:4px;background:rgba(0,0,0,0.35);padding:4px 6px;border-radius:99px;border:1px solid var(--line)">
-          <button id="billingRecurringBtn" type="button" class="billing-cycle-pill active" style="font-size:11.5px;font-weight:700;padding:5px 12px;border-radius:99px;border:none;background:#3b82f6;color:#fff;cursor:pointer;transition:all .2s">Monthly Auto-Renewal</button>
-          <button id="billingMonthlyBtn" type="button" class="billing-cycle-pill" style="font-size:11.5px;font-weight:500;padding:5px 12px;border-radius:99px;border:none;background:transparent;color:var(--dim);cursor:pointer;transition:all .2s">30-Day Pass</button>
+          <button id="billingMonthlyBtn" type="button" class="billing-cycle-pill active" style="font-size:11.5px;font-weight:700;padding:5px 12px;border-radius:99px;border:none;background:#3b82f6;color:#fff;cursor:pointer;transition:all .2s">Monthly Billing</button>
           <button id="billingYearlyBtn" type="button" class="billing-cycle-pill" style="font-size:11.5px;font-weight:500;padding:5px 12px;border-radius:99px;border:none;background:transparent;color:var(--dim);cursor:pointer;transition:all .2s">
-            365-Day Pass <span class="badge pro" style="font-size:9px;padding:1px 5px;background:rgba(16,185,129,0.2);color:#34d399;margin-left:4px">Save up to 37%</span>
+            Annual Billing <span class="badge pro" style="font-size:9px;padding:1px 5px;background:rgba(16,185,129,0.2);color:#34d399;margin-left:4px">Save up to 37%</span>
           </button>
+          <button id="billingRecurringBtn" type="button" class="billing-cycle-pill" style="display:none"></button>
           <!-- Hidden legacy toggle for backward compatibility -->
           <button id="billingCycleToggle" type="button" role="switch" aria-checked="false" aria-label="Toggle billing" style="display:none"></button>
           <span id="billingCycleKnob" style="display:none"></span>
@@ -1396,11 +1396,11 @@
         <!-- 2. Pro (Featured / Recommended) -->
         <div class="plan-card featured" id="cardPro">
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <div class="p-name" id="proCardName">Pro 30-Day</div>
+            <div class="p-name" id="proCardName">Pro Monthly</div>
             <span class="badge pro" style="font-size:10px;padding:2px 6px">Recommended</span>
           </div>
-          <div class="p-price" id="proCardPrice">₹199 <span style="font-size:12px;font-weight:400">/ 30 days</span></div>
-          <div class="p-sub" id="proCardSub">Complete risk rules suite · 30-day prepaid access</div>
+          <div class="p-price" id="proCardPrice">₹199 <span style="font-size:12px;font-weight:400">/ month</span></div>
+          <div class="p-sub" id="proCardSub">Complete risk rules suite · Auto-renews monthly · Cancel anytime</div>
           <ul>
             <li>All Free features included</li>
             <li>Max daily loss limit &amp; protection</li>
@@ -1417,11 +1417,11 @@
         <!-- 3. Pro+ AI -->
         <div class="plan-card" id="cardProAi">
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <div class="p-name" id="proAiCardName">Pro+ AI 30-Day</div>
+            <div class="p-name" id="proAiCardName">Pro+ AI Monthly</div>
             <span class="badge pro" id="proAiBadge" style="font-size:10px;padding:2px 6px;display:none">Save 16%</span>
           </div>
-          <div class="p-price" id="proAiCardPrice">₹399 <span style="font-size:12px;font-weight:400">/ 30 days</span></div>
-          <div class="p-sub" id="proAiCardSub">Discipline + market intelligence · 30-day prepaid access</div>
+          <div class="p-price" id="proAiCardPrice">₹399 <span style="font-size:12px;font-weight:400">/ month</span></div>
+          <div class="p-sub" id="proAiCardSub">Discipline + market intelligence · Auto-renews monthly · Cancel anytime</div>
           <ul>
             <li>All Pro features</li>
             <li>Market briefs and rule-based discipline coach</li>
@@ -1524,8 +1524,8 @@
             <tr>
               <td>Billing model</td>
               <td>N/A</td>
-              <td>Prepaid; no auto-renewal</td>
-              <td>Prepaid; no auto-renewal</td>
+              <td>Recurring subscription (monthly / annual)</td>
+              <td>Recurring subscription (monthly / annual)</td>
             </tr>
           </tbody>
         </table>
@@ -1538,7 +1538,7 @@
           <li><b>Safety is Never Held Hostage:</b> Core safety locks and self-imposed session lockouts function unconditionally on every plan, regardless of license status.</li>
           <li><b>Journal Retention:</b> License expiry does not delete local journal records or exports. Clearing browser/extension storage can delete them, so keep exports.</li>
           <li><b>Zero Payment Secrets in Extension:</b> We never ask for or store debit/credit card credentials. Checkouts are processed by Razorpay and verified by the backend; card credentials are not stored by Trade Lock.</li>
-          <li><b>Prepaid Access:</b> There is no recurring subscription to cancel. Timed access ends at its expiry unless you purchase another period.</li>
+          <li><b>Subscription Management:</b> Recurring subscriptions can be cancelled anytime with a single click. Plan access remains active until the end of your billing cycle.</li>
         </ul>
       </div>
     </div>

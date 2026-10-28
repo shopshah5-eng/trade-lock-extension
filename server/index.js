@@ -331,39 +331,19 @@ async function razorpayCreateOrder(plan, email) {
 }
 
 async function razorpayCreateSubscription(plan, email) {
-  let planId = plan.razorpayPlanId || process.env['RAZORPAY_PLAN_' + plan.id.toUpperCase()];
+  // For live/serverless checkout, plan IDs must be pre-created in the Razorpay
+  // dashboard and stored in env vars. Dynamic auto-creation is not safe for
+  // cold-start or multi-instance deployments (creates duplicates).
+  const planId = process.env['RAZORPAY_PLAN_' + plan.id.toUpperCase()];
+  if (!planId) {
+    throw new Error(
+      'Razorpay subscription plan ID not configured for ' + plan.id +
+      '. Create the plan in the Razorpay dashboard and set RAZORPAY_PLAN_' +
+      plan.id.toUpperCase() + ' in server/.env. See RAZORPAY_SETUP.md for instructions.'
+    );
+  }
   const auth = Buffer.from(KEY_ID + ':' + KEY_SECRET).toString('base64');
   const isYearly = plan.interval === 'yearly' || plan.durationDays === 365;
-  if (!planId) {
-    // Attempt dynamic auto-creation of plan on Razorpay
-    try {
-      const planRes = await providerFetch('https://api.razorpay.com/v1/plans', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Basic ' + auth },
-        body: JSON.stringify({
-          period: isYearly ? 'yearly' : 'monthly',
-          interval: 1,
-          item: {
-            name: plan.name,
-            amount: plan.amount,
-            currency: 'INR',
-            description: plan.tagline || (isYearly ? 'Trade Lock Yearly Subscription' : 'Trade Lock Monthly Subscription')
-          }
-        })
-      });
-      const pData = await planRes.json();
-      if (planRes.ok && pData.id) {
-        planId = pData.id;
-        plan.razorpayPlanId = planId;
-      }
-    } catch (e) {
-      // Fall through to error check below
-    }
-  }
-
-  if (!planId) {
-    throw new Error('Razorpay subscription plan ID not configured for ' + plan.id + '. Set RAZORPAY_PLAN_' + plan.id.toUpperCase() + ' in server/.env');
-  }
   const r = await providerFetch('https://api.razorpay.com/v1/subscriptions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Basic ' + auth },
@@ -516,9 +496,20 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/create-subscription') {
       if (isRateLimited(req, 20, 60000)) return json(res, 429, { error: 'rate_limited' }, req);
       const { plan: planId, email } = await readJson(req);
-      const plan = getPlan(canonicalPlanId(planId));
-      if (!plan || !isAvailable(plan.id)) return json(res, 400, { error: 'unknown_plan' }, req);
+      const canonical = canonicalPlanId(planId);
+      const plan = getPlan(canonical);
+      // Reject free, lifetime, unknown, or unavailable plans before any provider request.
+      if (!plan || plan.billingModel !== 'recurring') {
+        return json(res, 400, { error: 'recurring_plan_required',
+          detail: 'This endpoint only accepts recurring subscription plans (pro_monthly, pro_yearly, pro_plus_ai_monthly, pro_plus_ai_yearly).' }, req);
+      }
+      if (!isAvailable(plan.id)) return json(res, 409, { error: 'plan_not_available' }, req);
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || '')) return json(res, 400, { error: 'valid_email_required' }, req);
+      // Persistence guard: must run BEFORE any provider call on serverless.
+      if (!paymentPersistenceReady()) return json(res, 503, {
+        error: 'payment_persistence_not_configured',
+        detail: 'Serverless deployments must set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY so an order survives between the checkout request and the Razorpay webhook. Locally the file store is used and this is not required.',
+      }, req);
       const normalizedEmail = String(email).toLowerCase().trim();
 
       if (demoCheckoutEnabled()) {
@@ -652,8 +643,11 @@ const server = http.createServer(async (req, res) => {
       const paymentEntity = evt.payload && evt.payload.payment && evt.payload.payment.entity;
       const refundEntity = evt.payload && evt.payload.refund && evt.payload.refund.entity;
       const subEntity = evt.payload && evt.payload.subscription && evt.payload.subscription.entity;
-      const eventId = evt.id || (paymentEntity && paymentEntity.id) || (refundEntity && refundEntity.id) || (subEntity && subEntity.id);
-      if (!eventId) return json(res, 400, { error: 'missing_event_id' });
+      // Prefer the canonical Razorpay event ID. When absent, use a deterministic
+      // SHA-256 of the signed raw body so identical retries deduplicate correctly
+      // while distinct lifecycle events (different raw body) do NOT collapse.
+      const eventId = evt.id ||
+        crypto.createHash('sha256').update(raw).digest('hex');
       if (supabase.isConfigured()) {
         if (await supabase.hasWebhook(eventId)) {
           store.processedWebhooks[eventId] = { receivedAt: Date.now(), event: evt.event || null };
@@ -707,7 +701,17 @@ const server = http.createServer(async (req, res) => {
             existingLic.lastPaymentAt = Date.now();
             if (paymentEntity && paymentEntity.id) existingLic.paymentId = paymentEntity.id;
             store.saveSync();
-            if (supabase.isConfigured()) await supabase.syncLicense(existingLic);
+            if (supabase.isConfigured()) {
+              const synced = await supabase.syncLicense(existingLic);
+              if (!synced.ok) throw new Error('renewal_license_sync_failed: ' + (synced.error || ''));
+              // Record renewal payment in history (idempotent, does not overwrite original).
+              if (paymentEntity && paymentEntity.id) {
+                await supabase.recordPayment(paymentEntity.id, existingLic.hash, {
+                  subscriptionId: subId, email: custEmail,
+                  plan: existingLic.plan,
+                });
+              }
+            }
           } else if (custEmail) {
             let issued = await issueLicense(custEmail, canonicalPlanId(custPlan), payId, subId);
             if (subEntity && subEntity.current_end) {
@@ -832,7 +836,8 @@ const server = http.createServer(async (req, res) => {
       let lic = store.licenses[hash];
       if (supabase.isConfigured()) {
         // Supabase is authoritative when configured, including revocations.
-        lic = cacheLicense(await supabase.fetchLicense(hash));
+        const remoteLic = await supabase.fetchLicense(hash);
+        if (remoteLic) lic = cacheLicense(remoteLic);
       }
       if (lic) lic.devices = Array.isArray(lic.devices) ? lic.devices : [];
       const plan = lic ? getPlan(lic.plan) : null;
@@ -892,9 +897,21 @@ const server = http.createServer(async (req, res) => {
       const hash = L.hashKey(key);
       let lic = store.licenses[hash];
       if (supabase.isConfigured()) {
-        lic = cacheLicense(await supabase.fetchLicense(hash));
+        const remoteLic = await supabase.fetchLicense(hash);
+        if (remoteLic) lic = cacheLicense(remoteLic);
       }
       if (!lic) return json(res, 404, { error: 'license_not_found' }, req);
+
+      // Refuse to cancel non-recurring licenses (lifetime, legacy prepaid).
+      // billingModel may be absent on very old licenses — check the subscription ID too.
+      const isRecurring = lic.billingModel === 'recurring' ||
+        (lic.subscriptionId && String(lic.subscriptionId).startsWith('sub_'));
+      if (!isRecurring) {
+        return json(res, 400, {
+          error: 'not_a_subscription',
+          detail: 'This license is not a recurring subscription. Lifetime and legacy prepaid licenses do not have auto-renewal to cancel.'
+        }, req);
+      }
 
       if (lic.cancelAtPeriodEnd) {
         return json(res, 200, {
@@ -907,8 +924,15 @@ const server = http.createServer(async (req, res) => {
         }, req);
       }
 
-      const subId = lic.subscriptionId || lic.orderId;
-      if (razorpayConfigured() && subId && !subId.startsWith('sub_DEMO_') && !subId.startsWith('order_DEMO_')) {
+      // Fail closed if a supposedly recurring license lacks a real subscription ID.
+      const subId = lic.subscriptionId;
+      if (!subId) {
+        return json(res, 400, {
+          error: 'subscription_id_missing',
+          detail: 'This recurring license has no linked subscription ID. Contact support for assistance.'
+        }, req);
+      }
+      if (razorpayConfigured() && !subId.startsWith('sub_DEMO_') && !subId.startsWith('order_DEMO_')) {
         try {
           const auth = Buffer.from(KEY_ID + ':' + KEY_SECRET).toString('base64');
           const cancelRes = await providerFetch(`https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(subId)}/cancel`, {

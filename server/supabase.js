@@ -132,11 +132,34 @@ async function fetchLicense(hash) { return fetchLicenseBy('hash', hash); }
 
 async function fetchLicensesByPayment(paymentId) {
   if (!isConfigured() || !paymentId) return [];
+  // First query payment_history for all license hashes linked to this payment ID,
+  // including historical renewals that may have been overwritten in licenses table.
+  let hashes = [];
+  try {
+    const histRes = await request(`/rest/v1/payment_history?payment_id=eq.${encodeURIComponent(paymentId)}&select=license_hash&limit=100`);
+    if (histRes.ok) {
+      const rows = await histRes.json();
+      if (Array.isArray(rows)) hashes = rows.map(r => r.license_hash).filter(Boolean);
+    }
+  } catch (e) { /* fall through to legacy query */ }
+
+  // Also query the licenses table directly for backward compat.
   const value = encodeURIComponent(paymentId);
   const res = await request(`/rest/v1/licenses?or=(payment_id.eq.${value},original_payment_id.eq.${value})&select=*&order=created_at.desc&limit=100`);
   if (!res.ok) throw new Error(`Supabase refund lookup failed: ${res.status}`);
   const rows = await res.json();
-  return Array.isArray(rows) ? rows.map(normalizeLicense) : [];
+  const directLicenses = Array.isArray(rows) ? rows.map(normalizeLicense) : [];
+
+  // Merge: fetch by hash for any history-only references
+  const directHashes = new Set(directLicenses.map(l => l.hash));
+  const extraLicenses = [];
+  for (const h of hashes) {
+    if (!directHashes.has(h)) {
+      const lic = await fetchLicenseBy('hash', h);
+      if (lic) extraLicenses.push(lic);
+    }
+  }
+  return [...directLicenses, ...extraLicenses];
 }
 
 async function fetchLicensesByEmail(email) {
@@ -152,6 +175,8 @@ function normalizeOrder(r) {
   return {
     email: r.email, plan: r.plan, amount: r.amount == null ? null : Number(r.amount),
     currency: r.currency || 'INR', status: r.status, paymentId: r.payment_id || null,
+    subscriptionId: r.subscription_id || null,
+    billingModel: r.billing_model || null,
     fulfillmentStatus: r.fulfillment_status || null,
     createdAt: r.created_at ? new Date(r.created_at).getTime() : null,
     paidAt: r.paid_at ? new Date(r.paid_at).getTime() : null,
@@ -167,7 +192,9 @@ async function fetchOrder(orderId) {
   return Array.isArray(rows) && rows.length ? normalizeOrder(rows[0]) : null;
 }
 
-/* Atomically inserts at most one license and marks the order fulfilled. */
+/* Atomically inserts at most one license and marks the order fulfilled.
+ * Now passes all subscription/billing fields so the record is complete
+ * without a later email-sync step. */
 async function fulfillOrder(orderId, order, lic) {
   if (!isConfigured()) return { ok: false, skipped: true };
   try {
@@ -179,6 +206,14 @@ async function fulfillOrder(orderId, order, lic) {
         p_hash: lic.hash, p_hint: lic.hint,
         p_created_at: new Date(lic.createdAt).toISOString(),
         p_expires_at: lic.expiresAt ? new Date(lic.expiresAt).toISOString() : null,
+        // Subscription/billing fields (new parameters — all have DEFAULT NULL)
+        p_subscription_id: lic.subscriptionId || null,
+        p_provider_plan_id: lic.providerPlanId || null,
+        p_billing_model: lic.billingModel || null,
+        p_billing_status: lic.billingStatus || 'active',
+        p_current_period_start: lic.currentPeriodStart ? new Date(lic.currentPeriodStart).toISOString() : null,
+        p_current_period_end: lic.currentPeriodEnd ? new Date(lic.currentPeriodEnd).toISOString() : null,
+        p_cancel_at_period_end: Boolean(lic.cancelAtPeriodEnd),
       }),
     });
     if (!res.ok) return errorResult(res, 'fulfillment transaction failed');
@@ -208,6 +243,41 @@ async function markWebhookProcessed(eventId, event) {
   } catch (e) { return { ok: false, error: e.message }; }
 }
 
+/* Record a payment in durable history (idempotent). Used for renewals. */
+async function recordPayment(paymentId, licenseHash, opts = {}) {
+  if (!isConfigured() || !paymentId || !licenseHash) return { ok: false, skipped: true };
+  try {
+    const res = await request('/rpc/record_payment', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_payment_id: paymentId,
+        p_license_hash: licenseHash,
+        p_subscription_id: opts.subscriptionId || null,
+        p_order_id: opts.orderId || null,
+        p_email: opts.email || null,
+        p_plan: opts.plan || null,
+        p_amount: opts.amount != null ? Number(opts.amount) : null,
+        p_currency: opts.currency || 'INR',
+      }),
+    });
+    return res.ok ? { ok: true } : errorResult(res, 'payment history record failed');
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+/* Mark a historical payment as refunded and return the linked license hash. */
+async function markPaymentRefunded(paymentId) {
+  if (!isConfigured() || !paymentId) return { ok: false, skipped: true };
+  try {
+    const res = await request('/rpc/mark_payment_refunded', {
+      method: 'POST',
+      body: JSON.stringify({ p_payment_id: paymentId }),
+    });
+    if (!res.ok) return errorResult(res, 'mark payment refunded failed');
+    const data = await res.json();
+    const hash = typeof data === 'string' ? data : (data && data.mark_payment_refunded) || null;
+    return { ok: true, licenseHash: hash };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
 
 
 async function reissueLicense(oldHash, newHash, newHint) {
@@ -251,5 +321,6 @@ async function updateLicenseDevices(hash, devices) {
 module.exports = {
   isConfigured, syncLicense, syncOrder, fetchLicense, fetchLicenseBy,
   fetchLicensesByEmail, fetchLicensesByPayment, fetchOrder, fulfillOrder, hasWebhook,
-  markWebhookProcessed, reissueLicense, registerDevice, updateLicenseDevices,
+  markWebhookProcessed, recordPayment, markPaymentRefunded, reissueLicense,
+  registerDevice, updateLicenseDevices,
 };
