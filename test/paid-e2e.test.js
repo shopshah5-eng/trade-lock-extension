@@ -125,6 +125,7 @@ function serveFixture() {
     const sw = await swt.worker();
     const getStored = () => sw.evaluate(() => new Promise(resolve =>
       chrome.storage.local.get(['tlState', 'tlSettings', 'tlLicense'], value => resolve(value))));
+    await sleep(1500);
     await sw.evaluate(() => new Promise(resolve => {
       chrome.storage.local.get('tlSettings', res => {
         chrome.storage.local.set({ tlSettings: Object.assign({}, res.tlSettings || {}, { showHud: true }) }, resolve);
@@ -133,7 +134,8 @@ function serveFixture() {
 
     const page = await browser.newPage();
     await page.goto(PAGE, { waitUntil: 'domcontentloaded' });
-    await sleep(5000);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await sleep(3000);
 
     console.log('\n1. Free tier (no key activated)');
     let stored = await getStored();
@@ -159,6 +161,7 @@ function serveFixture() {
     check('Pro rule inputs are enabled after activation', lossDisabled === false);
     await options.click('#mainTabs .tab-btn[data-tab="rules"]');
     await options.waitForSelector('#save', { visible: true, timeout: 10000 });
+    await options.$eval('#showHud', el => { el.checked = true; }).catch(() => {});
     await options.click('#save');
     await sleep(1000);
 

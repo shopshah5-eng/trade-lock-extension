@@ -74,6 +74,9 @@ before(async () => {
   process.env.FYERS_ADMIN_TOKEN = 'admin-token-for-tests';
   process.env.TL_DATA_FILE = dataFile;
   process.env.NODE_ENV = 'test';
+  process.env.SUPABASE_URL = '';
+  process.env.SUPABASE_SERVICE_KEY = '';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = '';
 
   fs.writeFileSync(dataFile, JSON.stringify({
     licenses: {

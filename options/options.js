@@ -576,7 +576,7 @@
     if (lic && lic.key && el('licKey')) el('licKey').value = lic.key;
 
     if (pro) {
-      var isRecurringLicense = lic.billingModel === 'recurring';
+      var isRecurringLicense = Boolean(lic && lic.billingModel === 'recurring');
       var planNames = isRecurringLicense ? {
         pro_monthly: 'Pro Monthly Subscription (₹199/mo)',
         pro_yearly: 'Pro Annual Subscription (₹1,499/yr)',
