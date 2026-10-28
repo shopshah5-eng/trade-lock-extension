@@ -2862,11 +2862,11 @@
         : null;
 
       var skillsStats = (typeof TLTradingSkills !== 'undefined' && TLTradingSkills.learnFromJournal)
-        ? TLTradingSkills.learnFromJournal(currentJournal, currentSettings)
+        ? TLTradingSkills.learnFromJournal(currentState ? [currentState, currentJournal] : currentJournal, currentSettings)
         : null;
 
       var fallbackResponse = function () {
-        var timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' IST';
+        var timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Kolkata' }) + ' IST';
         var query = text.toLowerCase();
 
         // 1. Discipline / Session Audit
@@ -2891,10 +2891,10 @@
           var an = snap.analysis;
           var curSym = snap.symbol || currentSettings.marketSymbol || 'NIFTY';
           var advice = an.trend === 'uptrend'
-            ? 'Bullish structure confirmed. Look for long setups on retests of EMA 9/20 or VWAP. Avoid counter-trend shorts.'
+            ? 'Bullish structure detected. Wait for your own validated setup and predefined invalidation; do not chase momentum or override daily risk limits.'
             : an.trend === 'downtrend'
-            ? 'Bearish structure active below VWAP. Look for short continuations or wait for a confirmed CHoCH reversal before buying.'
-            : 'Market is in consolidation / rangebound structure. Avoid trading in the middle of the range; wait for boundary sweeps or breakout.';
+            ? 'Bearish structure detected. Avoid impulsive counter-trend entries and follow your validated setup, position-sizing rules, and predefined risk limits.'
+            : 'Market structure is consolidated or rangebound. Avoid impulsive entries in the middle of the range and follow your written plan.';
 
           var perfNote = '';
           if (skillsStats && skillsStats.recommendations && skillsStats.recommendations.length) {
@@ -2907,7 +2907,7 @@
                  '• RSI (14): ' + (an.rsi14 != null ? an.rsi14 : '—') + ' | ATR: ₹' + (an.atr14 != null ? an.atr14 : '—') + '\n' +
                  '• Key Resistance: ' + (an.nearestResistance && an.nearestResistance[0] ? '₹' + an.nearestResistance[0].price : 'N/A') + '\n' +
                  '• Key Support: ' + (an.nearestSupport && an.nearestSupport[0] ? '₹' + an.nearestSupport[0].price : 'N/A') + '\n\n' +
-                 '🎯 Execution Rule: ' + advice + perfNote +
+                 '🎯 Risk Context: ' + advice + perfNote +
                  '\n\n🛡️ Lock Policy: Trade Lock risk locks cannot be overridden by AI.';
         }
 

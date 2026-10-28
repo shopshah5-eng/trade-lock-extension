@@ -1170,11 +1170,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/ai/chat') {
       const lic = await requireProPlus(req);
       if (!lic) return json(res, 403, { error: 'license_required', message: 'AI Coach requires an active Pro+ license.' }, req);
+      // Share the analysis budget: both routes can invoke paid remote models.
+      if (isRateLimited(req, 30, 60000)) return json(res, 429, { error: 'rate_limited', detail: 'AI analysis rate limit reached' }, req);
       const raw = await readBody(req);
       let payload;
       try { payload = JSON.parse(raw.toString('utf8')); } catch (e) { return json(res, 400, { error: 'invalid_json' }, req); }
       const message = String(payload.message || '').trim();
       if (!message) return json(res, 400, { error: 'message_required' }, req);
+      if (message.length > 4000) return json(res, 413, { error: 'message_too_long', detail: 'Maximum 4000 characters per AI Coach message.' }, req);
       const reply = await ai.chat({
         message,
         analysis: payload.analysis || null,

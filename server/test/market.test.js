@@ -102,3 +102,27 @@ test('option chain normalizer now captures ltp/theta/iv from greeks', () => {
   assert.strictEqual(rows[0].putIv, 13.1);
   assert.strictEqual(rows[0].callLtp, 84.5);
 });
+
+test('OpenRouter chat passes an abort signal and parses a successful response', async t => {
+  const previousGemini = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = '';
+  t.after(() => {
+    if (previousGemini === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = previousGemini;
+  });
+  let observedSignal = null;
+  const mockFetch = async (url, options) => {
+    assert.strictEqual(url, 'https://openrouter.ai/api/v1/chat/completions');
+    observedSignal = options.signal;
+    return {
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'Review your risk plan and respect the daily lock.' } }],
+      }),
+    };
+  };
+  const out = await ai.chat({ message: 'Review my session', apiKey: 'sk-or-test', geminiApiKey: '' }, mockFetch);
+  assert.match(out.source, /^openrouter:/);
+  assert.match(out.text, /risk plan/);
+  assert.ok(observedSignal && typeof observedSignal.aborted === 'boolean', 'chat must be bounded by an AbortSignal');
+});

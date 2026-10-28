@@ -75,6 +75,8 @@ before(async () => {
   process.env.SUPABASE_URL = '';
   process.env.SUPABASE_SERVICE_KEY = '';
   process.env.SUPABASE_SERVICE_ROLE_KEY = '';
+  process.env.GEMINI_API_KEY = '';
+  process.env.OPENROUTER_API_KEY = '';
 
   // Seed an active Pro+ licence BEFORE the store is loaded.
   fs.writeFileSync(dataFile, JSON.stringify({
@@ -175,4 +177,33 @@ test('without a Pro+ licence the route refuses to serve market data', async () =
 
   const bogus = await getLive({ symbol: 'NIFTY' }, { Authorization: 'Bearer TL-BOGUS-KEY' });
   assert.strictEqual(bogus.status, 403);
+});
+
+test('AI chat bounds message size and shares a rate-limited remote-model budget', async () => {
+  const endpoint = base + '/api/ai/chat';
+  const headers = { Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
+  let response = await fetch(endpoint, {
+    method: 'POST', headers, body: JSON.stringify({ message: 'x'.repeat(4001) }),
+  });
+  assert.strictEqual(response.status, 413);
+  assert.strictEqual((await response.json()).error, 'message_too_long');
+
+  response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ message: ' ' }) });
+  assert.strictEqual(response.status, 400);
+
+  // The two rejected requests above also consume budget, preventing attackers
+  // from bypassing the limit with malformed calls. No remote key is configured.
+  for (let i = 0; i < 28; i++) {
+    response = await fetch(endpoint, {
+      method: 'POST', headers, body: JSON.stringify({ message: 'Review my discipline ' + i }),
+    });
+    const body = await response.json();
+    assert.strictEqual(response.status, 200, JSON.stringify(body));
+    assert.strictEqual(body.source, 'local');
+  }
+  response = await fetch(endpoint, {
+    method: 'POST', headers, body: JSON.stringify({ message: 'one request too many' }),
+  });
+  assert.strictEqual(response.status, 429);
+  assert.strictEqual((await response.json()).error, 'rate_limited');
 });

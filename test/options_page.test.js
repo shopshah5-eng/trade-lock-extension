@@ -143,7 +143,7 @@ async function bootPage(store) {
 
   const errors = [];
   const context = vm.createContext(window);
-  const files = ['lib/rules.js', 'lib/detector.js', 'lib/market.js', 'lib/insights.js', 'options/options.js'];
+  const files = ['lib/rules.js', 'lib/detector.js', 'lib/tradingSkills.js', 'lib/market.js', 'lib/insights.js', 'options/options.js'];
   for (const file of files) {
     try {
       vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), context, { filename: file });

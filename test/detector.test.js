@@ -366,5 +366,3 @@ test('OPEN/CLOSED status text cannot hide nonzero Net qty position evidence', ()
   assert.strictEqual(found.positions.length, 2);
   assert.strictEqual(D.resolveOpenTrades(found), 1);
 });
-
-

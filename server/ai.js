@@ -175,7 +175,8 @@ async function chat({ message, history, analysis, coach, geminiApiKey, apiKey, g
           ],
           max_tokens: 350,
           temperature: 0.5
-        })
+        }),
+        signal: AbortSignal.timeout(9000)
       });
       const data = await r.json();
       const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;

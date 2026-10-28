@@ -1,7 +1,38 @@
 # Trade Lock Extension & License Server — Comprehensive Security & Quality Audit
 
-**Branch**: `arena/2358db34-trade-lock-extension`  
-**Base Commit**: `d0b502b`  
+## Current Re-review Addendum — October 28, 2026
+
+**Reviewed branch**: `arena/0587ded3-trade-lock-extension`
+
+**Starting revision**: `0dc7dda`
+
+This addendum supersedes the historical local test counts below; it does not repeat or independently certify the earlier live Upstox, Chromium, Razorpay, Supabase, Resend, hosting, or real-broker evidence.
+
+### Additional findings corrected
+
+- Replaced the serverless-unsafe `server/lib/tradingSkills.js` parent-directory wrapper with a byte-identical deployable mirror and added it to deployment drift checks.
+- Corrected adaptive journal learning to flatten canonical and legacy journal shapes, deduplicate explicit trade IDs, use authoritative net P&L after charges, and derive hourly buckets from actual `at`/`timestamp` values in IST.
+- Corrected breakeven expectancy, decided-trade win rate, worst-hour ordering, neutral flat-market bias, and unknown adherence handling. Removed unsupported claims of confirmed/optimal performance from small historical samples.
+- Included canonical state and archived journal records in the Options adaptive-coach input instead of relying only on the legacy flat journal.
+- Added AI chat message-size and shared remote-model rate limits, plus an explicit OpenRouter timeout.
+- Brought fallback coach language into line with the server's non-directive risk-context policy and made its displayed timestamp explicitly IST.
+- Added focused adaptive-learning, AI-unit, HTTP rate-limit, and deployment regressions; removed a trailing-whitespace error.
+
+### Re-review verification
+
+- Extension: **276/276 passing**.
+- Server: **103/103 passing**.
+- Total: **379/379 passing** (unit/integration tests with mocked providers).
+- Lint, syntax, undefined-call, mirror, and `git diff --check` checks: **passed**.
+- MV3 package: **21 files**, **156.7 KB**, ZIP integrity and artifact checks **passed**; `lib/tradingSkills.js` is included.
+
+Real external services and a full extension-capable Chrome runtime were not rerun in this re-review. The original audit below remains its historical record.
+
+---
+
+**Original audit branch**: `arena/2358db34-trade-lock-extension`
+
+**Base Commit**: `d0b502b`
 **Date**: October 27, 2026  
 **Auditor**: Antigravity AI Engineering  
 

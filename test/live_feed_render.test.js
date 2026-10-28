@@ -135,7 +135,7 @@ function boot(market) {
   };
 
   const context = vm.createContext(window);
-  for (const file of ['lib/rules.js', 'lib/detector.js', 'lib/market.js', 'lib/insights.js', 'options/options.js']) {
+  for (const file of ['lib/rules.js', 'lib/detector.js', 'lib/tradingSkills.js', 'lib/market.js', 'lib/insights.js', 'options/options.js']) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), context, { filename: file });
   }
   return { document, window };

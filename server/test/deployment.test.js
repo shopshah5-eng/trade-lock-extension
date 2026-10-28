@@ -45,7 +45,7 @@ test('Deployment: server/lib copies never drift from the canonical lib/', () => 
   const root = path.join(__dirname, '..', '..');
   // Netlify builds with base="server", so functions cannot require ../lib.
   // server/lib is a mirrored copy and must stay byte-identical.
-  for (const file of ['rules.js', 'market.js', 'license.js', 'insights.js', 'detector.js']) {
+  for (const file of ['rules.js', 'market.js', 'license.js', 'insights.js', 'detector.js', 'tradingSkills.js']) {
     const canonical = fs.readFileSync(path.join(root, 'lib', file), 'utf8');
     const mirrored = fs.readFileSync(path.join(root, 'server', 'lib', file), 'utf8');
     assert.strictEqual(mirrored, canonical, `server/lib/${file} has drifted from lib/${file}`);
