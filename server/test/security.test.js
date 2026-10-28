@@ -25,19 +25,37 @@ process.env.FYERS_APP_ID = '';
 process.env.FYERS_ACCESS_TOKEN = '';
 process.env.UPSTOX_ANALYTICS_TOKEN = '';
 process.env.UPSTOX_ACCESS_TOKEN = '';
+process.env.RAZORPAY_PLAN_PRO_MONTHLY = 'plan_mock_pro_monthly';
+process.env.RAZORPAY_PLAN_PRO_YEARLY = 'plan_mock_pro_yearly';
+process.env.RAZORPAY_PLAN_PRO_PLUS_AI_MONTHLY = 'plan_mock_plus_monthly';
+process.env.RAZORPAY_PLAN_PRO_PLUS_AI_YEARLY = 'plan_mock_plus_yearly';
 
 const originalFetch = global.fetch;
 let orderSequence = 0;
 const providerCalls = [];
 global.fetch = async (url, options = {}) => {
-  providerCalls.push(String(url));
-  if (String(url) === 'https://api.razorpay.com/v1/orders') {
+  const urlStr = String(url);
+  providerCalls.push(urlStr);
+  if (urlStr === 'https://api.razorpay.com/v1/orders') {
     const payload = JSON.parse(options.body);
     return { ok: true, status: 200, json: async () => ({
       id: `order_mock_${++orderSequence}`, amount: payload.amount, currency: payload.currency,
     }) };
   }
-  if (String(url) === 'https://api.resend.com/emails') {
+  if (urlStr === 'https://api.razorpay.com/v1/subscriptions') {
+    const payload = JSON.parse(options.body);
+    return { ok: true, status: 200, json: async () => ({
+      id: `sub_mock_${++orderSequence}`, plan_id: payload.plan_id, status: 'active',
+      current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+    }) };
+  }
+  if (urlStr === 'https://api.razorpay.com/v1/plans') {
+    return { ok: true, status: 200, json: async () => ({ id: `plan_mock_${++orderSequence}` }) };
+  }
+  if (urlStr.startsWith('https://api.razorpay.com/v1/subscriptions/') && urlStr.endsWith('/cancel')) {
+    return { ok: true, status: 200, json: async () => ({ id: 'sub_mock_cancel', status: 'cancelled' }) };
+  }
+  if (urlStr === 'https://api.resend.com/emails') {
     return { ok: true, status: 200, json: async () => ({ id: 'email_mock_1' }) };
   }
   throw new Error('Unexpected outbound provider call: ' + url);

@@ -46,6 +46,17 @@ async function syncLicense(lic) {
         created_at: new Date(lic.createdAt).toISOString(),
         expires_at: lic.expiresAt ? new Date(lic.expiresAt).toISOString() : null,
         payment_id: lic.paymentId || null, order_id: lic.orderId || null,
+        subscription_id: lic.subscriptionId || null,
+        provider_plan_id: lic.providerPlanId || null,
+        billing_model: lic.billingModel || null,
+        billing_status: lic.billingStatus || null,
+        current_period_start: lic.currentPeriodStart ? new Date(lic.currentPeriodStart).toISOString() : null,
+        current_period_end: lic.currentPeriodEnd ? new Date(lic.currentPeriodEnd).toISOString() : (lic.expiresAt ? new Date(lic.expiresAt).toISOString() : null),
+        cancel_at_period_end: Boolean(lic.cancelAtPeriodEnd),
+        cancelled_at: lic.cancelledAt ? new Date(lic.cancelledAt).toISOString() : null,
+        cancel_reason: lic.cancelReason || null,
+        last_payment_at: lic.lastPaymentAt ? new Date(lic.lastPaymentAt).toISOString() : null,
+        failure_reason: lic.failureReason || null,
         original_payment_id: lic.originalPaymentId || null,
         original_order_id: lic.originalOrderId || null,
         reissued_from: lic.reissuedFrom || null,
@@ -69,6 +80,8 @@ async function syncOrder(orderId, order) {
         amount: order.amount == null ? null : Number(order.amount),
         currency: order.currency || 'INR', status: order.status,
         payment_id: order.paymentId || null,
+        subscription_id: order.subscriptionId || null,
+        billing_model: order.billingModel || null,
         fulfillment_status: order.fulfillmentStatus || null,
         paid_at: order.paidAt ? new Date(order.paidAt).toISOString() : null,
         fulfilled_at: order.fulfilledAt ? new Date(order.fulfilledAt).toISOString() : null,
@@ -86,6 +99,17 @@ function normalizeLicense(r) {
     createdAt: new Date(r.created_at).getTime(),
     expiresAt: r.expires_at ? new Date(r.expires_at).getTime() : null,
     paymentId: r.payment_id, orderId: r.order_id,
+    subscriptionId: r.subscription_id || null,
+    providerPlanId: r.provider_plan_id || null,
+    billingModel: r.billing_model || null,
+    billingStatus: r.billing_status || null,
+    currentPeriodStart: r.current_period_start ? new Date(r.current_period_start).getTime() : null,
+    currentPeriodEnd: r.current_period_end ? new Date(r.current_period_end).getTime() : (r.expires_at ? new Date(r.expires_at).getTime() : null),
+    cancelAtPeriodEnd: Boolean(r.cancel_at_period_end),
+    cancelledAt: r.cancelled_at ? new Date(r.cancelled_at).getTime() : null,
+    cancelReason: r.cancel_reason || null,
+    lastPaymentAt: r.last_payment_at ? new Date(r.last_payment_at).getTime() : null,
+    failureReason: r.failure_reason || null,
     originalPaymentId: r.original_payment_id, originalOrderId: r.original_order_id,
     reissuedFrom: r.reissued_from,
     devices: Array.isArray(r.devices) ? r.devices : [], revoked: Boolean(r.revoked),
@@ -97,7 +121,7 @@ function normalizeLicense(r) {
 
 async function fetchLicenseBy(field, value) {
   if (!isConfigured() || !value) return null;
-  if (!['hash', 'order_id', 'payment_id'].includes(field)) throw new Error('invalid license lookup field');
+  if (!['hash', 'order_id', 'payment_id', 'subscription_id'].includes(field)) throw new Error('invalid license lookup field');
   const res = await request(`/rest/v1/licenses?${field}=eq.${encodeURIComponent(value)}&select=*&order=created_at.desc&limit=1`);
   if (!res.ok) throw new Error(`Supabase license lookup failed: ${res.status}`);
   const rows = await res.json();

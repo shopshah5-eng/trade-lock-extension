@@ -12,7 +12,7 @@ Pricing page → Razorpay Checkout → payment_id + signature
 Extension → POST /api/validate { key, deviceId } → plan, expiry, device entitlement
 ```
 
-All paid plans are prepaid: 30 days, 365 days, or lifetime. They do not auto-renew. Pro allows 3 devices; Pro+ and Founder Lifetime allow 5.
+Trade Lock uses Razorpay Subscriptions for monthly and yearly plans (`pro_monthly`, `pro_yearly`, `pro_plus_ai_monthly`, `pro_plus_ai_yearly`) with automatic renewal and cancel-at-cycle-end, and one-time orders for Founder Lifetime (`founder_lifetime`). Pro allows 3 devices; Pro+ and Founder Lifetime allow 5.
 
 ## 1. Configuration and secrets
 
@@ -70,11 +70,20 @@ The SQL is not applied by application startup. The mocked tests do not prove tha
 ## 4. Configure Razorpay
 
 1. In Razorpay Dashboard, use the intended test or live API key pair in the server environment.
-2. Add a webhook pointing to `https://YOUR-SERVER/api/webhook`.
-3. Use a long random webhook secret and set it as `RAZORPAY_WEBHOOK_SECRET`.
-4. Enable `payment.captured` for fulfillment recovery.
-5. Enable `refund.processed` and `payment.refunded` if refunds should revoke access automatically.
-6. Use Razorpay's current official test instruments for test-mode validation; do not use live card details in development.
+2. (Optional) Set `RAZORPAY_PLAN_PRO_MONTHLY`, `RAZORPAY_PLAN_PRO_YEARLY`, `RAZORPAY_PLAN_PRO_PLUS_AI_MONTHLY`, and `RAZORPAY_PLAN_PRO_PLUS_AI_YEARLY` if you have pre-created plans in the Razorpay Dashboard. If unset, the server will auto-create them via the Razorpay Plans API.
+3. Add a webhook pointing to `https://YOUR-SERVER/api/webhook`.
+4. Use a long random webhook secret and set it as `RAZORPAY_WEBHOOK_SECRET`.
+5. Enable these webhook events:
+   - `subscription.activated`: Marks subscription active and records billing cycle bounds.
+   - `subscription.charged`: Extends entitlement end-date (`currentPeriodEnd`/`expiresAt`) on renewals without issuing duplicate keys or emails.
+   - `subscription.pending` / `payment.failed`: Flags billing status as `past_due` while preserving grace access.
+   - `subscription.cancelled`: Sets `cancelAtPeriodEnd: true` and syncs provider cycle-end termination.
+   - `subscription.completed` / `subscription.halted`: Marks subscription completed/halted.
+   - `subscription.paused` / `subscription.resumed`: Syncs temporary hold and resumption.
+   - `payment.captured`: One-time order recovery (Founder Lifetime).
+   - `refund.processed` / `payment.refunded`: Revokes license immediately.
+6. Auto-renewal cancellation (`POST /api/subscription/cancel`) calls the Razorpay API with `cancel_at_cycle_end: 1` so the subscriber retains access through their paid billing cycle.
+7. Use Razorpay's current official test instruments for test-mode validation; do not use live card details in development.
 
 ### Checkout and fulfillment behavior
 

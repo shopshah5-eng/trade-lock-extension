@@ -104,7 +104,7 @@
   <div id="err"></div>
 
   <footer>
-    Payments processed by Razorpay · Prepaid access with no auto-renewal · Save the license key and expiry shown after purchase.<br>
+    Payments processed by Razorpay · Auto-renewing subscriptions with cancel anytime · Save the license key and access details shown after checkout.<br>
     <a href="/privacy.html" style="color:#60a5fa;text-decoration:underline;margin-top:8px;display:inline-block;">Privacy Policy</a>
   </footer>
 </div>
@@ -132,7 +132,7 @@ syncView();
 
 let CONFIG = { keyId: '', demoMode: false };
 const inr = (p) => '₹' + (p / 100).toLocaleString('en-IN');
-const per = { pro_monthly: '/30 days', pro_yearly: '/365 days', pro_plus_ai_monthly: '/30 days', pro_plus_ai_yearly: '/365 days', founder_lifetime: 'one-time' };
+const per = { pro_monthly: '/month (auto-renewal)', pro_yearly: '/year (auto-renewal)', pro_plus_ai_monthly: '/month (auto-renewal)', pro_plus_ai_yearly: '/year (auto-renewal)', founder_lifetime: 'one-time' };
 const query = new URLSearchParams(location.search);
 
 function showErr(msg) { const e = document.getElementById('err'); e.textContent = msg; e.style.display = 'block'; }
@@ -202,23 +202,16 @@ async function buy(planId, btn) {
   btn.disabled = true; btn.textContent = 'Preparing checkout…';
   try {
     let order;
-    const isSub = planId.includes('recurring') || Boolean(query.get('subscriptionId'));
     if (query.get('subscriptionId') && query.get('plan') === planId) {
       order = { subscriptionId: query.get('subscriptionId'), demo: CONFIG.demoMode, isSubscription: true, amount: btn.dataset.amount, currency: 'INR' };
     } else if (query.get('orderId') && query.get('plan') === planId) {
       order = { orderId: query.get('orderId'), demo: CONFIG.demoMode, isSubscription: false, amount: btn.dataset.amount, currency: 'INR' };
-    } else if (isSub) {
-      const r = await fetch('/api/create-subscription', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: planId, email }) });
-      order = await r.json();
-      if (!r.ok) throw new Error(order.error || 'subscription_creation_failed');
-      order.isSubscription = true;
     } else {
       const r = await fetch('/api/create-order', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: planId, email }) });
       order = await r.json();
       if (!r.ok) throw new Error(order.error || 'order_failed');
-      order.isSubscription = false;
+      order.isSubscription = Boolean(order.recurring || order.subscriptionId);
     }
 
     if (order.demo) {

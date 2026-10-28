@@ -1078,6 +1078,8 @@
     if (!id || id === 'free') return 'free';
     if (id === 'pro_plus_ai') return 'pro_plus_ai_monthly';
     if (id === 'lifetime') return 'founder_lifetime';
+    if (id === 'pro_sub' || id === 'pro_monthly_recurring') return 'pro_monthly';
+    if (id === 'plus_sub' || id === 'pro_plus_ai_monthly_recurring') return 'pro_plus_ai_monthly';
     return id;
   }
 

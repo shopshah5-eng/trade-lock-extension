@@ -26,6 +26,16 @@ test('Razorpay payment signature verifies (order_id|payment_id HMAC)', () => {
   assert.strictEqual(L.verifyPaymentSignature('order_123', 'pay_456', '', secret), false);
 });
 
+test('Razorpay subscription signature verifies both (payment_id|sub_id) and (sub_id|payment_id)', () => {
+  const secret = 'test_sub_secret';
+  const sig1 = crypto.createHmac('sha256', secret).update('pay_sub_1|sub_abc_123').digest('hex');
+  const sig2 = crypto.createHmac('sha256', secret).update('sub_abc_123|pay_sub_1').digest('hex');
+  assert.strictEqual(L.verifySubscriptionSignature('pay_sub_1', 'sub_abc_123', sig1, secret), true);
+  assert.strictEqual(L.verifySubscriptionSignature('pay_sub_1', 'sub_abc_123', sig2, secret), true);
+  assert.strictEqual(L.verifySubscriptionSignature('pay_wrong', 'sub_abc_123', sig1, secret), false);
+  assert.strictEqual(L.verifySubscriptionSignature('pay_sub_1', 'sub_abc_123', 'bad_sig', secret), false);
+});
+
 test('webhook signature verifies over the raw body', () => {
   const body = Buffer.from('{"event":"payment.captured"}');
   const sig = crypto.createHmac('sha256', 'whsec').update(body).digest('hex');
@@ -69,6 +79,7 @@ process.env.NODE_ENV = 'test';
 process.env.TL_DATA_FILE = testDataFile;
 process.env.RAZORPAY_KEY_ID = '';
 process.env.RAZORPAY_KEY_SECRET = '';
+process.env.RAZORPAY_WEBHOOK_SECRET = 'mock_webhook_secret';
 process.env.RESEND_API_KEY = '';
 process.env.SUPABASE_URL = '';
 process.env.SUPABASE_SERVICE_KEY = '';
@@ -213,3 +224,129 @@ test('store persists processed webhook event IDs to prevent duplicate fulfillmen
   assert.strictEqual(store.processedWebhooks[eventId].event, 'payment.captured');
 });
 
+test('recurring subscription lifecycle: creation, verification, renewal webhook, past-due, and cancellation', async (t) => {
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  t.after(() => server.close());
+
+  // 1. Create order for recurring pro_monthly
+  const createRes = await request({
+    host: '127.0.0.1', port, path: '/api/create-order', method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, { plan: 'pro_monthly', email: 'sub.subscriber@example.com' });
+
+  assert.strictEqual(createRes.status, 200);
+  assert.strictEqual(createRes.body.recurring, true);
+  const subId = createRes.body.subscriptionId;
+  assert.ok(subId);
+  assert.strictEqual(createRes.body.orderId, subId);
+
+  // 2. Verify payment for subscription
+  const paymentId = 'pay_sub_test_' + Date.now();
+  const verifyRes = await request({
+    host: '127.0.0.1', port, path: '/api/verify-payment', method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, {
+    subscriptionId: subId,
+    orderId: subId,
+    paymentId,
+    signature: 'demo',
+    email: 'sub.subscriber@example.com',
+    plan: 'pro_monthly'
+  });
+
+  assert.strictEqual(verifyRes.status, 200, verifyRes.text);
+  assert.strictEqual(verifyRes.body.ok, true);
+  assert.strictEqual(verifyRes.body.billingStatus, 'active');
+  assert.strictEqual(verifyRes.body.billingModel, 'recurring');
+  assert.strictEqual(verifyRes.body.subscriptionId, subId);
+  const licenseKey = verifyRes.body.licenseKey;
+  assert.ok(licenseKey);
+
+  // 3. Validate endpoint returns subscription state
+  const valRes = await request({
+    host: '127.0.0.1', port, path: '/api/validate', method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, { key: licenseKey, deviceId: 'dev-sub-1' });
+
+  assert.strictEqual(valRes.status, 200);
+  assert.strictEqual(valRes.body.active, true);
+  assert.strictEqual(valRes.body.billingStatus, 'active');
+  assert.strictEqual(valRes.body.subscriptionId, subId);
+  assert.strictEqual(valRes.body.cancelAtPeriodEnd, false);
+  const initialExpiry = valRes.body.expiresAt;
+
+  // 4. Renewal webhook (subscription.charged): updates expiry without new key
+  const renewPayment = 'pay_renew_' + Date.now();
+  const futureEnd = Math.floor(Date.now() / 1000) + 60 * 86400;
+  const chargedEvt = {
+    id: 'evt_charged_' + Date.now(),
+    event: 'subscription.charged',
+    payload: {
+      subscription: { entity: { id: subId, current_end: futureEnd } },
+      payment: { entity: { id: renewPayment, subscription_id: subId, email: 'sub.subscriber@example.com' } }
+    }
+  };
+  const rawCharged = JSON.stringify(chargedEvt);
+  const chargedSig = crypto.createHmac('sha256', 'mock_webhook_secret').update(rawCharged).digest('hex');
+  const chargedRes = await request({
+    host: '127.0.0.1', port, path: '/api/webhook', method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-razorpay-signature': chargedSig }
+  }, rawCharged);
+
+  assert.strictEqual(chargedRes.status, 200);
+  const storedLic = store.licenses[L.hashKey(licenseKey)];
+  assert.strictEqual(storedLic.expiresAt, futureEnd * 1000, 'Renewal updated period end to future end');
+  assert.strictEqual(storedLic.billingStatus, 'active');
+
+  // 5. Past-due webhook (subscription.pending): flags billingStatus
+  const pendingEvt = {
+    id: 'evt_pending_' + Date.now(),
+    event: 'subscription.pending',
+    payload: {
+      subscription: { entity: { id: subId } },
+      payment: { entity: { id: 'pay_fail_1', subscription_id: subId, error_description: 'card_declined' } }
+    }
+  };
+  const rawPending = JSON.stringify(pendingEvt);
+  const pendingSig = crypto.createHmac('sha256', 'mock_webhook_secret').update(rawPending).digest('hex');
+  const pendingRes = await request({
+    host: '127.0.0.1', port, path: '/api/webhook', method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-razorpay-signature': pendingSig }
+  }, rawPending);
+
+  assert.strictEqual(pendingRes.status, 200);
+  assert.strictEqual(storedLic.billingStatus, 'past_due');
+  assert.strictEqual(storedLic.failureReason, 'card_declined');
+
+  // 6. Cancellation endpoint: marks cancelAtPeriodEnd while preserving access until expiresAt
+  const cancelRes = await request({
+    host: '127.0.0.1', port, path: '/api/subscription/cancel', method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, { key: licenseKey, reason: 'user_requested_cancel' });
+
+  assert.strictEqual(cancelRes.status, 200);
+  assert.strictEqual(cancelRes.body.ok, true);
+  assert.strictEqual(cancelRes.body.cancelAtPeriodEnd, true);
+  assert.strictEqual(storedLic.cancelAtPeriodEnd, true);
+  assert.strictEqual(storedLic.billingStatus, 'cancelled');
+
+  // 7. Idempotent re-cancellation
+  const reCancelRes = await request({
+    host: '127.0.0.1', port, path: '/api/subscription/cancel', method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, { key: licenseKey });
+
+  assert.strictEqual(reCancelRes.status, 200);
+  assert.strictEqual(reCancelRes.body.alreadyCancelled, true);
+
+  // 8. License remains active until billing period ends
+  const postCancelVal = await request({
+    host: '127.0.0.1', port, path: '/api/validate', method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, { key: licenseKey });
+
+  assert.strictEqual(postCancelVal.body.active, true, 'License remains active after cancellation until cycle end');
+  assert.strictEqual(postCancelVal.body.cancelAtPeriodEnd, true);
+  assert.strictEqual(postCancelVal.body.billingStatus, 'cancelled');
+});

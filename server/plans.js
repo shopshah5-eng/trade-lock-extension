@@ -2,39 +2,29 @@
 /* Single source of truth for prepaid pricing. Amounts are in paise (₹1 = 100). */
 const PLANS = {
   pro_monthly: {
-    id: 'pro_monthly', name: 'Pro — Monthly', amount: 19900, currency: 'INR',
-    durationDays: 30, tagline: '30-day prepaid access. No auto-renewal.',
-    maxDevices: 3, proPlus: false, billingModel: 'prepaid', available: true,
+    id: 'pro_monthly', name: 'Pro — Monthly Subscription', amount: 19900, currency: 'INR',
+    durationDays: 30, interval: 'monthly', tagline: 'Auto-renewing monthly Pro access. Cancel anytime.',
+    badge: 'Monthly', maxDevices: 3, proPlus: false, billingModel: 'recurring', available: true,
   },
   pro_yearly: {
-    id: 'pro_yearly', name: 'Pro — Yearly', amount: 149900, currency: 'INR',
-    durationDays: 365, tagline: '365-day prepaid access — about ₹125/month.',
-    badge: 'Most popular · Save 37%', maxDevices: 3, proPlus: false, billingModel: 'prepaid', available: true,
+    id: 'pro_yearly', name: 'Pro — Yearly Subscription', amount: 149900, currency: 'INR',
+    durationDays: 365, interval: 'yearly', tagline: 'Auto-renewing yearly Pro access — save 37%. Cancel anytime.',
+    badge: 'Save 37%', maxDevices: 3, proPlus: false, billingModel: 'recurring', available: true,
   },
   pro_plus_ai_monthly: {
-    id: 'pro_plus_ai_monthly', name: 'Pro+ AI Markets — Monthly', amount: 39900, currency: 'INR',
-    durationDays: 30, tagline: '30-day prepaid Pro+ access. No auto-renewal.',
-    badge: 'Pro+', maxDevices: 5, proPlus: true, billingModel: 'prepaid', available: true,
+    id: 'pro_plus_ai_monthly', name: 'Pro+ AI Markets — Monthly Subscription', amount: 39900, currency: 'INR',
+    durationDays: 30, interval: 'monthly', tagline: 'Auto-renewing monthly Pro+ access with live options & AI Coach.',
+    badge: 'Pro+ Monthly', maxDevices: 5, proPlus: true, billingModel: 'recurring', available: true,
   },
   pro_plus_ai_yearly: {
-    id: 'pro_plus_ai_yearly', name: 'Pro+ AI Markets — Yearly', amount: 399900, currency: 'INR',
-    durationDays: 365, tagline: '365-day prepaid Pro+ access with market analytics and coaching.',
-    badge: 'Save 16%', maxDevices: 5, proPlus: true, billingModel: 'prepaid', available: true,
+    id: 'pro_plus_ai_yearly', name: 'Pro+ AI Markets — Yearly Subscription', amount: 399900, currency: 'INR',
+    durationDays: 365, interval: 'yearly', tagline: 'Auto-renewing yearly Pro+ access with live options & AI Coach — save 16%.',
+    badge: 'Save 16%', maxDevices: 5, proPlus: true, billingModel: 'recurring', available: true,
   },
   founder_lifetime: {
     id: 'founder_lifetime', name: 'Founder Lifetime', amount: 299900, currency: 'INR',
     durationDays: null, tagline: 'One payment. Lifetime access.',
     badge: 'Founder access', maxDevices: 5, proPlus: true, billingModel: 'lifetime', available: true,
-  },
-  pro_monthly_recurring: {
-    id: 'pro_monthly_recurring', name: 'Pro — Monthly Subscription', amount: 19900, currency: 'INR',
-    durationDays: 30, tagline: '₹199/month auto-renewing subscription. Cancel anytime.',
-    badge: 'Recurring', maxDevices: 3, proPlus: false, billingModel: 'recurring', available: true,
-  },
-  pro_plus_ai_monthly_recurring: {
-    id: 'pro_plus_ai_monthly_recurring', name: 'Pro+ AI Markets — Monthly Subscription', amount: 39900, currency: 'INR',
-    durationDays: 30, tagline: '₹399/month auto-renewing Pro+ access with live options & AI Coach.',
-    badge: 'Recurring · Pro+', maxDevices: 5, proPlus: true, billingModel: 'recurring', available: true,
   },
   free: {
     id: 'free', name: 'Free', amount: 0, currency: 'INR', durationDays: null,
@@ -47,8 +37,10 @@ const PLANS = {
 const ALIASES = {
   pro_plus_ai: 'pro_plus_ai_monthly',
   lifetime: 'founder_lifetime',
-  pro_sub: 'pro_monthly_recurring',
-  plus_sub: 'pro_plus_ai_monthly_recurring',
+  pro_sub: 'pro_monthly',
+  plus_sub: 'pro_plus_ai_monthly',
+  pro_monthly_recurring: 'pro_monthly',
+  pro_plus_ai_monthly_recurring: 'pro_plus_ai_monthly',
 };
 const PRO_PLANS = Object.keys(PLANS).filter(k => k !== 'free').concat(Object.keys(ALIASES));
 function getPlan(id) {
@@ -68,7 +60,7 @@ function isAvailable(id) {
   return Boolean(plan && plan.available !== false);
 }
 function purchasablePlans() {
-  return Object.values(PLANS).filter(p => p.id !== 'free' && p.available !== false && p.billingModel !== 'recurring');
+  return Object.values(PLANS).filter(p => p.id !== 'free' && p.available !== false);
 }
 
 function subscriptionPlans() {

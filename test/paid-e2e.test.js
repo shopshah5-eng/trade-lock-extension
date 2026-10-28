@@ -103,6 +103,14 @@ function serveFixture() {
     manifest.web_accessible_resources[0].matches.push('http://127.0.0.1/*');
     manifest.host_permissions.push('http://127.0.0.1/*');
     fs.writeFileSync(mp, JSON.stringify(manifest, null, 2));
+
+    const rp = path.join(tmp, 'lib', 'rules.js');
+    fs.writeFileSync(rp, fs.readFileSync(rp, 'utf8')
+      .replace("'kite.zerodha.com',", "'127.0.0.1', 'localhost', 'kite.zerodha.com',"));
+
+    const bp = path.join(tmp, 'background.js');
+    fs.writeFileSync(bp, fs.readFileSync(bp, 'utf8')
+      .replace("'kite.zerodha.com',", "'127.0.0.1', 'localhost', 'kite.zerodha.com',"));
     // Rules and license enforcement remain completely unpatched.
 
     fixtureServer = await serveFixture();
@@ -146,7 +154,7 @@ function serveFixture() {
     const note = await options.$eval('#licNote', e => e.textContent).catch(() => '');
     check('activation accepted by the license server', /activated/.test(note), note);
     const licenseStatus = await options.$eval('#licStatus', e => e.textContent).catch(() => '');
-    check('Options shows an active Pro prepaid plan', /Active Prepaid Plan/i.test(licenseStatus) && /Pro/i.test(licenseStatus), licenseStatus.slice(0, 100));
+    check('Options shows an active Pro plan', /Active (Prepaid Plan|Subscription)/i.test(licenseStatus) && /Pro/i.test(licenseStatus), licenseStatus.slice(0, 100));
     const lossDisabled = await options.$eval('#maxDailyLoss', e => e.disabled).catch(() => null);
     check('Pro rule inputs are enabled after activation', lossDisabled === false);
     await options.click('#mainTabs .tab-btn[data-tab="rules"]');

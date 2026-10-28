@@ -17,6 +17,10 @@ process.env.RESEND_API_KEY = 'mock_resend_key';
 process.env.SUPABASE_URL = '';
 process.env.SUPABASE_SERVICE_KEY = '';
 process.env.SUPABASE_KEY = '';
+process.env.RAZORPAY_PLAN_PRO_MONTHLY = 'plan_mock_pro_monthly';
+process.env.RAZORPAY_PLAN_PRO_YEARLY = 'plan_mock_pro_yearly';
+process.env.RAZORPAY_PLAN_PRO_PLUS_AI_MONTHLY = 'plan_mock_plus_monthly';
+process.env.RAZORPAY_PLAN_PRO_PLUS_AI_YEARLY = 'plan_mock_plus_yearly';
 delete process.env.TL_DEMO_MODE;
 
 const remote = { orders: new Map(), licenses: new Map(), webhooks: new Map() };
@@ -32,7 +36,9 @@ function rowLicense(body) {
     hash: body.hash || body.p_hash, hint: body.hint || body.p_hint, email: body.email || body.p_email,
     plan: body.plan || body.p_plan, created_at: body.created_at || body.p_created_at,
     expires_at: body.expires_at || body.p_expires_at, payment_id: body.payment_id || body.p_payment_id,
-    order_id: body.order_id || body.p_order_id, devices: body.devices || [], revoked: !!body.revoked,
+    order_id: body.order_id || body.p_order_id,
+    subscription_id: body.subscription_id || body.p_subscription_id || body.order_id || null,
+    devices: body.devices || [], revoked: !!body.revoked,
     email_sent_at: body.email_sent_at || null,
   };
 }
@@ -43,6 +49,19 @@ global.fetch = async (url, options = {}) => {
   if (target.href === 'https://api.razorpay.com/v1/orders') {
     const body = JSON.parse(options.body);
     return { ok: true, status: 200, json: async () => ({ id: `order_remote_${++orderSequence}`, amount: body.amount, currency: body.currency }) };
+  }
+  if (target.href === 'https://api.razorpay.com/v1/subscriptions') {
+    const body = JSON.parse(options.body);
+    return { ok: true, status: 200, json: async () => ({
+      id: `sub_remote_${++orderSequence}`, plan_id: body.plan_id, status: 'active',
+      current_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+    }) };
+  }
+  if (target.href === 'https://api.razorpay.com/v1/plans') {
+    return { ok: true, status: 200, json: async () => ({ id: `plan_remote_${++orderSequence}` }) };
+  }
+  if (target.href.startsWith('https://api.razorpay.com/v1/subscriptions/') && target.href.endsWith('/cancel')) {
+    return { ok: true, status: 200, json: async () => ({ id: 'sub_remote_cancel', status: 'cancelled' }) };
   }
   if (target.href === 'https://api.resend.com/emails') {
     if (failNextEmail) {
@@ -81,7 +100,7 @@ global.fetch = async (url, options = {}) => {
         l.payment_id === match[1] || l.original_payment_id === match[2]);
       return ok(rows);
     }
-    const field = ['hash', 'order_id', 'payment_id'].find(f => target.searchParams.has(f));
+    const field = ['hash', 'order_id', 'payment_id', 'subscription_id'].find(f => target.searchParams.has(f));
     const value = target.searchParams.get(field).replace('eq.', '');
     const rows = Array.from(remote.licenses.values()).filter(l => l[field] === value);
     return ok(rows.slice(0, 1));

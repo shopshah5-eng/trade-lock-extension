@@ -28,16 +28,32 @@ ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS reissued_from text;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS revoked_reason text;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS revoked_at timestamptz;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS email_sent_at timestamptz;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS subscription_id text;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS provider_plan_id text;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS billing_model text;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS billing_status text;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS current_period_start timestamptz;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS current_period_end timestamptz;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS cancel_at_period_end boolean DEFAULT false;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS cancel_reason text;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS last_payment_at timestamptz;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS failure_reason text;
+
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS amount bigint;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS currency text DEFAULT 'INR';
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS fulfillment_status text;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS paid_at timestamptz;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS fulfilled_at timestamptz;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS subscription_id text;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS billing_model text;
 
 CREATE UNIQUE INDEX IF NOT EXISTS licenses_payment_unique
   ON public.licenses(payment_id) WHERE payment_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS licenses_order_unique
   ON public.licenses(order_id) WHERE order_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS licenses_subscription_unique
+  ON public.licenses(subscription_id) WHERE subscription_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS public.processed_webhooks (
   event_id text PRIMARY KEY,

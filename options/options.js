@@ -363,8 +363,13 @@
     setText('ovTradesSub', hasSession ? ((s.autoTrades || 0) + ' auto · ' + Math.max(0, s.trades - (s.autoTrades || 0)) + ' manual') : 'No broker session yet');
     setText('ovRiskVal', R.inr(s.riskUsed || 0));
     setText('ovRiskSub', riskLim ? 'of ' + R.inr(riskLim) + ' daily budget' : 'No risk budget set');
-    setText('ovWinRateVal', (summary.winRate || 0) + '%');
-    setText('ovWinRateSub', (summary.wins || 0) + ' wins · ' + (summary.losses || 0) + ' losses');
+    if (!summary.trades) {
+      setText('ovWinRateVal', '—');
+      setText('ovWinRateSub', 'No closed trades today');
+    } else {
+      setText('ovWinRateVal', (summary.winRate || 0) + '%');
+      setText('ovWinRateSub', (summary.wins || 0) + ' wins · ' + (summary.losses || 0) + ' losses');
+    }
     setBar('ovPnlBar', pnlLimit ? R.progress(Math.abs(s.pnl), pnlLimit) : 0);
     setBar('ovTradesBar', tradeRatio);
     setBar('ovRiskBar', riskRatio);
@@ -385,8 +390,8 @@
 
     if (I) {
       var analysis = I.analyze(log, s, settings);
-      setText('ovDisciplineScore', analysis.score + ' / 100');
-      setText('ovDisciplineSub', s.trades ? analysis.grade + ' discipline rating' : 'Awaiting trade data');
+      setText('ovDisciplineScore', s.trades ? (analysis.score + ' / 100') : '— / 100');
+      setText('ovDisciplineSub', s.trades ? (analysis.grade + ' discipline rating') : 'No trades logged today');
     }
     setText('ovStreakVal', s.consecutiveLosses || 0);
     setText('ovStreakSub', settings.maxConsecutiveLosses ? 'Max ' + settings.maxConsecutiveLosses + ' allowed' : 'No streak limit');
@@ -562,17 +567,27 @@
 
     if (pro) {
       var planNames = {
-        pro_monthly: 'Pro 30-day Prepaid (₹199)',
-        pro_yearly: 'Pro 365-day Prepaid (₹1,499)',
-        pro_plus_ai_monthly: 'Pro+ AI 30-day Prepaid (₹399)',
-        pro_plus_ai_yearly: 'Pro+ AI 365-day Prepaid (₹3,999)',
-        founder_lifetime: 'Founder Lifetime (₹2,999)'
+        pro_monthly: 'Pro Monthly Recurring (₹199/mo)',
+        pro_yearly: 'Pro Annual Recurring (₹1,499/yr)',
+        pro_plus_ai_monthly: 'Pro+ AI Monthly Recurring (₹399/mo)',
+        pro_plus_ai_yearly: 'Pro+ AI Annual Recurring (₹3,999/yr)',
+        founder_lifetime: 'Founder Lifetime (₹2,999 one-time)'
       };
       var pName = planNames[planId] || ((lic && lic.plan) || 'Pro Active');
-      var expStr = (lic && lic.expiresAt) ? ('valid until <b>' + R.istLabel(lic.expiresAt) + '</b>') : '<b>Lifetime Access</b>';
-      box.className = 'callout green';
-      box.innerHTML = '<b>Active Prepaid Plan:</b> You are on the <b>' + pName + '</b> plan (' + expStr + '). ' +
-        'Advanced discipline rules, generic broker-table detection, and plan device entitlements are active.';
+      var expStr = (lic && lic.expiresAt) ? ('access until <b>' + R.istLabel(lic.expiresAt) + '</b>') : '<b>Lifetime Access</b>';
+      if (lic && lic.cancelAtPeriodEnd) {
+        box.className = 'callout orange';
+        box.innerHTML = '<b>Subscription Cancelled:</b> You are on the <b>' + pName + '</b>. ' +
+          'Auto-renewal is cancelled; access remains active until ' + expStr + '.';
+      } else if (lic && lic.billingStatus === 'past_due') {
+        box.className = 'callout red';
+        box.innerHTML = '<b>Payment Past Due:</b> Renewal charge failed. ' +
+          'Grace access active until ' + expStr + '. Please update your payment method.';
+      } else {
+        box.className = 'callout green';
+        box.innerHTML = '<b>Active ' + (lic && lic.billingModel === 'recurring' ? 'Subscription' : 'Plan') + ':</b> You are on the <b>' + pName + '</b> (' + expStr + '). ' +
+          'Advanced discipline rules, generic broker-table detection, and plan device entitlements are active.';
+      }
     } else {
       box.className = 'callout blue';
       box.innerHTML = '<b>Free Tier Active.</b> Trade-count lock, manual trade logging, and full monthly trade journal are enabled. ' +

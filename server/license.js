@@ -35,12 +35,14 @@ function verifyPaymentSignature(orderId, paymentId, signature, secret) {
   return safeEqual(expected, String(signature).toLowerCase());
 }
 
-/** Razorpay subscription signature: HMAC_SHA256(payment_id + "|" + subscription_id, secret). */
+/** Razorpay subscription signature: HMAC_SHA256(subscription_id + "|" + payment_id, secret) or payment_id + "|" + subscription_id. */
 function verifySubscriptionSignature(paymentId, subscriptionId, signature, secret) {
   if (!paymentId || !subscriptionId || !signature || !secret) return false;
-  const expected = crypto.createHmac('sha256', secret)
-    .update(paymentId + '|' + subscriptionId).digest('hex');
-  return safeEqual(expected, String(signature).toLowerCase());
+  const sigStr = String(signature).toLowerCase();
+  const exp1 = crypto.createHmac('sha256', secret).update(paymentId + '|' + subscriptionId).digest('hex');
+  if (safeEqual(exp1, sigStr)) return true;
+  const exp2 = crypto.createHmac('sha256', secret).update(subscriptionId + '|' + paymentId).digest('hex');
+  return safeEqual(exp2, sigStr);
 }
 
 /** Razorpay webhook signature: HMAC_SHA256(raw_body, webhook_secret). */

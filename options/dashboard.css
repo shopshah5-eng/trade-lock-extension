@@ -73,7 +73,8 @@
 
 /* ------------------------------------------------------------- popup ---- */
 html.popup-html {
-  width: 400px;
+  width: 100%;
+  min-width: 320px;
   max-width: 400px;
   margin: 0;
   padding: 0;
@@ -81,7 +82,8 @@ html.popup-html {
   background: #080b18;
 }
 .trade-lock-popup {
-  width: 400px;
+  width: 100%;
+  min-width: 320px;
   max-width: 400px;
   min-height: 570px;
   margin: 0;
@@ -287,6 +289,12 @@ html.popup-html {
   gap: 9px;
   margin-top: 12px;
   margin-bottom: 12px;
+}
+@media (max-width: 340px) {
+  .popup-quick-grid,
+  .six-tiles-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .popup-quick-tile {
   min-height: 72px;
