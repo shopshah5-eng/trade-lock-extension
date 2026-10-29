@@ -93,6 +93,13 @@ global.fetch = async (url, options = {}) => {
   }
   if (urlStr.startsWith('https://api.razorpay.com/v1/subscriptions/') && urlStr.endsWith('/cancel')) {
     providerCalls.push('cancel');
+    const b = options.body ? JSON.parse(options.body) : {};
+    if (urlStr.includes('sub_no_cycle') && b.cancel_at_cycle_end === 1) {
+      return {
+        ok: false, status: 400,
+        json: async () => ({ error: { description: 'Subscription cannot be cancelled since no billing cycle is going on' } })
+      };
+    }
     return { ok: true, status: 200, json: async () => ({ id: 'sub_cancelled', status: 'cancelled' }) };
   }
   if (urlStr === 'https://api.resend.com/emails') {
@@ -679,6 +686,22 @@ test('§9 legacy billing semantics: stored billing_model wins; cancel refuses le
   };
   store.saveSync();
   remote.licenses.set(cancelledHash, rowLicense(store.licenses[cancelledHash]));
+
+  // Fixture: unstarted subscription (created status with no billing cycle) falls back to immediate cancel
+  const noCycleKey = L.generateLicenseKey();
+  const noCycleHash = L.hashKey(noCycleKey);
+  store.licenses[noCycleHash] = {
+    hash: noCycleHash, hint: L.keyHint(noCycleKey), email: 'nocycle@example.com',
+    plan: 'pro_monthly', createdAt: Date.now(), expiresAt: Date.now() + 30 * 86400e3,
+    paymentId: 'pay_no_cycle', orderId: null,
+    subscriptionId: 'sub_no_cycle', billingModel: 'recurring', billingStatus: 'active',
+    devices: [], revoked: false,
+  };
+  store.saveSync();
+  remote.licenses.set(noCycleHash, rowLicense(store.licenses[noCycleHash]));
+  const cancelNoCycle = await httpReq(port, 'POST', '/api/subscription/cancel', { key: noCycleKey });
+  assert.strictEqual(cancelNoCycle.status, 200, cancelNoCycle.text);
+  assert.strictEqual(cancelNoCycle.body.ok, true);
 
   const valCancelled = await httpReq(port, 'POST', '/api/validate', { key: cancelledKey });
   assert.strictEqual(valCancelled.status, 200);

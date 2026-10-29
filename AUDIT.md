@@ -399,6 +399,7 @@ A complete external integration audit and live service verification was conducte
 | **TL-12** | High | Deployment Configuration | Netlify Site `trade-lock-app` (`b01a4772-...`) | Missing recurring plan environment variables (`RAZORPAY_PLAN_PRO_MONTHLY`, `RAZORPAY_PLAN_PRO_YEARLY`, `RAZORPAY_PLAN_PRO_PLUS_AI_MONTHLY`, `RAZORPAY_PLAN_PRO_PLUS_AI_YEARLY`) and outdated serverless bundle on Netlify. | Upserted all recurring plan IDs and `RESEND_FROM` to Netlify via Netlify API. Re-deployed clean bundle (`6ae2f65b...`). Verified `/api/admin/payment-status` now reports `ok: true`, `paymentPersistenceReady: true`. | Remote `/api/admin/payment-status` and `/health` returning 200 OK. |
 | **TL-13** | Medium | Gemini AI Model Selection | `server/ai.js:9-10` | `DEFAULT_GEMINI_MODEL` was configured to `gemini-3.1-flash-lite`, which returned 404 / unavailable on Google AI API endpoints before falling back to `gemini-3.5-flash-lite`, incurring latency on every remote request. | Updated `DEFAULT_GEMINI_MODEL` to `gemini-3.5-flash-lite` and candidate model list to `[DEFAULT_GEMINI_MODEL, 'gemini-2.5-flash', 'gemini-flash-latest']`. | Real Gemini API summarization and coaching chat calls execute on first attempt in ~4.7s. |
 | **TL-14** | Low | Supabase Schema RLS Grants | `server/schema.sql:257,306,374,421,445` | Functions revoked from `PUBLIC` only, leaving default `anon`/`authenticated` execution permissions open in Supabase PostgREST gateway. | Updated schema to explicitly `REVOKE ALL ON FUNCTION ... FROM anon, authenticated, PUBLIC;` across all 5 payment/licensing RPC functions. | Schema updated and verified. |
+| **TL-15** | Medium | Razorpay Cancellation Lifecycle | `server/index.js:478-488` | Razorpay returns HTTP 400 `"Subscription cannot be cancelled since no billing cycle is going on"` when attempting to cancel an unstarted subscription (status `created`) with `cancel_at_cycle_end: 1`. | Added fallback to `cancel_at_cycle_end: 0` when `no billing cycle` is reported, ensuring unstarted subscriptions are immediately cancelled. Added unit test in `server/test/billing.test.js`. | Unit test §9 passes; verified against Razorpay test mode. |
 
 ### 2. External Service Verification Summary
 
@@ -431,8 +432,13 @@ A complete external integration audit and live service verification was conducte
     - `plan_TtJIxtUd32p5R2`: Pro Yearly, ₹1,499 (149900 paise), yearly, interval 1.
     - `plan_TtJIyISLaZpdyG`: Pro+ AI Monthly, ₹399 (39900 paise), monthly, interval 1.
     - `plan_TtJIyWbaXDqvJ0`: Pro+ AI Yearly, ₹3,999 (399900 paise), yearly, interval 1.
+  - Test mode verified using official test credentials (`rzp_test_TteOWgmAcVD6nL`):
+    - Created matching 4 recurring plans in Test Mode: `plan_TteRLdyVXQg8gg` (Pro Monthly ₹199), `plan_TteRMD0Xh3xjUh` (Pro Yearly ₹1,499), `plan_TteRMROXyTmWdK` (Pro+ Monthly ₹399), `plan_TteRMiPSq5a42A` (Pro+ Yearly ₹3,999).
+    - Created test subscriptions (`sub_TteRfQ9wFJBJxQ`, `sub_TteRgveRDAkO3e`) and Founder Lifetime order (`order_TteRhuESo26s0d`).
+    - Verified subscription cancellation fallback for unstarted (`created`) status.
+    - Real production LIVE keys (`rzp_live_Ti8uxXmX1K9zgF`) remain enabled on Netlify and `server/.env`.
   - Webhook HMAC SHA-256 signature verification verified on deployed server.
-  - Live purchase/refund execution is BLOCKED pending explicit owner authorization (only live keys `rzp_live_...` are present; no test keys provided).
+  - Live monetary purchases/refunds BLOCKED pending owner authorization for real card charges.
 
 - **Resend**:
   - Verified with real API key `re_bo7uordq_...`.

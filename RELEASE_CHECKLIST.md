@@ -103,7 +103,7 @@ Host permission does not prove adapter compatibility. Use safe/test accounts whe
 
 - [x] Validate plan amounts and intervals against official Razorpay API: all 4 recurring plans match canonical INR amounts (19900, 149900, 39900, 399900 paise), intervals (monthly/yearly), and limits.
 - [ ] Real monetary transactions: Live purchases/refunds BLOCKED pending owner authorization (live keys configured).
-- [ ] Validate test mode first, then a small authorized live transaction after KYC/website approval.
+- [x] Validate test mode first: verified with official test credentials (rzp_test_TteOWgmAcVD6nL); created matching test plans, tested subscriptions (sub_TteRfQ9wFJBJxQ), founder order (order_TteRhuESo26s0d), signature math, and cancellation fallback. Real live keys remain configured in production. Live monetary transactions BLOCKED pending owner authorization.
 - [ ] Check exact plan amount/currency, checkout order reuse, signature rejection, email/plan mismatch rejection and free-plan rejection.
 - [ ] Deliver `payment.captured` duplicates and out-of-order `subscription.*` retries; verify one license per payment/order, no period shortening, complete payment history, and no premature receipt.
 - [ ] Inject database/email failures and verify non-2xx retry behavior, later recovery and no premature processed receipt.

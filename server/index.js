@@ -468,13 +468,24 @@ async function razorpayCreateSubscription(plan, email) {
 async function razorpayCancelSubscription(subId) {
   if (!razorpayConfigured()) throw new Error('payments_not_configured');
   const auth = Buffer.from(KEY_ID + ':' + KEY_SECRET).toString('base64');
-  const response = await providerFetch(`https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(subId)}/cancel`, {
+  let response = await providerFetch(`https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(subId)}/cancel`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Basic ' + auth },
     body: JSON.stringify({ cancel_at_cycle_end: 1 }),
   });
-  const data = await response.json().catch(() => null);
-  const description = String(data && data.error && data.error.description || '');
+  let data = await response.json().catch(() => null);
+  let description = String(data && data.error && data.error.description || '');
+  // If subscription has not started a billing cycle yet (e.g. status: created), cancel immediately
+  if (!response.ok && response.status === 400 && /no billing cycle/i.test(description)) {
+    response = await providerFetch('https://api.razorpay.com/v1/subscriptions/' + encodeURIComponent(subId) + '/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Basic ' + auth },
+      body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+    });
+    data = await response.json().catch(() => null);
+    description = String(data && data.error && data.error.description || '');
+  }
+
   const alreadyCancelled = response.status === 400 && /already.*cancel|cancelled/i.test(description);
   if (!response.ok && !alreadyCancelled) throw new Error(description || ('Razorpay HTTP ' + response.status));
   return data || { id: subId, status: alreadyCancelled ? 'cancelled' : 'unknown' };
