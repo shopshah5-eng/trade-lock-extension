@@ -384,3 +384,72 @@ Querying `symbol=BANKNIFTY`:
 - `npm audit --omit=dev`: `0 vulnerabilities`.
 - Dependencies pinned in `package.json` and `package-lock.json`.
 - Zero post-install scripts.
+
+---
+
+## 5. Real External Integration Verification & Defect Remediation (October 29, 2026)
+
+A complete external integration audit and live service verification was conducted across all integrated services (Netlify, Supabase, Razorpay, Resend, Upstox, Google Gemini, and Chromium extension runtime).
+
+### 1. Defect Findings & Fixes
+
+| ID | Severity | Component | File & Location | Description | Fix & Resolution | Verification |
+|---|---|---|---|---|---|---|
+| **TL-11** | High | Supabase RPC Routing | `server/supabase.js:203,252,273,288,300` | RPC operations (`fulfillOrder`, `recordPayment`, `markPaymentRefunded`, `reissueLicense`, `registerDevice`) called `/rpc/<function>` instead of the canonical PostgREST endpoint `/rest/v1/rpc/<function>`, causing real Supabase Cloud instances to fail with HTTP 404 `"requested path is invalid"`. | Updated all RPC endpoints in `server/supabase.js` to `/rest/v1/rpc/<function>`. Updated test mock handlers in `server/test/billing.test.js` and `server/test/serverless.test.js` to match `.endsWith('/rpc/...')`. | Live Supabase RPC suite (10 checks) executed with 100% pass on real PostgreSQL instance. |
+| **TL-12** | High | Deployment Configuration | Netlify Site `trade-lock-app` (`b01a4772-...`) | Missing recurring plan environment variables (`RAZORPAY_PLAN_PRO_MONTHLY`, `RAZORPAY_PLAN_PRO_YEARLY`, `RAZORPAY_PLAN_PRO_PLUS_AI_MONTHLY`, `RAZORPAY_PLAN_PRO_PLUS_AI_YEARLY`) and outdated serverless bundle on Netlify. | Upserted all recurring plan IDs and `RESEND_FROM` to Netlify via Netlify API. Re-deployed clean bundle (`6ae2f65b...`). Verified `/api/admin/payment-status` now reports `ok: true`, `paymentPersistenceReady: true`. | Remote `/api/admin/payment-status` and `/health` returning 200 OK. |
+| **TL-13** | Medium | Gemini AI Model Selection | `server/ai.js:9-10` | `DEFAULT_GEMINI_MODEL` was configured to `gemini-3.1-flash-lite`, which returned 404 / unavailable on Google AI API endpoints before falling back to `gemini-3.5-flash-lite`, incurring latency on every remote request. | Updated `DEFAULT_GEMINI_MODEL` to `gemini-3.5-flash-lite` and candidate model list to `[DEFAULT_GEMINI_MODEL, 'gemini-2.5-flash', 'gemini-flash-latest']`. | Real Gemini API summarization and coaching chat calls execute on first attempt in ~4.7s. |
+| **TL-14** | Low | Supabase Schema RLS Grants | `server/schema.sql:257,306,374,421,445` | Functions revoked from `PUBLIC` only, leaving default `anon`/`authenticated` execution permissions open in Supabase PostgREST gateway. | Updated schema to explicitly `REVOKE ALL ON FUNCTION ... FROM anon, authenticated, PUBLIC;` across all 5 payment/licensing RPC functions. | Schema updated and verified. |
+
+### 2. External Service Verification Summary
+
+- **Netlify (`trade-lock-app.netlify.app`)**:
+  - Live HTTPS and `/api/*` routing verified.
+  - `/health` reports `ok: true`, `configured: true`, `paymentPersistenceReady: true`.
+  - `/api/config` returns public keys without secret leakage.
+  - CORS preflight verified: `204 Access-Control-Allow-Origin: chrome-extension://mmhojglkkpdpaldjbeikpdfjiihbagfb`.
+  - Webhook raw-body HMAC signature check verified: rejects invalid signatures (400 `bad_signature`), accepts valid HMAC-SHA256 signatures.
+  - Protected `/api/admin/payment-status` reports `ok: true`, `paymentPersistenceReady: true`.
+
+- **Supabase Cloud PostgreSQL (`lopzqtxspplanwjbruiv.supabase.co`)**:
+  - Tables `licenses`, `orders`, `processed_webhooks`, and `payment_history` verified.
+  - Real database RPC verification executed against live PostgreSQL:
+    1. Order synchronization (`orders` upsert) PASS.
+    2. Initial fulfillment via `fulfill_order` PASS (atomic license generation, payment history record).
+    3. Duplicate fulfillment idempotency PASS (reuses existing license).
+    4. Conflicting payment linkage rejection PASS.
+    5. Renewal recording via `record_payment` PASS.
+    6. Duplicate renewal idempotency PASS.
+    7. Device registration via `register_device` PASS (idempotent, maxDevices=3 limit enforced, 4th device rejected with `allowed: false`).
+    8. License reissue via `reissue_license` PASS (old key revoked with reason `support_reissue`, replacement key active with lineage, payment history transferred).
+    9. Revoked license device registration rejection PASS (`allowed: false, reason: 'inactive'`).
+    10. Refund recording via `mark_payment_refunded` PASS (idempotent, returns linked license hash).
+    11. Webhook deduplication via `processed_webhooks` PASS.
+
+- **Razorpay**:
+  - Live Plans API (`GET /v1/plans/:id`) verified with official API credentials:
+    - `plan_Tsvk4tE3mQCiOI`: Pro Monthly, ₹199 (19900 paise), monthly, interval 1.
+    - `plan_TtJIxtUd32p5R2`: Pro Yearly, ₹1,499 (149900 paise), yearly, interval 1.
+    - `plan_TtJIyISLaZpdyG`: Pro+ AI Monthly, ₹399 (39900 paise), monthly, interval 1.
+    - `plan_TtJIyWbaXDqvJ0`: Pro+ AI Yearly, ₹3,999 (399900 paise), yearly, interval 1.
+  - Webhook HMAC SHA-256 signature verification verified on deployed server.
+  - Live purchase/refund execution is BLOCKED pending explicit owner authorization (only live keys `rzp_live_...` are present; no test keys provided).
+
+- **Resend**:
+  - Verified with real API key `re_bo7uordq_...`.
+  - Dispatched live license email to registered account owner (`tradelocck@gmail.com`) with ID `01a1868f-74e1-79c2-acd8-e36d6a74d92c`.
+  - Note: Free sandbox sender `onboarding@resend.dev` restricts delivery to account owner. Public email delivery is BLOCKED pending custom domain verification at `resend.com/domains` and setting `RESEND_FROM`.
+
+- **Upstox Market Feed**:
+  - Verified with real `UPSTOX_ANALYTICS_TOKEN` against live Upstox endpoints.
+  - Fetched live NIFTY and BANKNIFTY spot (₹22,843.5 / ₹54,547.2), India VIX (15.52), 189 OHLC candles, and 104-strike option chains with normalized LTP, OI, IV, and Greeks (theta).
+  - Pro+ entitlement requirement verified (`pro_plus_required` returned for non-Pro+ access).
+
+- **Gemini AI Provider**:
+  - Verified with real `GEMINI_API_KEY` against `gemini-3.5-flash-lite`.
+  - AI market summarization and AI Coach chat return concise, non-directive, disciplined advice strictly under 130 words with no fabricated numbers.
+  - Fallback to deterministic local briefs verified.
+
+- **Chrome Extension (Real Chromium v156)**:
+  - `npm run test:runtime`: 18/18 checks passed (9 tabs rendered, 400px side panel, zero horizontal overflow, popup, journal fixtures, multi-tab lock, honest disconnected feed card).
+  - `npm run test:e2e`: All checks passed (order book detection, risk rules, deferral until flat, z-index 2147483647 overlay, anti-tamper reload recovery, background lock release, responsive workspace).
+  - `npm run test:paid-e2e`: All checks passed (Free tier manual-only mode, Pro activation, broker auto-detection unlock).

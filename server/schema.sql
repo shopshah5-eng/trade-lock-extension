@@ -254,7 +254,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.fulfill_order(text,text,text,text,text,text,timestamptz,timestamptz,text,text,text,text,timestamptz,timestamptz,boolean) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.fulfill_order(text,text,text,text,text,text,timestamptz,timestamptz,text,text,text,text,timestamptz,timestamptz,boolean) FROM anon, authenticated, PUBLIC;
 GRANT EXECUTE ON FUNCTION public.fulfill_order(text,text,text,text,text,text,timestamptz,timestamptz,text,text,text,text,timestamptz,timestamptz,boolean) TO service_role;
 
 -- Drop the old 8-arg signature if it still exists (migration safety).
@@ -299,11 +299,15 @@ BEGIN
     current_devices := array_append(current_devices, p_device_id);
     UPDATE public.licenses SET devices = current_devices WHERE hash = p_hash;
   END IF;
-  RETURN jsonb_build_object('allowed', allowed, 'devices_used', COALESCE(array_length(current_devices, 1), 0));
+  RETURN jsonb_build_object(
+    'allowed', allowed,
+    'devices_used', COALESCE(array_length(current_devices, 1), 0),
+    'reason', CASE WHEN allowed THEN NULL ELSE 'device_limit' END
+  );
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.register_device(text,text,integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.register_device(text,text,integer) FROM anon, authenticated, PUBLIC;
 GRANT EXECUTE ON FUNCTION public.register_device(text,text,integer) TO service_role;
 
 
@@ -371,7 +375,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.reissue_license(text,text,text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.reissue_license(text,text,text) FROM anon, authenticated, PUBLIC;
 GRANT EXECUTE ON FUNCTION public.reissue_license(text,text,text) TO service_role;
 
 
@@ -418,7 +422,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.record_payment(text,text,text,text,text,text,bigint,text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.record_payment(text,text,text,text,text,text,bigint,text) FROM anon, authenticated, PUBLIC;
 GRANT EXECUTE ON FUNCTION public.record_payment(text,text,text,text,text,text,bigint,text) TO service_role;
 
 
@@ -442,5 +446,5 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.mark_payment_refunded(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.mark_payment_refunded(text) FROM anon, authenticated, PUBLIC;
 GRANT EXECUTE ON FUNCTION public.mark_payment_refunded(text) TO service_role;

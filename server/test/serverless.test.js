@@ -114,7 +114,7 @@ global.fetch = async (url, options = {}) => {
     const rows = Array.from(remote.licenses.values()).filter(l => l[field] === value);
     return ok(rows.slice(0, 1));
   }
-  if (target.pathname === '/rpc/reissue_license' && method === 'POST') {
+  if (target.pathname.endsWith('/rpc/reissue_license') && method === 'POST') {
     const old = remote.licenses.get(body.p_old_hash);
     if (!old || old.revoked) return fail(400, 'active license not found');
     // Model the real SQL: null unique columns on old row, then insert replacement
@@ -145,7 +145,7 @@ global.fetch = async (url, options = {}) => {
     }
     return ok(replacement.hash);
   }
-  if (target.pathname === '/rpc/fulfill_order' && method === 'POST') {
+  if (target.pathname.endsWith('/rpc/fulfill_order') && method === 'POST') {
     fulfillmentCalls++;
     if (failNextFulfillment) {
       failNextFulfillment = false;
@@ -176,7 +176,7 @@ global.fetch = async (url, options = {}) => {
     }
     return ok(lic.hash);
   }
-  if (target.pathname === '/rpc/record_payment' && method === 'POST') {
+  if (target.pathname.endsWith('/rpc/record_payment') && method === 'POST') {
     if (!remote.payments.has(body.p_payment_id)) {
       remote.payments.set(body.p_payment_id, {
         payment_id: body.p_payment_id, license_hash: body.p_license_hash,
@@ -187,7 +187,7 @@ global.fetch = async (url, options = {}) => {
     }
     return ok(null);
   }
-  if (target.pathname === '/rpc/mark_payment_refunded' && method === 'POST') {
+  if (target.pathname.endsWith('/rpc/mark_payment_refunded') && method === 'POST') {
     const ph = remote.payments.get(body.p_payment_id);
     if (ph && !ph.refunded) { ph.refunded = true; ph.refunded_at = new Date().toISOString(); }
     return ok(ph ? ph.license_hash : null);

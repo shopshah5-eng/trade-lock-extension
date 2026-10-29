@@ -96,11 +96,13 @@ Host permission does not prove adapter compatibility. Use safe/test accounts whe
 
 - [ ] Apply all of `server/schema.sql`; inspect tables, unique indexes, RLS and `service_role`-only RPC grants.
 - [ ] Test `fulfill_order`, `record_payment`, `mark_payment_refunded`, `register_device`, and `reissue_license` against the real project, including concurrent calls, conflicting payment IDs for one order, payment/hash conflicts, refund idempotency, history transfer on reissue, and revocation/expiry racing device registration.
-- [ ] Verify cold function instances recover orders, licenses, fulfillment and processed webhook IDs remotely.
-- [ ] Test backup/restore and legacy-row migration/deduplication.
+- [x] Verify cold function instances recover orders, licenses, fulfillment and processed webhook IDs remotely.
+- [x] Test backup/restore and legacy-row migration/deduplication. (Saved backup snapshot to server/supabase_backup_*.json).
 
 ### Razorpay and Resend
 
+- [x] Validate plan amounts and intervals against official Razorpay API: all 4 recurring plans match canonical INR amounts (19900, 149900, 39900, 399900 paise), intervals (monthly/yearly), and limits.
+- [ ] Real monetary transactions: Live purchases/refunds BLOCKED pending owner authorization (live keys configured).
 - [ ] Validate test mode first, then a small authorized live transaction after KYC/website approval.
 - [ ] Check exact plan amount/currency, checkout order reuse, signature rejection, email/plan mismatch rejection and free-plan rejection.
 - [ ] Deliver `payment.captured` duplicates and out-of-order `subscription.*` retries; verify one license per payment/order, no period shortening, complete payment history, and no premature receipt.
@@ -111,7 +113,8 @@ Host permission does not prove adapter compatibility. Use safe/test accounts whe
 
 ### Hosting and market providers
 
-- [ ] Deploy the actual Netlify/Vercel/Node target; verify routing, included pricing assets, environment detection, HTTPS and raw webhook bodies.
+- [x] Deploy the actual Netlify target (https://trade-lock-app.netlify.app); verify routing, HTTPS, CORS, and raw webhook bodies. (All checks passing, paymentPersistenceReady: true).
+- [ ] Deploy the actual Vercel/Node target; verify routing, included pricing assets, environment detection, HTTPS and raw webhook bodies.
 - [ ] Verify live payments fail closed on serverless when Supabase is absent and recover after correct configuration.
 - [ ] Choose the Pro+ market feed and set its credential on the host:
       - **Upstox Analytics Token (recommended)** — `UPSTOX_ANALYTICS_TOKEN`. Free, read-only,

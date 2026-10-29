@@ -6,7 +6,7 @@
  * never break because an AI provider is down.
  */
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
-const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
+const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
 const GEMINI_CANDIDATE_MODELS = [DEFAULT_GEMINI_MODEL, 'gemini-3.5-flash-lite', 'gemini-flash-latest'];
 
 function localBrief(a, coach) {

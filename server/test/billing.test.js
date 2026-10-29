@@ -136,7 +136,7 @@ global.fetch = async (url, options = {}) => {
     const rows = Array.from(remote.licenses.values()).filter(l => l[field] === value);
     return ok(rows.slice(0, 1));
   }
-  if (target.pathname === '/rpc/fulfill_order' && method === 'POST') {
+  if (target.pathname.endsWith('/rpc/fulfill_order') && method === 'POST') {
     const existing = Array.from(remote.licenses.values()).find(l =>
       l.order_id === body.p_order_id ||
       (body.p_subscription_id && l.subscription_id === body.p_subscription_id) ||
@@ -158,7 +158,7 @@ global.fetch = async (url, options = {}) => {
     }
     return ok(lic.hash);
   }
-  if (target.pathname === '/rpc/reissue_license' && method === 'POST') {
+  if (target.pathname.endsWith('/rpc/reissue_license') && method === 'POST') {
     const old = remote.licenses.get(body.p_old_hash);
     if (!old || old.revoked) return fail(400, 'active license not found');
     const savedSubId = old.subscription_id;
@@ -179,7 +179,7 @@ global.fetch = async (url, options = {}) => {
     }
     return ok(rep.hash);
   }
-  if (target.pathname === '/rpc/record_payment' && method === 'POST') {
+  if (target.pathname.endsWith('/rpc/record_payment') && method === 'POST') {
     if (failures.recordPayment) return fail(500, 'injected payment history outage');
     if (!remote.payments.has(body.p_payment_id)) {
       remote.payments.set(body.p_payment_id, {
@@ -190,7 +190,7 @@ global.fetch = async (url, options = {}) => {
     }
     return ok(null);
   }
-  if (target.pathname === '/rpc/mark_payment_refunded' && method === 'POST') {
+  if (target.pathname.endsWith('/rpc/mark_payment_refunded') && method === 'POST') {
     if (failures.refundHistory) return fail(500, 'injected refund history outage');
     const ph = remote.payments.get(body.p_payment_id);
     if (ph && !ph.refunded) { ph.refunded = true; ph.refunded_at = new Date().toISOString(); }
@@ -210,7 +210,7 @@ global.fetch = async (url, options = {}) => {
     const id = (target.searchParams.get('event_id') || '').replace('eq.', '');
     return ok(remote.webhooks.has(id) ? [remote.webhooks.get(id)] : []);
   }
-  if (target.pathname === '/rpc/register_device' && method === 'POST') {
+  if (target.pathname.endsWith('/rpc/register_device') && method === 'POST') {
     const lic = remote.licenses.get(body.p_hash);
     if (!lic) return ok({ allowed: false, devices_used: 0, reason: 'not_found' });
     if (lic.revoked || (lic.expires_at && new Date(lic.expires_at).getTime() <= Date.now())) {

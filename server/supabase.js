@@ -200,7 +200,7 @@ async function fetchOrder(orderId) {
 async function fulfillOrder(orderId, order, lic) {
   if (!isConfigured()) return { ok: false, skipped: true };
   try {
-    const res = await request('/rpc/fulfill_order', {
+    const res = await request('/rest/v1/rpc/fulfill_order', {
       method: 'POST',
       body: JSON.stringify({
         p_order_id: orderId, p_payment_id: lic.paymentId || null,
@@ -249,7 +249,7 @@ async function markWebhookProcessed(eventId, event) {
 async function recordPayment(paymentId, licenseHash, opts = {}) {
   if (!isConfigured() || !paymentId || !licenseHash) return { ok: false, skipped: true };
   try {
-    const res = await request('/rpc/record_payment', {
+    const res = await request('/rest/v1/rpc/record_payment', {
       method: 'POST',
       body: JSON.stringify({
         p_payment_id: paymentId,
@@ -270,7 +270,7 @@ async function recordPayment(paymentId, licenseHash, opts = {}) {
 async function markPaymentRefunded(paymentId) {
   if (!isConfigured() || !paymentId) return { ok: false, skipped: true };
   try {
-    const res = await request('/rpc/mark_payment_refunded', {
+    const res = await request('/rest/v1/rpc/mark_payment_refunded', {
       method: 'POST',
       body: JSON.stringify({ p_payment_id: paymentId }),
     });
@@ -285,7 +285,7 @@ async function markPaymentRefunded(paymentId) {
 async function reissueLicense(oldHash, newHash, newHint) {
   if (!isConfigured()) return { ok: false, skipped: true };
   try {
-    const res = await request('/rpc/reissue_license', {
+    const res = await request('/rest/v1/rpc/reissue_license', {
       method: 'POST',
       body: JSON.stringify({ p_old_hash: oldHash, p_new_hash: newHash, p_new_hint: newHint }),
     });
@@ -297,7 +297,7 @@ async function reissueLicense(oldHash, newHash, newHint) {
 async function registerDevice(hash, deviceId, maxDevices) {
   if (!isConfigured()) return { ok: false, skipped: true };
   try {
-    const res = await request('/rpc/register_device', {
+    const res = await request('/rest/v1/rpc/register_device', {
       method: 'POST',
       body: JSON.stringify({ p_hash: hash, p_device_id: deviceId, p_max_devices: maxDevices }),
     });
